@@ -78,4 +78,4 @@ volumes:
 networks:
   internal:
     name: vitdoor_network
-    driver: bridge
+    external: true

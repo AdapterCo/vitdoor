@@ -33,6 +33,7 @@ Gere segredos diferentes e longos. O arquivo `.env` não deve ser versionado nem
 ## 3. Subir a aplicação
 
 ```bash
+docker network inspect vitdoor_network >/dev/null 2>&1 || docker network create vitdoor_network
 docker compose build
 docker compose up -d
 docker compose ps
