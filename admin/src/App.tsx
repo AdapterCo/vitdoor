@@ -1,0 +1,487 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Sidebar } from './components/Sidebar';
+import { DashboardTab } from './components/DashboardTab';
+import { ScreensTab } from './components/ScreensTab';
+import { MediaTab } from './components/MediaTab';
+import { LayoutsTab } from './components/LayoutsTab';
+import { PlaylistsTab } from './components/PlaylistsTab';
+import { CampaignsTab } from './components/CampaignsTab';
+import { ProofOfPlayTab } from './components/ProofOfPlayTab';
+import { EmergencyTab } from './components/EmergencyTab';
+import { TenantsTab } from './components/TenantsTab';
+import { getWebSocketUrl } from './config';
+import { apiFetch } from './api';
+import { LoginScreen } from './components/LoginScreen';
+
+export function App() {
+  const [user, setUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [screens, setScreens] = useState<any[]>([]);
+  const [playlists, setPlaylists] = useState<any[]>([]);
+  const [medias, setMedias] = useState<any[]>([]);
+  const [layouts, setLayouts] = useState<any[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [tenants, setTenants] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [activeTenant, setActiveTenant] = useState<any>(null);
+  const [isPairModalOpen, setIsPairModalOpen] = useState(false);
+
+  const wsRef = useRef<WebSocket | null>(null);
+
+  // Restore and validate the authenticated session.
+  useEffect(() => {
+    const initData = async () => {
+      try {
+        const meResponse = await apiFetch('/auth/me');
+        if (!meResponse.ok) return;
+        const me = await meResponse.json();
+        setUser(me);
+        await initializeForUser(me);
+      } catch (err) {
+        console.error('Error restoring session:', err);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    initData();
+    const logout = () => { setUser(null); setActiveTenant(null); };
+    window.addEventListener('vitdoor:logout', logout);
+    return () => window.removeEventListener('vitdoor:logout', logout);
+  }, []);
+
+  const initializeForUser = async (loggedUser: any) => {
+    if (loggedUser.role === 'SUPER_ADMIN') {
+      const tenantsRes = await apiFetch('/tenants');
+      if (!tenantsRes.ok) return;
+      const tenantsData = await tenantsRes.json();
+      setTenants(tenantsData);
+      const tenant = tenantsData[0];
+      if (tenant) {
+        setActiveTenant(tenant);
+        await loadTenantData(tenant.id);
+      }
+    } else {
+      const tenant = loggedUser.tenant || {
+        id: loggedUser.tenantId,
+        name: loggedUser.tenantName
+      };
+      setTenants([tenant]);
+      setActiveTenant(tenant);
+      await loadTenantData(tenant.id);
+    }
+  };
+
+  const loadTenantData = async (tenantId: string) => {
+    try {
+      const [screensRes, playlistsRes, mediasRes, layoutsRes, campaignsRes, statsRes] = await Promise.all([
+        apiFetch(`/screens?tenantId=${tenantId}`),
+        apiFetch(`/playlists?tenantId=${tenantId}`),
+        apiFetch(`/media?tenantId=${tenantId}`),
+        apiFetch(`/layouts?tenantId=${tenantId}`),
+        apiFetch(`/campaigns?tenantId=${tenantId}`),
+        apiFetch(`/proof-of-play/stats?tenantId=${tenantId}`)
+      ]);
+
+      setScreens(await screensRes.json());
+      setPlaylists(await playlistsRes.json());
+      setMedias(await mediasRes.json());
+      setLayouts(await layoutsRes.json());
+      setCampaigns(await campaignsRes.json());
+      setStats(await statsRes.json());
+    } catch (err) {
+      console.error('Error fetching tenant data:', err);
+    }
+  };
+
+  // Realtime WebSocket for admin notifications
+  useEffect(() => {
+    let ws: WebSocket;
+    const connectWS = () => {
+      ws = new WebSocket(getWebSocketUrl());
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          type: 'REGISTER_ADMIN',
+          tenantId: activeTenant?.id,
+          token: localStorage.getItem('vitdoor_token')
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'SCREEN_STATUS_CHANGED') {
+            setScreens((prev) =>
+              prev.map((s) => (s.id === data.screenId ? { ...s, status: data.status } : s))
+            );
+          } else if (data.type === 'SCREENSHOT_UPDATED') {
+            setScreens((prev) =>
+              prev.map((s) => (s.id === data.screenId ? { ...s, lastScreenshotUrl: data.imageUrl } : s))
+            );
+          } else if (data.type === 'SCREEN_TELEMETRY_UPDATE') {
+            setScreens((prev) =>
+              prev.map((s) => (s.id === data.screenId ? { ...s, ...data.telemetry, status: 'ONLINE' } : s))
+            );
+          } else if (data.type === 'COMMAND_RESULT' && !data.success) {
+            alert(data.message || 'O player não conseguiu executar o comando.');
+          }
+        } catch (e) {
+          console.error('Error parsing admin websocket message:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        setTimeout(connectWS, 3000);
+      };
+    };
+
+    connectWS();
+    return () => {
+      if (ws) ws.close();
+    };
+  }, [activeTenant?.id, user?.id]);
+
+  // Actions
+  const handlePairScreen = async (data: any) => {
+    if (!activeTenant) return false;
+    const res = await apiFetch('/screens/pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...data, tenantId: activeTenant.id })
+    });
+    if (res.ok) {
+      loadTenantData(activeTenant.id);
+      return true;
+    }
+    const error = await res.json().catch(() => ({ error: 'Não foi possível ativar a tela.' }));
+    alert(error.error);
+    return false;
+  };
+
+  const handleUpdateScreen = async (screenId: string, data: any) => {
+    const res = await apiFetch(`/screens/${screenId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...data, tenantId: activeTenant.id })
+    });
+    if (res.ok) {
+      loadTenantData(activeTenant.id);
+    }
+  };
+
+  const handleRemoteCommand = async (screenId: string, action: string, payload?: any) => {
+    const response = await apiFetch(`/screens/${screenId}/remote-command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, payload, tenantId: activeTenant.id })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      alert(result.message || result.error || 'Não foi possível enviar o comando.');
+      return false;
+    }
+    return true;
+  };
+
+  const handleDeleteScreen = async (screenId: string) => {
+    await apiFetch(`/screens/${screenId}?tenantId=${activeTenant.id}`, { method: 'DELETE' });
+    loadTenantData(activeTenant.id);
+  };
+
+  const handleUploadFile = async (file: File, name: string, durationSeconds: number, tags: string) => {
+    if (!activeTenant) return false;
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('tenantId', activeTenant.id);
+    formData.append('name', name);
+    formData.append('durationSeconds', durationSeconds.toString());
+    formData.append('tags', tags);
+
+    const response = await apiFetch('/media/upload', { method: 'POST', body: formData });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Falha no upload.' }));
+      alert(error.error);
+      return false;
+    }
+    loadTenantData(activeTenant.id);
+    return true;
+  };
+
+  const handleUpdateMedia = async (id: string, data: any) => {
+    const response = await apiFetch(`/media/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...data, tenantId: activeTenant.id })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Falha ao atualizar a mídia.' }));
+      alert(error.error);
+      return false;
+    }
+    await loadTenantData(activeTenant.id);
+    return true;
+  };
+
+  const handleCreateWidget = async (widgetData: any) => {
+    if (!activeTenant) return;
+    await apiFetch('/media/widget', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...widgetData, tenantId: activeTenant.id })
+    });
+    loadTenantData(activeTenant.id);
+  };
+
+  const handleDeleteMedia = async (id: string) => {
+    await apiFetch(`/media/${id}?tenantId=${activeTenant.id}`, { method: 'DELETE' });
+    loadTenantData(activeTenant.id);
+  };
+
+  const handleCreateLayout = async (layoutData: any) => {
+    if (!activeTenant) return false;
+    const response = await apiFetch('/layouts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...layoutData, tenantId: activeTenant.id })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Falha ao criar layout.' }));
+      alert(error.error);
+      return false;
+    }
+    await loadTenantData(activeTenant.id);
+    return true;
+  };
+
+  const handleUpdateLayout = async (id: string, layoutData: any) => {
+    const response = await apiFetch(`/layouts/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...layoutData, tenantId: activeTenant.id })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Falha ao atualizar layout.' }));
+      alert(error.error);
+      return false;
+    }
+    await loadTenantData(activeTenant.id);
+    return true;
+  };
+
+  const handleDeleteLayout = async (id: string) => {
+    if (!confirm('Excluir este layout? As telas vinculadas ficarão sem este layout.')) return;
+    const response = await apiFetch(`/layouts/${id}?tenantId=${activeTenant.id}`, { method: 'DELETE' });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Falha ao excluir layout.' }));
+      alert(error.error);
+      return;
+    }
+    await loadTenantData(activeTenant.id);
+  };
+
+  const handleCreatePlaylist = async (playlistData: any) => {
+    if (!activeTenant) return false;
+    const response = await apiFetch('/playlists', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...playlistData, tenantId: activeTenant.id })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Falha ao criar playlist.' }));
+      alert(error.error);
+      return false;
+    }
+    await loadTenantData(activeTenant.id);
+    return true;
+  };
+
+  const handleUpdatePlaylist = async (id: string, playlistData: any) => {
+    const response = await apiFetch(`/playlists/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...playlistData, tenantId: activeTenant.id })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Falha ao editar playlist.' }));
+      alert(error.error);
+      return false;
+    }
+    await loadTenantData(activeTenant.id);
+    return true;
+  };
+
+  const handleDeletePlaylist = async (id: string) => {
+    await apiFetch(`/playlists/${id}?tenantId=${activeTenant.id}`, { method: 'DELETE' });
+    loadTenantData(activeTenant.id);
+  };
+
+  const handleCreateCampaign = async (campaignData: any) => {
+    if (!activeTenant) return;
+    await apiFetch('/campaigns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...campaignData, tenantId: activeTenant.id })
+    });
+    loadTenantData(activeTenant.id);
+  };
+
+  const handleTriggerEmergency = async (title: string, message: string, alertType: string) => {
+    if (!activeTenant) return;
+    await apiFetch('/emergency/trigger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantId: activeTenant.id, title, message, alertType })
+    });
+  };
+
+  const handleClearEmergency = async () => {
+    if (!activeTenant) return;
+    await apiFetch('/emergency/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantId: activeTenant.id })
+    });
+  };
+
+  const handleCreateTenant = async (tenantData: any) => {
+    const res = await apiFetch('/tenants', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tenantData)
+    });
+    if (res.ok) {
+      const tenantsRes = await apiFetch('/tenants');
+      setTenants(await tenantsRes.json());
+    }
+  };
+
+  const handleLogin = async (loggedUser: any) => {
+    setUser(loggedUser);
+    setAuthLoading(true);
+    try {
+      const meResponse = await apiFetch('/auth/me');
+      const me = meResponse.ok ? await meResponse.json() : loggedUser;
+      setUser(me);
+      await initializeForUser(me);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('vitdoor_token');
+    setUser(null);
+    setActiveTenant(null);
+  };
+
+  if (authLoading) {
+    return <div className="login-page"><div style={{ color: '#94a3b8' }}>Carregando painel...</div></div>;
+  }
+  if (!user) return <LoginScreen onLogin={handleLogin} />;
+
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#0b0f19' }}>
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        tenantName={activeTenant?.name}
+        user={user}
+        onLogout={handleLogout}
+      />
+
+      <main style={{ flex: 1, padding: '32px 40px', overflowY: 'auto' }}>
+        {activeTab === 'dashboard' && (
+          <DashboardTab
+            screens={screens}
+            stats={stats}
+            onRemoteCommand={handleRemoteCommand}
+            onOpenPairModal={() => {
+              setActiveTab('screens');
+              setIsPairModalOpen(true);
+            }}
+          />
+        )}
+
+        {activeTab === 'screens' && (
+          <ScreensTab
+            screens={screens}
+            playlists={playlists}
+            layouts={layouts}
+            onPairScreen={handlePairScreen}
+            onUpdateScreen={handleUpdateScreen}
+            onRemoteCommand={handleRemoteCommand}
+            onDeleteScreen={handleDeleteScreen}
+            isPairModalOpen={isPairModalOpen}
+            setIsPairModalOpen={setIsPairModalOpen}
+          />
+        )}
+
+        {activeTab === 'media' && (
+          <MediaTab
+            medias={medias}
+            onUploadFile={handleUploadFile}
+            onUpdateMedia={handleUpdateMedia}
+            onCreateWidget={handleCreateWidget}
+            onDeleteMedia={handleDeleteMedia}
+          />
+        )}
+
+        {activeTab === 'layouts' && (
+          <LayoutsTab
+            layouts={layouts}
+            medias={medias}
+            screens={screens}
+            onCreateLayout={handleCreateLayout}
+            onUpdateLayout={handleUpdateLayout}
+            onDeleteLayout={handleDeleteLayout}
+          />
+        )}
+
+        {activeTab === 'playlists' && (
+          <PlaylistsTab
+            playlists={playlists}
+            medias={medias}
+            layouts={layouts}
+            screens={screens}
+            onCreatePlaylist={handleCreatePlaylist}
+            onUpdatePlaylist={handleUpdatePlaylist}
+            onDeletePlaylist={handleDeletePlaylist}
+          />
+        )}
+
+        {activeTab === 'campaigns' && (
+          <CampaignsTab
+            campaigns={campaigns}
+            playlists={playlists}
+            onCreateCampaign={handleCreateCampaign}
+          />
+        )}
+
+        {activeTab === 'proof-of-play' && <ProofOfPlayTab stats={stats} />}
+
+        {activeTab === 'emergency' && (
+          <EmergencyTab
+            onTriggerEmergency={handleTriggerEmergency}
+            onClearEmergency={handleClearEmergency}
+          />
+        )}
+
+        {activeTab === 'tenants' && user.role === 'SUPER_ADMIN' && (
+          <TenantsTab
+            tenants={tenants}
+            onCreateTenant={handleCreateTenant}
+            activeTenantId={activeTenant?.id}
+            onSelectTenant={(tenant) => {
+              setActiveTenant(tenant);
+              setActiveTab('dashboard');
+              loadTenantData(tenant.id);
+            }}
+          />
+        )}
+      </main>
+    </div>
+  );
+}

@@ -1,0 +1,234 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Tenant {
+  id           String   @id @default(uuid())
+  name         String
+  slug         String   @unique
+  logoUrl      String?
+  brandColor   String?  @default("#3b82f6")
+  plan         String   @default("PROFESSIONAL") // BASIC, PROFESSIONAL, ENTERPRISE
+  maxScreens   Int      @default(10)
+  maxStorageMb Int      @default(5000)
+  status       String   @default("ACTIVE") // ACTIVE, SUSPENDED, CANCELLED
+  customDomain String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users           User[]
+  screens         Screen[]
+  medias          Media[]
+  layouts         Layout[]
+  playlists       Playlist[]
+  campaigns       Campaign[]
+  proofOfPlays    ProofOfPlay[]
+  emergencyAlerts EmergencyAlert[]
+  tickets         MaintenanceTicket[]
+}
+
+model User {
+  id               String   @id @default(uuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name             String
+  email            String   @unique
+  passwordHash     String
+  role             String   @default("ADMIN_CLIENT") // SUPER_ADMIN, ADMIN_CLIENT, OPERATOR, DESIGNER, VIEWER
+  avatarUrl        String?
+  active           Boolean  @default(true)
+  twoFactorEnabled Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Screen {
+  id          String  @id @default(uuid())
+  tenantId    String
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  pairingCode String  @unique
+  paired      Boolean @default(false)
+
+  // Specs & Info
+  orientation  String  @default("HORIZONTAL") // HORIZONTAL, VERTICAL
+  resolution   String  @default("1920x1080")
+  os           String? @default("Android TV")
+  ipAddress    String?
+  macAddress   String?
+  locationName String? @default("Matriz / Loja 01")
+  latitude     Float?
+  longitude    Float?
+  groupName    String? @default("Geral")
+  tags         String? @default("Recepção, TV1")
+
+  // Realtime Status & Hardware Telemetry
+  status             String    @default("OFFLINE") // ONLINE, OFFLINE, WARNING
+  lastPing           DateTime?
+  volume             Int       @default(80)
+  storageFreeMb      Int?      @default(4096)
+  ramUsagePercent    Int?      @default(30)
+  cpuUsagePercent    Int?      @default(15)
+  appVersion         String?   @default("1.0.0")
+  currentMediaName   String?
+  lastScreenshotUrl  String?
+  deviceTokenVersion Int       @default(1)
+
+  // Active Content
+  activePlaylistId String?
+  activePlaylist   Playlist? @relation(fields: [activePlaylistId], references: [id], onDelete: SetNull)
+  activeLayoutId   String?
+  activeLayout     Layout?   @relation(fields: [activeLayoutId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  proofOfPlays   ProofOfPlay[]
+  tickets        MaintenanceTicket[]
+  pairingSession PairingSession?
+}
+
+model PairingSession {
+  id         String    @id @default(uuid())
+  code       String    @unique
+  secretHash String
+  expiresAt  DateTime
+  claimedAt  DateTime?
+  screenId   String?   @unique
+  screen     Screen?   @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+}
+
+model Media {
+  id              String    @id @default(uuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name            String
+  type            String // IMAGE, VIDEO, AUDIO, WEB_PAGE, HTML, RSS
+  url             String
+  storagePath     String?
+  thumbnailUrl    String?
+  durationSeconds Int       @default(10)
+  sizeBytes       BigInt?   @default(0)
+  tags            String?
+  validUntil      DateTime?
+  checksum        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  playlistItems PlaylistItem[]
+}
+
+model Layout {
+  id               String  @id @default(uuid())
+  tenantId         String
+  tenant           Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name             String
+  description      String?
+  orientation      String  @default("HORIZONTAL")
+  canvasConfigJson String // JSON string representing layout regions (Zones A/B/C, Ticker, RSS, Clock, Weather)
+  isTemplate       Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  screens       Screen[]
+  playlistItems PlaylistItem[]
+}
+
+model Playlist {
+  id          String  @id @default(uuid())
+  tenantId    String
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  category    String? @default("Geral")
+  isLoop      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items     PlaylistItem[]
+  screens   Screen[]
+  campaigns Campaign[]
+}
+
+model PlaylistItem {
+  id              String   @id @default(uuid())
+  playlistId      String
+  playlist        Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  mediaId         String?
+  media           Media?   @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  layoutId        String?
+  layout          Layout?  @relation(fields: [layoutId], references: [id], onDelete: Cascade)
+  orderIndex      Int      @default(0)
+  durationSeconds Int      @default(10)
+}
+
+model Campaign {
+  id                 String    @id @default(uuid())
+  tenantId           String
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name               String
+  advertiserName     String?
+  playlistId         String?
+  playlist           Playlist? @relation(fields: [playlistId], references: [id], onDelete: SetNull)
+  startDate          DateTime
+  endDate            DateTime
+  daysOfWeek         String    @default("1,2,3,4,5,6,0") // 0=Sunday, 1=Monday...
+  startTime          String    @default("00:00")
+  endTime            String    @default("23:59")
+  priority           Int       @default(1)
+  maxImpressions     Int?
+  currentImpressions Int       @default(0)
+  status             String    @default("ACTIVE") // ACTIVE, PAUSED, COMPLETED
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProofOfPlay {
+  id              String   @id @default(uuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  screenId        String
+  screen          Screen   @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  mediaName       String
+  playedAt        DateTime @default(now())
+  durationSeconds Int
+  completed       Boolean  @default(true)
+}
+
+model EmergencyAlert {
+  id              String   @id @default(uuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title           String
+  message         String
+  alertType       String   @default("WARNING") // INFO, WARNING, EVACUATION, URGENT
+  active          Boolean  @default(true)
+  durationSeconds Int      @default(60)
+  createdAt       DateTime @default(now())
+}
+
+model MaintenanceTicket {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  screenId       String
+  screen         Screen   @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  title          String
+  description    String
+  priority       String   @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  status         String   @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED
+  technicianName String?
+  photoUrl       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}

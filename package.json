@@ -1,0 +1,12 @@
+{
+  "name": "vitdoor-midia-indoor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema SaaS de Mídia Indoor (Digital Signage)",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:admin": "npm --prefix admin run dev",
+    "dev:player": "npm --prefix player run dev",
+    "build": "npm --prefix backend run build && npm --prefix admin run build && npm --prefix player run build"
+  }
+}

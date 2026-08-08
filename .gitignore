@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.log
+.env
+.env.*
+!.env.example
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/prisma/*.db
+backend/prisma/*.db-journal
+.runlogs/

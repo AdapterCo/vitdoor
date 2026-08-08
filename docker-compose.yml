@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vitdoor}
+      POSTGRES_USER: ${POSTGRES_USER:-vitdoor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vitdoor} -d ${POSTGRES_DB:-vitdoor}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  migrate:
+    build: ./backend
+    restart: "no"
+    environment: &backend_environment
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vitdoor}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-vitdoor}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET no arquivo .env}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-Administrador VitDoor}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+    command: ["./node_modules/.bin/prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment: *backend_environment
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+  admin:
+    build: ./admin
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [internal]
+
+  player-simulator:
+    build: ./player
+    restart: unless-stopped
+    ports:
+      - "${PLAYER_PORT:-8081}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [internal]
+
+volumes:
+  postgres_data:
+  uploads_data:
+
+networks:
+  internal:
+    driver: bridge
