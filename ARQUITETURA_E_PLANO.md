@@ -99,18 +99,18 @@ Plataforma inicial:
 - TV Boxes Android.
 - Tablets Android usados como totens.
 
-Tecnologia recomendada:
+Tecnologia oficial planejada:
 
-- Kotlin.
-- Android SDK.
-- Jetpack Compose para telas de configuração e pareamento.
-- AndroidX Media3 / ExoPlayer para vídeos e áudios.
-- Room para banco local.
-- WorkManager para downloads, sincronização e reenvio de eventos.
-- OkHttp para HTTP e WebSocket.
-- Armazenamento interno do aplicativo para as mídias.
+- Flutter/Dart para interface, regras do player, layouts, estado e comunicação.
+- Kotlin/Android SDK em uma camada nativa pequena para recursos específicos do equipamento.
+- AndroidX Media3 / ExoPlayer e `DownloadService` para reprodução e downloads persistentes.
+- SQLite tipado no Flutter para manifestos, assets e filas offline.
+- Platform Channels ou Pigeon para Media3, boot, quiosque, telemetria e screenshot nativo.
+- Armazenamento interno privado do aplicativo para as mídias.
 
-Motivos para usar aplicativo Android nativo:
+A especificação completa para o repositório separado está em `PLAYER_ANDROID_FLUTTER.md`.
+
+Motivos para usar aplicativo Android dedicado com integração nativa:
 
 - Inicialização automática após ligar o equipamento.
 - Melhor suporte a Android TV e controle remoto.
@@ -409,7 +409,7 @@ Cache local significa armazenar os arquivos físicos no Android, não apenas o J
 
 O aplicativo deve manter:
 
-- Banco Room com manifestos e metadados.
+- Banco SQLite tipado com manifestos e metadados.
 - Diretório local de mídias.
 - Versão ativa.
 - Versão anterior válida.
@@ -530,7 +530,7 @@ Estados:
 | Cache físico de mídias Android | PENDENTE | Requisito crítico |
 | Manifesto versionado | PENDENTE | Requisito crítico |
 | Checksum de download | PENDENTE | Requisito crítico |
-| Proof-of-play offline web | SIMULADOR | Deve ser refeito com Room no Android |
+| Proof-of-play offline web | SIMULADOR | Deve ser refeito com fila SQLite persistente no aplicativo Android |
 | Aplicativo Android TV | PENDENTE | Próxima frente principal |
 | Inicialização automática | PENDENTE | Android |
 | Modo quiosque | PENDENTE | Android |
@@ -551,7 +551,7 @@ Estados:
 | Autoria e destino de layout | CONCLUÍDO | Backend valida telas e reconstrói o JSON usando somente mídias canônicas do proprietário |
 | Áudio por zona | SIMULADOR | Configurável no editor e respeitado no player web; falta portar ao Android |
 | Loop obrigatório | SIMULADOR | Forçado no backend e no player web; falta portar ao Android |
-| Proof-of-play do dispositivo | PARCIAL | Escrita exige token revogável e impede registrar evento em nome de outra tela; persistência offline final será Android/Room |
+| Proof-of-play do dispositivo | PARCIAL | Escrita exige token revogável e impede registrar evento em nome de outra tela; persistência offline final será SQLite no app Android |
 | Auditoria cruzada | PREPARADO | `npm --prefix backend run audit:isolation` valida master e dois clientes reais na VPS e suspende os tenants de auditoria ao terminar |
 
 ### Validação R2/CDN de 09/08/2026
@@ -591,11 +591,11 @@ Estados:
 
 ### Fase 2 — Criar aplicativo Android TV
 
-1. Criar projeto Kotlin.
+1. Criar projeto Flutter Android em repositório separado.
 2. Implementar tela de pareamento.
 3. Implementar credencial do dispositivo.
 4. Implementar API e WebSocket.
-5. Implementar Room.
+5. Implementar banco SQLite tipado e armazenamento seguro.
 6. Implementar downloader.
 7. Implementar cache físico.
 8. Implementar Media3 / ExoPlayer.
@@ -643,11 +643,11 @@ Implementações existentes somente no diretório `player/` devem permanecer com
 
 ## 12. Registro de decisões
 
-### ADR-001 — Player oficial Android nativo
+### ADR-001 — Player oficial Flutter com integração Android nativa
 
-**Decisão:** O player comercial será um aplicativo Android TV nativo em Kotlin.  
-**Motivo:** Cache físico, quiosque, inicialização automática, estabilidade de vídeo e integração com TV Box.  
-**Consequência:** O player React/Vite atual passa a ser apenas simulador.
+**Decisão:** O player comercial será um aplicativo Flutter para Android, com camada Kotlin nativa para Media3, downloads persistentes, boot, quiosque e recursos do dispositivo.
+**Motivo:** Separar o aplicativo do painel web, acelerar a evolução da interface e das regras compartilháveis sem perder os recursos Android necessários para estabilidade em TV Box.
+**Consequência:** O player React/Vite atual permanece apenas simulador, e recursos críticos não podem depender exclusivamente de plugins genéricos Flutter.
 
 ### ADR-002 — WebSocket antes de MQTT
 
