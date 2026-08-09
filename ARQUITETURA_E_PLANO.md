@@ -539,7 +539,7 @@ Estados:
 | Assinatura e distribuição APK | PENDENTE | Play Store privada, MDM ou atualização própria |
 | Deploy em VPS | CONCLUÍDO | Compose, gateway, migrações, volumes e healthchecks operando na VPS de homologação |
 | Monitoramento e backups | PARCIAL | Healthcheck preparado; faltam métricas, alertas e backup externo automatizado |
-| Proteção HTTP/API | PARCIAL | Rate limits por finalidade, Helmet, CSP, HSTS, limites de payload e IP real da Cloudflare implementados; falta restringir portas da origem às faixas Cloudflare e ativar regras WAF |
+| Proteção HTTP/API | CONCLUÍDO | Rate limits na API e na Cloudflare, headers defensivos, limites de payload, origem restrita às faixas oficiais da Cloudflare e quatro regras WAF personalizadas validados na VPS |
 
 ### Auditoria funcional de 08/08/2026
 
@@ -577,12 +577,14 @@ Estados:
 - Gateway aplica HTTPS obrigatório, HSTS, CSP, proteção contra iframe, MIME sniffing e políticas restritivas de navegador.
 - Páginas externas exibidas no simulador usam iframe isolado, sem permissão para navegar a janela principal e sem envio de referrer.
 - Gateway restaura o IP real somente para conexões originadas nas faixas oficiais publicadas pela Cloudflare; a lista deve ser revisada quando a Cloudflare anunciar alterações.
-- Pendente na infraestrutura: bloquear as portas 80/443 da VPS para origens que não sejam Cloudflare, mantendo SSH restrito ao administrador, e habilitar regras gerenciadas/WAF no painel Cloudflare.
+- A origem aceita os hostnames públicos somente quando a conexão chega pelas faixas oficiais da Cloudflare; tentativas HTTP e HTTPS diretamente contra o IP da VPS foram recusadas pelo gateway.
 - Backend e serviço de migração compartilham explicitamente a mesma imagem Docker, impedindo deploy de código novo com um pacote antigo de migrações.
 - Sessão do painel usa cookie host-only `HttpOnly`, `Secure` e `SameSite=Strict`; o JWT não é mais devolvido ao JavaScript nem armazenado em Web Storage. Operações autenticadas por cookie validam também a origem administrativa configurada em `ADMIN_ORIGINS`.
 - Sessões administrativas e dispositivos usam segredos JWT distintos. A rotação de `ADMIN_JWT_SECRET` invalida logins do painel sem desparear TVs que continuam protegidas por `JWT_SECRET`.
 - Respostas HTTP e mensagens WebSocket usam DTOs explícitos por consumidor. Campos internos como `passwordHash`, `storagePath`, `createdById`, `deviceTokenVersion`, relações Prisma completas e payloads arbitrários de telemetria não são expostos ao painel ou ao player.
-- Gateway possui lista de permissão de origem baseada em `$realip_remote_addr`: hostnames públicos aceitam conexão somente das faixas oficiais Cloudflare e encerram acesso direto com código Nginx 444. A ativação permanece condicionada ao teste `nginx -t` e à validação pública/direta na VPS.
+- Gateway possui lista de permissão de origem baseada em `$realip_remote_addr`: hostnames públicos aceitam conexão somente das faixas oficiais Cloudflare e encerram acesso direto com código Nginx 444. A configuração foi aprovada por `nginx -t` e validada pelos caminhos público e direto na VPS.
+- Cloudflare aplica rate limiting específico em `/api/auth/login` e quatro regras WAF personalizadas: bloqueio de métodos HTTP não utilizados, scanners/arquivos sensíveis, rotas administrativas no domínio do player e escrita no domínio público de mídia.
+- As regras Cloudflare foram testadas individualmente sem impedir o painel, healthcheck, pareamento do player ou leitura de mídia pelo CDN.
 
 ### Validação R2/CDN de 09/08/2026
 
