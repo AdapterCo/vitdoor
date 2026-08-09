@@ -15,7 +15,7 @@ function generatePairingCode(): string {
 screenRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const screens = await prisma.screen.findMany({
-    where: tenantId ? { tenantId } : {},
+    where: { tenantId, createdById: req.auth!.userId },
     include: {
       activePlaylist: true,
       activeLayout: true
@@ -47,7 +47,7 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
 
   // Check for default playlist to attach
   const defaultPlaylist = await prisma.playlist.findFirst({
-    where: { tenantId: scopedTenantId }
+    where: { tenantId: scopedTenantId, createdById: req.auth!.userId }
   });
 
   const [tenant, screenCount] = await Promise.all([
@@ -57,7 +57,7 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
   if (!tenant || tenant.status !== 'ACTIVE') return res.status(403).json({ error: 'Cliente inativo ou suspenso.' });
 
   let screen = await prisma.screen.findUnique({ where: { pairingCode: normalizedPairingCode } });
-  if (!screen && screenCount >= tenant.maxScreens) {
+  if (!tenant.unlimitedScreens && !screen && screenCount >= tenant.maxScreens) {
     return res.status(403).json({
       error: `Limite contratado atingido (${tenant.maxScreens} dispositivo${tenant.maxScreens === 1 ? '' : 's'}). Adquira outra licença para conectar uma nova tela.`
     });
@@ -113,16 +113,16 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
 screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const scopedTenantId = tenantScope(req, req.body.tenantId);
-  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId } });
+  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, createdById: req.auth!.userId } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
   const { name, locationName, groupName, orientation, volume, activePlaylistId, activeLayoutId } = req.body;
 
   if (activePlaylistId) {
-    const playlist = await prisma.playlist.findFirst({ where: { id: activePlaylistId, tenantId: scopedTenantId } });
+    const playlist = await prisma.playlist.findFirst({ where: { id: activePlaylistId, tenantId: scopedTenantId, createdById: req.auth!.userId } });
     if (!playlist) return res.status(400).json({ error: 'Playlist inválida para este cliente.' });
   }
   if (activeLayoutId) {
-    const layout = await prisma.layout.findFirst({ where: { id: activeLayoutId, tenantId: scopedTenantId } });
+    const layout = await prisma.layout.findFirst({ where: { id: activeLayoutId, tenantId: scopedTenantId, createdById: req.auth!.userId } });
     if (!layout) return res.status(400).json({ error: 'Layout inválido para este cliente.' });
   }
 
@@ -159,7 +159,7 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
 screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const scopedTenantId = tenantScope(req, req.body.tenantId);
-  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId } });
+  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, createdById: req.auth!.userId } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
   const { action, payload } = req.body;
 
@@ -202,7 +202,7 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
 screenRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const scopedTenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId } });
+  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, createdById: req.auth!.userId } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
   await prisma.screen.delete({ where: { id } });
   return res.json({ success: true });

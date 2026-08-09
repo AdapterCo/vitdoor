@@ -33,9 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, tenan
     { id: 'emergency', label: 'Alerta Emergencial', icon: AlertTriangle },
     { id: 'tenants', label: 'Clientes & Licenças', icon: Building2, masterOnly: true },
   ];
-  const menuItems = user?.role === 'SUPER_ADMIN'
-    ? allMenuItems.filter((item) => item.id === 'tenants')
-    : allMenuItems.filter((item) => !item.masterOnly);
+  const menuItems = allMenuItems.filter((item) => !item.masterOnly || user?.role === 'SUPER_ADMIN');
 
   return (
     <aside style={{

@@ -65,7 +65,8 @@ mediaRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
 
   const medias = await prisma.media.findMany({
     where: {
-      ...(tenantId ? { tenantId } : {}),
+      tenantId,
+      createdById: req.auth!.userId,
       ...(type ? { type } : {})
     },
     orderBy: { createdAt: 'desc' }
@@ -155,7 +156,7 @@ mediaRoutes.post('/widget', async (req: Request, res: Response): Promise<any> =>
 mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.body.tenantId);
-  const existing = await prisma.media.findFirst({ where: { id, tenantId } });
+  const existing = await prisma.media.findFirst({ where: { id, tenantId, createdById: req.auth!.userId } });
   if (!existing) return res.status(404).json({ error: 'Mídia não encontrada.' });
 
   const durationSeconds = Math.max(1, Math.round(Number(req.body.durationSeconds) || existing.durationSeconds));
@@ -178,7 +179,7 @@ mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
 mediaRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const media = await prisma.media.findFirst({ where: { id, tenantId } });
+  const media = await prisma.media.findFirst({ where: { id, tenantId, createdById: req.auth!.userId } });
   if (!media) return res.status(404).json({ error: 'Mídia não encontrada.' });
   await prisma.media.delete({ where: { id } });
   return res.json({ success: true });

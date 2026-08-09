@@ -20,6 +20,7 @@ export function App() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const currentMediaNameRef = useRef('Aguardando programação');
 
   // Restore cached content on boot (Offline Support)
   useEffect(() => {
@@ -109,6 +110,7 @@ export function App() {
               ramUsagePercent: Math.floor(25 + Math.random() * 15),
               cpuUsagePercent: Math.floor(10 + Math.random() * 20),
               storageFreeMb: 4096
+              ,currentMediaName: currentMediaNameRef.current
             }));
           }
         }, 10000);
@@ -236,6 +238,7 @@ export function App() {
 
   // Log proof-of-play
   const handleMediaChanged = async (mediaName: string) => {
+    currentMediaNameRef.current = mediaName;
     if (!screenInfo?.id) return;
     const logItem = {
       tenantId: screenInfo.tenantId || 'demo',

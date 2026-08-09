@@ -61,9 +61,9 @@ export function App() {
       if (!tenantsRes.ok) return;
       const tenantsData = await tenantsRes.json();
       setTenants(tenantsData);
-      setActiveTenant(null);
-      setActiveTab('tenants');
-      setScreens([]); setPlaylists([]); setMedias([]); setLayouts([]); setCampaigns([]); setStats(null);
+      setActiveTenant(loggedUser.tenant);
+      setActiveTab('dashboard');
+      await loadTenantData(loggedUser.tenantId);
     } else {
       const tenant = loggedUser.tenant || {
         id: loggedUser.tenantId,
@@ -193,6 +193,7 @@ export function App() {
       alert(result.message || result.error || 'Não foi possível enviar o comando.');
       return false;
     }
+    if (action === 'SYNC') alert('Ressincronização enviada e recebida pela tela.');
     return true;
   };
 

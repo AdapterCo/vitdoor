@@ -14,11 +14,12 @@ async function main() {
   const passwordHash = await bcrypt.hash(password, 12);
   const tenant = await prisma.tenant.upsert({
     where: { slug: 'vitdoor-master' },
-    update: { status: 'ACTIVE' },
+    update: { status: 'ACTIVE', unlimitedScreens: true },
     create: {
       name: 'VitDoor',
       slug: 'vitdoor-master',
       maxScreens: 1,
+      unlimitedScreens: true,
       maxStorageMb: 100,
       status: 'ACTIVE'
     }

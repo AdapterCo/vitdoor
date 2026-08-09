@@ -16,20 +16,18 @@ export const PlaylistsTab: React.FC<Props> = ({ playlists, medias, screens, onCr
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [isLoop, setIsLoop] = useState(true);
   const [screenIds, setScreenIds] = useState<string[]>([]);
   const [items, setItems] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
-    setEditingId(null); setName(''); setDescription(''); setIsLoop(true); setScreenIds([]); setItems([]);
+    setEditingId(null); setName(''); setDescription(''); setScreenIds([]); setItems([]);
   };
   const create = () => { reset(); setOpen(true); };
   const edit = (playlist: any) => {
     setEditingId(playlist.id);
     setName(playlist.name);
     setDescription(playlist.description || '');
-    setIsLoop(playlist.isLoop !== false);
     setScreenIds((playlist.screens || []).map((screen: any) => screen.id));
     setItems((playlist.items || []).map((item: any) => ({
       mediaId: item.mediaId,
@@ -46,7 +44,7 @@ export const PlaylistsTab: React.FC<Props> = ({ playlists, medias, screens, onCr
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
-    const data = { name, description, isLoop, screenIds, items };
+    const data = { name, description, isLoop: true, screenIds, items };
     const success = editingId ? await onUpdatePlaylist(editingId, data) : await onCreatePlaylist(data);
     setSaving(false);
     if (success) { setOpen(false); reset(); }
@@ -93,10 +91,6 @@ export const PlaylistsTab: React.FC<Props> = ({ playlists, medias, screens, onCr
             <div><h3>{editingId ? 'Editar playlist' : 'Criar playlist'}</h3><p style={{ color: '#94a3b8', fontSize: '.84rem' }}>As alterações são enviadas imediatamente às telas selecionadas.</p></div>
             <input className="input-field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome da playlist" required />
             <input className="input-field" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descrição" />
-            <label style={{ display: 'flex', gap: '10px', alignItems: 'center', color: '#fff' }}>
-              <input type="checkbox" checked={isLoop} onChange={(e) => setIsLoop(e.target.checked)} />
-              <span><strong>Loop contínuo</strong><small style={{ display: 'block', color: '#94a3b8' }}>Desative para reproduzir a sequência somente uma vez.</small></span>
-            </label>
             <div><strong>Telas de destino</strong><div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '9px' }}>
               {screens.map((screen) => <button type="button" key={screen.id} className={screenIds.includes(screen.id) ? 'btn-primary' : 'btn-secondary'} onClick={() => setScreenIds((ids) => ids.includes(screen.id) ? ids.filter((id) => id !== screen.id) : [...ids, screen.id])}>{screen.name}</button>)}
             </div></div>

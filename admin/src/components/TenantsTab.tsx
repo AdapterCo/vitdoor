@@ -62,12 +62,12 @@ export const TenantsTab: React.FC<TenantsTabProps> = ({ tenants, onCreateTenant,
                 <h4 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>{t.name}</h4>
                 <span style={{ fontSize: '0.8rem', color: '#60a5fa' }}>slug: {t.slug}</span>
               </div>
-              <span className="badge-online">{t.maxScreens} {t.maxScreens === 1 ? 'tela contratada' : 'telas contratadas'}</span>
+              <span className="badge-online">{t.unlimitedScreens ? 'Telas ilimitadas' : `${t.maxScreens} ${t.maxScreens === 1 ? 'tela contratada' : 'telas contratadas'}`}</span>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '10px', fontSize: '0.85rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#cbd5e1' }}>
-                <Tv size={16} color="#60a5fa" /> Limite: {t.maxScreens} telas
+                <Tv size={16} color="#60a5fa" /> {t.unlimitedScreens ? 'Sem limite de telas' : `Limite: ${t.maxScreens} telas`}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#cbd5e1' }}>
                 <HardDrive size={16} color="#f59e0b" /> Limite: {t.maxStorageMb / 1000} GB

@@ -127,7 +127,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 justifyContent: 'center'
               }}>
                 {screen.lastScreenshotUrl ? (
-                  <img src={screen.lastScreenshotUrl} alt="Live screenshot" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={screen.lastScreenshotUrl} alt="Último screenshot capturado" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
                   <div style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>
                     <Tv size={36} style={{ marginBottom: '8px', opacity: 0.5 }} />
