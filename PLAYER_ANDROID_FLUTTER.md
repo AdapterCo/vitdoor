@@ -6,7 +6,7 @@
 
 **Versão:** 1.0  
 **Data:** 09/08/2026  
-**Estado:** especificação inicial aprovada; projeto Flutter ainda não criado
+**Estado:** especificação aprovada; backend de manifesto disponível, projeto Flutter ainda não criado
 
 ## 1. Objetivo
 
@@ -245,12 +245,24 @@ O aplicativo Flutter deve concluir o pareamento por HTTPS antes de abrir seu Web
 
 Implementar reconexão com backoff exponencial e jitter, por exemplo de 1 segundo até 60 segundos. Ao reconectar, registrar novamente o player e reconciliar o manifesto via HTTPS; não assumir que mensagens WebSocket antigas serão reenviadas.
 
+Aviso atual de programação:
+
+```json
+{
+  "type": "MANIFEST_UPDATED",
+  "manifestVersion": 18,
+  "manifestChecksum": "sha256-hexadecimal",
+  "forceReload": false
+}
+```
+
 ### 8.1 Mensagens recebidas existentes
 
-- `PAIRING_SUCCESS` / `PAIRING_CONFIRMED`: identidade, volume, orientação e conteúdo atual;
+- `PAIRING_SUCCESS` / `PAIRING_CONFIRMED`: identidade, volume, orientação, conteúdo de compatibilidade do simulador e `manifestVersion`/`manifestChecksum` disponíveis;
 - `PAIRING_PENDING`: ativação ainda não confirmada;
 - `DEVICE_AUTH_FAILED`: apagar credencial inválida e voltar à ativação;
-- `CONTENT_UPDATED`: existe nova programação; futuramente deve carregar somente a versão do manifesto;
+- `MANIFEST_UPDATED`: existe nova programação; contém somente `manifestVersion`, `manifestChecksum` e `forceReload`, exigindo busca autenticada por HTTPS;
+- `CONTENT_UPDATED`: mensagem legada exclusiva do simulador web; não usar como fonte de programação no aplicativo Flutter;
 - `SET_VOLUME`: aplicar volume indicado;
 - `REBOOT`: reiniciar o aplicativo de forma controlada;
 - `TAKE_SCREENSHOT`: capturar e responder, quando suportado;
@@ -286,35 +298,31 @@ Confirmação de comando:
 
 Nunca confirmar sincronização apenas porque recebeu a mensagem. Confirmar somente depois de baixar, validar e ativar a versão.
 
-## 9. Manifesto versionado — contrato alvo
+## 9. Manifesto versionado — contrato implementado no backend
 
-Esta API ainda precisa ser implementada no backend antes do modo offline definitivo. O app deve ser desenhado para este contrato, mantendo compatibilidade temporária com o payload atual.
+O aplicativo Flutter deve tratar o endpoint abaixo como única fonte oficial da programação. O WebSocket apenas sinaliza que existe uma nova versão.
 
-Endpoint alvo:
+Endpoint:
 
 ```http
 GET /api/device/manifest
 Authorization: Bearer {deviceToken}
-If-None-Match: "manifest-18"
+If-None-Match: "manifest-18-{checksum}"
 ```
 
-Resposta alvo:
+Resposta atual:
 
 ```json
 {
-  "manifestVersion": 18,
-  "screenId": "uuid",
-  "publishedAt": "2026-08-09T12:00:00.000Z",
-  "orientation": "HORIZONTAL",
-  "volume": 80,
-  "playlist": {
-    "loop": true,
-    "items": []
+  "schemaVersion": 1,
+  "version": 18,
+  "screen": {
+    "id": "uuid",
+    "orientation": "HORIZONTAL",
+    "volume": 80
   },
-  "layout": {
-    "preset": "70_30",
-    "zones": []
-  },
+  "activePlaylist": null,
+  "activeLayout": null,
   "assets": [
     {
       "id": "media-id",
@@ -322,10 +330,12 @@ Resposta alvo:
       "url": "https://media.vitdoor.com.br/tenants/.../arquivo.mp4",
       "mimeType": "video/mp4",
       "sizeBytes": 5818290,
-      "sha256": "hexadecimal",
-      "durationMs": 8000
+      "checksum": "sha256-hexadecimal",
+      "durationSeconds": 8
     }
-  ]
+  ],
+  "checksumAlgorithm": "SHA-256",
+  "checksum": "sha256-do-manifesto"
 }
 ```
 
@@ -334,9 +344,11 @@ Regras:
 - versão cresce de forma monotônica por tela;
 - manifesto publicado é imutável;
 - todos os assets têm URL imutável, tamanho e SHA-256;
-- resposta pode usar ETag e HTTP 304;
+- resposta usa ETag e retorna HTTP 304 quando `If-None-Match` corresponde;
 - uma tela recebe somente seu manifesto;
-- o app rejeita manifesto para outro `screenId`;
+- o app rejeita manifesto cujo `screen.id` não corresponde à credencial;
+- o checksum do manifesto é calculado sobre `schemaVersion`, `version`, `screen`, `activePlaylist`, `activeLayout` e `assets`, nesta ordem;
+- o app rejeita versão menor que a ativa ou a mesma versão acompanhada por outro checksum;
 - conteúdo atual continua tocando durante download da próxima versão.
 
 ## 10. Banco e arquivos locais
@@ -631,12 +643,12 @@ Definir distribuição antes do piloto:
 
 ## 22. Dependências do backend
 
-O projeto Flutter pode começar pela Fase A agora. Para concluir a Fase B, o backend web deve entregar:
+O projeto Flutter pode começar pela Fase A agora. Dependências atuais:
 
-1. manifesto imutável e versionado por tela;
-2. `version`, `sizeBytes`, MIME e SHA-256 por asset;
-3. endpoint autenticado de manifesto com ETag/304;
-4. publicação atômica e aviso WebSocket contendo a versão;
+1. ~~manifesto imutável e versionado por tela;~~ concluído;
+2. ~~`version`, `sizeBytes`, MIME e SHA-256 por asset;~~ concluído;
+3. ~~endpoint autenticado de manifesto com ETag/304;~~ concluído;
+4. ~~publicação atômica e aviso WebSocket contendo a versão;~~ concluído;
 5. confirmação idempotente de comandos;
 6. IDs idempotentes em proof-of-play;
 7. URLs CDN estáveis e política de retenção.

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { PairingScreen } from './components/PairingScreen';
 import { LayoutRenderer } from './components/LayoutRenderer';
@@ -21,25 +21,6 @@ export function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const currentMediaNameRef = useRef('Aguardando programação');
-  const manifestVersionRef = useRef(0);
-  const manifestChecksumRef = useRef('');
-
-  const applyManifest = useCallback(async (manifest: any): Promise<boolean> => {
-    if (!await verifyManifest(manifest)) return false;
-    if (manifest.version < manifestVersionRef.current) return false;
-    if (manifest.version === manifestVersionRef.current && manifestChecksumRef.current && manifest.checksum !== manifestChecksumRef.current) return false;
-    manifestVersionRef.current = manifest.version;
-    manifestChecksumRef.current = manifest.checksum;
-    setActivePlaylist(manifest.activePlaylist ?? null);
-    setActiveLayout(manifest.activeLayout ?? null);
-    if (Number.isFinite(manifest.screen?.volume)) setVolume(manifest.screen.volume);
-    await Promise.all([
-      setCache('manifest', manifest),
-      setCache('activePlaylist', manifest.activePlaylist ?? null),
-      setCache('activeLayout', manifest.activeLayout ?? null)
-    ]);
-    return true;
-  }, []);
 
   // Restore cached content on boot (Offline Support)
   useEffect(() => {
@@ -47,16 +28,14 @@ export function App() {
       const cachedScreen = await getCache('screenInfo');
       const cachedPlaylist = await getCache('activePlaylist');
       const cachedLayout = await getCache('activeLayout');
-      const cachedManifest = await getCache('manifest');
       if (cachedScreen && localStorage.getItem('vitdoor_device_token')) {
         setScreenInfo(cachedScreen);
         setPaired(true);
       }
-      if (cachedManifest && await applyManifest(cachedManifest)) return;
       if (cachedPlaylist) setActivePlaylist(cachedPlaylist);
       if (cachedLayout) setActiveLayout(cachedLayout);
     })();
-  }, [applyManifest]);
+  }, []);
 
   useEffect(() => {
     if (paired || pairingId) return;
@@ -146,16 +125,11 @@ export function App() {
             setScreenInfo(info);
             await setCache('screenInfo', info);
 
-            if (msg.manifest && !await applyManifest(msg.manifest)) {
-              ws.send(JSON.stringify({ type: 'COMMAND_RESULT', action: 'MANIFEST', success: false, message: 'Manifesto rejeitado: versão ou checksum inválido.' }));
-              return;
-            }
-
-            if (!msg.manifest && msg.activePlaylist) {
+            if (msg.activePlaylist) {
               setActivePlaylist(msg.activePlaylist);
               await setCache('activePlaylist', msg.activePlaylist);
             }
-            if (!msg.manifest && Object.prototype.hasOwnProperty.call(msg, 'activeLayout')) {
+            if (Object.prototype.hasOwnProperty.call(msg, 'activeLayout')) {
               setActiveLayout(msg.activeLayout);
               await setCache('activeLayout', msg.activeLayout);
             }
@@ -164,16 +138,6 @@ export function App() {
             if (msg.forceReload && ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify({ type: 'COMMAND_RESULT', action: 'SYNC', success: true, message: 'Programação recebida e aplicada pela tela.' }));
             }
-          } else if (msg.type === 'MANIFEST_UPDATED') {
-            const applied = await applyManifest(msg.manifest);
-            ws.send(JSON.stringify({
-              type: 'COMMAND_RESULT',
-              action: 'SYNC',
-              success: applied,
-              message: applied
-                ? `Manifesto v${msg.manifest.version} validado e aplicado.`
-                : 'Manifesto rejeitado: versão ou checksum inválido.'
-            }));
           } else if (msg.type === 'CONTENT_UPDATED') {
             if (Object.prototype.hasOwnProperty.call(msg, 'activePlaylist')) {
               if (msg.forceReload) setActivePlaylist(null);
@@ -248,7 +212,7 @@ export function App() {
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (reconnectTimeout) window.clearTimeout(reconnectTimeout);
     };
-  }, [applyManifest, pairingCode, paired]);
+  }, [pairingCode, paired]);
 
   // Log proof-of-play
   const handleMediaChanged = async (mediaName: string) => {
@@ -307,27 +271,4 @@ export function App() {
       )}
     </div>
   );
-}
-
-async function verifyManifest(manifest: any): Promise<boolean> {
-  if (!manifest || manifest.schemaVersion !== 1 || !Number.isInteger(manifest.version) || manifest.version < 1) return false;
-  if (manifest.checksumAlgorithm !== 'SHA-256' || !/^[a-f0-9]{64}$/i.test(manifest.checksum || '')) return false;
-  if (!Array.isArray(manifest.assets)) return false;
-  const invalidAsset = manifest.assets.some((asset: any) => {
-    const isBinary = ['VIDEO', 'IMAGE', 'AUDIO', 'PDF'].includes(asset?.type);
-    return !asset?.id || !asset?.url || (isBinary && (!/^[a-f0-9]{64}$/i.test(asset.checksum || '') || !Number.isFinite(asset.sizeBytes) || asset.sizeBytes <= 0));
-  });
-  if (invalidAsset) return false;
-
-  const payload = {
-    schemaVersion: manifest.schemaVersion,
-    version: manifest.version,
-    screen: manifest.screen,
-    activePlaylist: manifest.activePlaylist,
-    activeLayout: manifest.activeLayout,
-    assets: manifest.assets
-  };
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(payload)));
-  const calculated = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-  return calculated === manifest.checksum.toLowerCase();
 }

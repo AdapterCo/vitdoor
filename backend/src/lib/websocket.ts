@@ -174,7 +174,8 @@ async function handleMessage(client: ConnectedClient, msg: any) {
           activePlaylist: playlistDto(activePlaylist, true),
           activeLayout: layoutDto(activeLayout),
           activeAlert: alertDto(activeAlert),
-          manifest
+          manifestVersion: manifest?.version,
+          manifestChecksum: manifest?.checksum
         }));
 
         broadcastToAdmins(
@@ -291,7 +292,12 @@ export function sendCommandToScreen(screenId: string, command: any) {
 export async function sendManifestToScreen(screenId: string, forceReload = false): Promise<boolean> {
   const manifest = await buildScreenManifest(screenId);
   if (!manifest) return false;
-  return sendCommandToScreen(screenId, { type: 'MANIFEST_UPDATED', manifest, forceReload });
+  return sendCommandToScreen(screenId, {
+    type: 'MANIFEST_UPDATED',
+    manifestVersion: manifest.version,
+    manifestChecksum: manifest.checksum,
+    forceReload
+  });
 }
 
 export function broadcastToAdmins(data: any, tenantId?: string, ownerId?: string) {

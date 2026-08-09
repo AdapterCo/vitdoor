@@ -11,7 +11,10 @@ export const deviceRoutes = Router();
 deviceRoutes.get('/manifest', authenticateDevice, async (req: Request, res: Response) => {
   const manifest = await buildScreenManifest(req.deviceAuth!.screenId);
   if (!manifest) return res.status(404).json({ error: 'Manifesto da tela não encontrado.' });
-  res.setHeader('Cache-Control', 'no-store');
+  const etag = `"manifest-${manifest.version}-${manifest.checksum}"`;
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'private, no-cache');
+  if (req.headers['if-none-match'] === etag) return res.status(304).end();
   return res.json(manifest);
 });
 
