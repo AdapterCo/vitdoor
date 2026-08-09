@@ -1,6 +1,6 @@
 # Deploy de homologação do VitDoor na VPS
 
-Este procedimento disponibiliza o painel web, a API, PostgreSQL e o player web de simulação. Ele ainda não representa uma implantação comercial: o player oficial Android, tokens individuais de dispositivo, R2/CDN, Redis, TLS e backups externos continuam pendentes.
+Este procedimento disponibiliza o painel web, a API, PostgreSQL, R2/CDN e o player web de simulação. Ele ainda não representa uma implantação comercial: o player oficial Android, Redis, upload multipart, manifestos versionados e backups externos continuam pendentes.
 
 ## 1. Pré-requisitos
 
@@ -164,10 +164,10 @@ O dump local ainda não atende o requisito de backup externo da arquitetura.
 
 - Upload ainda passa pela memória da API e fica no volume local da VPS.
 - O player na porta 8081 é apenas simulador web.
-- Comunicação de dispositivo ainda não usa credencial individual revogável.
+- Dispositivos usam credencial individual revogável; falta portar e validar o fluxo no aplicativo Android oficial.
 - WebSocket não persiste comandos e funciona em uma única instância.
-- Não há TLS; evite credenciais ou conteúdo real até ativar HTTPS.
-- Não há Redis, R2/CDN, multipart, manifesto imutável ou cache Android.
-- Proof-of-play do simulador ainda não possui autenticação de dispositivo.
+- O navegador já usa HTTPS na borda Cloudflare, mas ainda falta TLS entre Cloudflare e a origem para usar o modo Full (strict).
+- R2/CDN está operacional; ainda não há Redis, upload direto/multipart, manifesto imutável ou cache Android.
+- Proof-of-play exige autenticação do dispositivo; a fila offline definitiva ainda depende do Android/Room.
 
-Quando o DNS estiver pronto, o passo seguinte será colocar HTTPS na origem, conectar a Cloudflare, restringir portas públicas e ativar R2/CDN.
+As próximas frentes são manifesto/checksum, upload direto/multipart, restrição da origem aos IPs da Cloudflare, backups e o aplicativo Android.

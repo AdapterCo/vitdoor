@@ -5,8 +5,8 @@
 > Toda nova funcionalidade, correção ou decisão técnica deve ser comparada com este arquivo.
 > Quando uma entrega for concluída, sua situação deve ser atualizada na matriz de acompanhamento.
 
-**Versão do documento:** 1.2
-**Última atualização:** 08/08/2026  
+**Versão do documento:** 1.3
+**Última atualização:** 09/08/2026  
 **Produto:** Plataforma SaaS de mídia indoor para totens e TV Boxes  
 **Status geral:** MVP em evolução — ainda não pronto para produção comercial
 
@@ -515,15 +515,15 @@ Estados:
 | Isolamento por cliente | PARCIAL | Implementado, precisa auditoria completa de todas as rotas |
 | Limite de dispositivos | CONCLUÍDO | Validado no pareamento |
 | Upload de mídia | PARCIAL | Ainda passa pela memória da VPS |
-| Cloudflare R2 | PARCIAL | Backend validado para R2, chaves imutáveis por tenant/mídia e configuração de VPS documentada; falta ativar credenciais reais e upload direto |
-| Cloudflare CDN | PARCIAL | Domínio, CORS, Cache-Control e regras documentados; falta ativar e validar HIT no ambiente real |
+| Cloudflare R2 | CONCLUÍDO | Bucket `vitdoor-media`, credencial restrita, domínio próprio, chaves imutáveis por tenant/mídia e fail-fast sem fallback local validados na VPS |
+| Cloudflare CDN | CONCLUÍDO | `media.vitdoor.com.br`, CORS, Range, cache imutável e entrega `CF-Cache-Status: HIT` validados em arquivo MP4 real |
 | Playlists | CONCLUÍDO | Criação, edição, loop, duração e telas |
 | Layouts multizona | CONCLUÍDO | Editor web e simulador funcionando |
 | Reprodução multizona web | SIMULADOR | Referência para implementação Android |
 | WebSocket | PARCIAL | Funcional em uma instância, sem Redis |
 | MQTT | PENDENTE | Não necessário para primeira versão |
-| SQLite | SUBSTITUIR | Migrar para PostgreSQL |
-| PostgreSQL | PARCIAL | Schema, migração inicial e container preparados; falta validar e operar na VPS |
+| SQLite | CONCLUÍDO | Removido do ambiente de produção; Prisma opera com PostgreSQL |
+| PostgreSQL | CONCLUÍDO | Migrações e healthcheck validados no container da VPS |
 | Redis | PENDENTE | Necessário antes de escalar |
 | Cache de JSON no navegador | SIMULADOR | Não representa cache offline final |
 | Cache físico de mídias Android | PENDENTE | Requisito crítico |
@@ -536,7 +536,7 @@ Estados:
 | ExoPlayer / Media3 | PENDENTE | Android |
 | Atualização remota do app | PENDENTE | Definir estratégia |
 | Assinatura e distribuição APK | PENDENTE | Play Store privada, MDM ou atualização própria |
-| Deploy em VPS | PARCIAL | Compose, proxy, volumes, healthcheck e procedimento de homologação preparados |
+| Deploy em VPS | CONCLUÍDO | Compose, gateway, migrações, volumes e healthchecks operando na VPS de homologação |
 | Monitoramento e backups | PARCIAL | Healthcheck preparado; faltam métricas, alertas e backup externo automatizado |
 
 ### Auditoria funcional de 08/08/2026
@@ -553,18 +553,30 @@ Estados:
 | Proof-of-play do dispositivo | PARCIAL | Escrita exige token revogável e impede registrar evento em nome de outra tela; persistência offline final será Android/Room |
 | Auditoria cruzada | PREPARADO | `npm --prefix backend run audit:isolation` valida master e dois clientes reais na VPS e suspende os tenants de auditoria ao terminar |
 
+### Validação R2/CDN de 09/08/2026
+
+- Bucket: `vitdoor-media`.
+- Domínio público oficial: `https://media.vitdoor.com.br`.
+- URL pública de desenvolvimento `r2.dev`: desativada.
+- Objetos organizados em `tenants/{tenantId}/media/{mediaId}/{arquivo}`.
+- Arquivo MP4 real retornou `HTTP/2 200`, `Content-Type: video/mp4` e `Accept-Ranges: bytes`.
+- Origem retornou `Cache-Control: public, max-age=31536000, immutable`.
+- Segunda requisição retornou `CF-Cache-Status: HIT` e `Age: 70`, confirmando entrega pelo CDN.
+- Healthcheck da API retornou `storage: r2`.
+- Upload direto/multipart permanece uma entrega separada: o armazenamento e o CDN estão concluídos, mas o upload atual ainda atravessa a memória da VPS.
+
 ---
 
 ## 10. Prioridades oficiais
 
 ### Fase 1 — Consolidar backend de produção
 
-1. Migrar Prisma de SQLite para PostgreSQL.
-2. Criar migrações versionadas.
-3. Configurar R2 real.
-4. Implementar upload direto e multipart.
-5. Implementar versões e checksums.
-6. Criar manifesto por dispositivo.
+1. ~~Migrar Prisma de SQLite para PostgreSQL.~~ Concluído.
+2. ~~Criar migrações versionadas.~~ Concluído.
+3. ~~Configurar R2 real e CDN.~~ Concluído e validado com `HIT`.
+4. Implementar versões, checksums e manifesto por dispositivo.
+5. Implementar upload direto e multipart.
+6. Migrar as mídias legadas do volume local para o R2.
 
 ### Fase 2 — Criar aplicativo Android TV
 
