@@ -23,7 +23,7 @@ layoutRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
 
   const layout = await prisma.layout.create({
     data: {
-      tenantId, name, description, orientation: orientation || 'HORIZONTAL',
+      tenantId, createdById: req.auth!.userId, name, description, orientation: orientation || 'HORIZONTAL',
       canvasConfigJson: stringifyConfig(canvasConfigJson), isTemplate: !!isTemplate
     }
   });

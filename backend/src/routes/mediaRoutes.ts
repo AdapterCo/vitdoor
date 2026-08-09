@@ -112,6 +112,7 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
   const media = await prisma.media.create({
     data: {
       tenantId,
+      createdById: req.auth!.userId,
       name: req.body.name || req.file.originalname,
       type,
       url,
@@ -139,6 +140,7 @@ mediaRoutes.post('/widget', async (req: Request, res: Response): Promise<any> =>
   const media = await prisma.media.create({
     data: {
       tenantId,
+      createdById: req.auth!.userId,
       name,
       type: type || 'WEB_PAGE',
       url,

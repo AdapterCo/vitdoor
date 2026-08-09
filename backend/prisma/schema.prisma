@@ -34,24 +34,30 @@ model Tenant {
 }
 
 model User {
-  id               String   @id @default(uuid())
+  id               String     @id @default(uuid())
   tenantId         String
-  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant           Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name             String
-  email            String   @unique
+  email            String     @unique
   passwordHash     String
-  role             String   @default("ADMIN_CLIENT") // SUPER_ADMIN, ADMIN_CLIENT, OPERATOR, DESIGNER, VIEWER
+  role             String     @default("ADMIN_CLIENT") // SUPER_ADMIN, ADMIN_CLIENT, OPERATOR, DESIGNER, VIEWER
   avatarUrl        String?
-  active           Boolean  @default(true)
-  twoFactorEnabled Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  active           Boolean    @default(true)
+  twoFactorEnabled Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  createdScreens   Screen[]   @relation("ScreenCreator")
+  createdMedias    Media[]    @relation("MediaCreator")
+  createdLayouts   Layout[]   @relation("LayoutCreator")
+  createdPlaylists Playlist[] @relation("PlaylistCreator")
 }
 
 model Screen {
   id          String  @id @default(uuid())
   tenantId    String
   tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdBy   User?   @relation("ScreenCreator", fields: [createdById], references: [id], onDelete: SetNull)
   name        String
   pairingCode String  @unique
   paired      Boolean @default(false)
@@ -110,6 +116,8 @@ model Media {
   id              String    @id @default(uuid())
   tenantId        String
   tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdById     String?
+  createdBy       User?     @relation("MediaCreator", fields: [createdById], references: [id], onDelete: SetNull)
   name            String
   type            String // IMAGE, VIDEO, AUDIO, WEB_PAGE, HTML, RSS
   url             String
@@ -131,6 +139,8 @@ model Layout {
   id               String  @id @default(uuid())
   tenantId         String
   tenant           Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdById      String?
+  createdBy        User?   @relation("LayoutCreator", fields: [createdById], references: [id], onDelete: SetNull)
   name             String
   description      String?
   orientation      String  @default("HORIZONTAL")
@@ -148,6 +158,8 @@ model Playlist {
   id          String  @id @default(uuid())
   tenantId    String
   tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdBy   User?   @relation("PlaylistCreator", fields: [createdById], references: [id], onDelete: SetNull)
   name        String
   description String?
   category    String? @default("Geral")

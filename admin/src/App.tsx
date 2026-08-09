@@ -32,6 +32,10 @@ export function App() {
   // Restore and validate the authenticated session.
   useEffect(() => {
     const initData = async () => {
+      if (!sessionStorage.getItem('vitdoor_token')) {
+        setAuthLoading(false);
+        return;
+      }
       try {
         const meResponse = await apiFetch('/auth/me');
         if (!meResponse.ok) return;
@@ -46,7 +50,7 @@ export function App() {
     };
 
     initData();
-    const logout = () => { setUser(null); setActiveTenant(null); };
+    const logout = () => clearAuthenticatedState();
     window.addEventListener('vitdoor:logout', logout);
     return () => window.removeEventListener('vitdoor:logout', logout);
   }, []);
@@ -74,6 +78,7 @@ export function App() {
   };
 
   const loadTenantData = async (tenantId: string) => {
+    setScreens([]); setPlaylists([]); setMedias([]); setLayouts([]); setCampaigns([]); setStats(null);
     try {
       const [screensRes, playlistsRes, mediasRes, layoutsRes, campaignsRes, statsRes] = await Promise.all([
         apiFetch(`/screens?tenantId=${tenantId}`),
@@ -84,6 +89,8 @@ export function App() {
         apiFetch(`/proof-of-play/stats?tenantId=${tenantId}`)
       ]);
 
+      const responses = [screensRes, playlistsRes, mediasRes, layoutsRes, campaignsRes, statsRes];
+      if (responses.some((response) => !response.ok)) throw new Error('Acesso ao cliente recusado.');
       setScreens(await screensRes.json());
       setPlaylists(await playlistsRes.json());
       setMedias(await mediasRes.json());
@@ -97,7 +104,10 @@ export function App() {
 
   // Realtime WebSocket for admin notifications
   useEffect(() => {
+    if (!user || !activeTenant) return;
     let ws: WebSocket;
+    let reconnectTimer: number | undefined;
+    let disposed = false;
     const connectWS = () => {
       ws = new WebSocket(getWebSocketUrl());
       wsRef.current = ws;
@@ -106,7 +116,7 @@ export function App() {
         ws.send(JSON.stringify({
           type: 'REGISTER_ADMIN',
           tenantId: activeTenant?.id,
-          token: localStorage.getItem('vitdoor_token')
+          token: sessionStorage.getItem('vitdoor_token')
         }));
       };
 
@@ -134,12 +144,14 @@ export function App() {
       };
 
       ws.onclose = () => {
-        setTimeout(connectWS, 3000);
+        if (!disposed && sessionStorage.getItem('vitdoor_token')) reconnectTimer = window.setTimeout(connectWS, 3000);
       };
     };
 
     connectWS();
     return () => {
+      disposed = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
       if (ws) ws.close();
     };
   }, [activeTenant?.id, user?.id]);
@@ -371,11 +383,19 @@ export function App() {
     }
   };
 
-  const handleLogout = () => {
+  const clearAuthenticatedState = () => {
+    sessionStorage.removeItem('vitdoor_token');
     localStorage.removeItem('vitdoor_token');
+    wsRef.current?.close();
+    wsRef.current = null;
     setUser(null);
     setActiveTenant(null);
+    setTenants([]); setScreens([]); setPlaylists([]); setMedias([]); setLayouts([]); setCampaigns([]); setStats(null);
+    setActiveTab('dashboard');
+    setIsPairModalOpen(false);
   };
+
+  const handleLogout = () => clearAuthenticatedState();
 
   if (authLoading) {
     return <div className="login-page"><div style={{ color: '#94a3b8' }}>Carregando painel...</div></div>;

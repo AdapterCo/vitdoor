@@ -3,8 +3,8 @@ import { LockKeyhole, Mail, Tv2 } from 'lucide-react';
 import { apiFetch } from '../api';
 
 export function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
-  const [email, setEmail] = useState('admin@vitdoor.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -20,7 +20,7 @@ export function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Não foi possível entrar.');
-      localStorage.setItem('vitdoor_token', data.token);
+      sessionStorage.setItem('vitdoor_token', data.token);
       onLogin(data.user);
     } catch (err: any) {
       setError(err.message);

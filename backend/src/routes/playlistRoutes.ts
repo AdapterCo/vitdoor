@@ -36,6 +36,7 @@ playlistRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
   const playlist = await prisma.playlist.create({
     data: {
       tenantId,
+      createdById: req.auth!.userId,
       name,
       description,
       category: category || 'Geral',

@@ -85,6 +85,7 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
     screen = await prisma.screen.create({
       data: {
         tenantId: scopedTenantId,
+        createdById: req.auth!.userId,
         name: name || 'Nova Tela Mídia Indoor',
         pairingCode: normalizedPairingCode,
         paired: true,
