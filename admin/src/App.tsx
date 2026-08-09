@@ -33,10 +33,6 @@ export function App() {
   // Restore and validate the authenticated session.
   useEffect(() => {
     const initData = async () => {
-      if (!sessionStorage.getItem('vitdoor_token')) {
-        setAuthLoading(false);
-        return;
-      }
       try {
         const meResponse = await apiFetch('/auth/me');
         if (!meResponse.ok) return;
@@ -116,8 +112,7 @@ export function App() {
       ws.onopen = () => {
         ws.send(JSON.stringify({
           type: 'REGISTER_ADMIN',
-          tenantId: activeTenant?.id,
-          token: sessionStorage.getItem('vitdoor_token')
+          tenantId: activeTenant?.id
         }));
       };
 
@@ -145,7 +140,7 @@ export function App() {
       };
 
       ws.onclose = () => {
-        if (!disposed && sessionStorage.getItem('vitdoor_token')) reconnectTimer = window.setTimeout(connectWS, 3000);
+        if (!disposed) reconnectTimer = window.setTimeout(connectWS, 3000);
       };
     };
 
@@ -411,8 +406,6 @@ export function App() {
   };
 
   const clearAuthenticatedState = () => {
-    sessionStorage.removeItem('vitdoor_token');
-    localStorage.removeItem('vitdoor_token');
     wsRef.current?.close();
     wsRef.current = null;
     setUser(null);
@@ -422,7 +415,10 @@ export function App() {
     setIsPairModalOpen(false);
   };
 
-  const handleLogout = () => clearAuthenticatedState();
+  const handleLogout = async () => {
+    await apiFetch('/auth/logout', { method: 'POST' }).catch(() => undefined);
+    clearAuthenticatedState();
+  };
 
   if (authLoading) {
     return <div className="login-page"><div style={{ color: '#94a3b8' }}>Carregando painel...</div></div>;

@@ -4,12 +4,12 @@ const masterPassword = process.env.ADMIN_PASSWORD;
 
 if (!masterEmail || !masterPassword) throw new Error('Defina ADMIN_EMAIL e ADMIN_PASSWORD para executar a auditoria.');
 
-type Session = { token: string; tenantId: string; email: string };
+type Session = { cookie: string; tenantId: string; email: string };
 
 async function request(path: string, options: RequestInit = {}, session?: Session) {
   const response = await fetch(`${baseUrl}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(session ? { Authorization: `Bearer ${session.token}` } : {}), ...(options.headers || {}) }
+    headers: { 'Content-Type': 'application/json', ...(session ? { Cookie: session.cookie } : {}), ...(options.headers || {}) }
   });
   const body = await response.json().catch(() => ({}));
   return { response, body };
@@ -18,7 +18,9 @@ async function request(path: string, options: RequestInit = {}, session?: Sessio
 async function login(email: string, password: string): Promise<Session> {
   const { response, body } = await request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
   if (!response.ok) throw new Error(`Login falhou para ${email}: ${body.error || response.status}`);
-  return { token: body.token, tenantId: body.user.tenantId, email };
+  const cookie = response.headers.get('set-cookie')?.split(';', 1)[0] || '';
+  if (!cookie) throw new Error(`Login de ${email} não retornou cookie de sessão.`);
+  return { cookie, tenantId: body.user.tenantId, email };
 }
 
 async function createTenant(master: Session, suffix: string, index: number) {

@@ -579,6 +579,7 @@ Estados:
 - Gateway restaura o IP real somente para conexões originadas nas faixas oficiais publicadas pela Cloudflare; a lista deve ser revisada quando a Cloudflare anunciar alterações.
 - Pendente na infraestrutura: bloquear as portas 80/443 da VPS para origens que não sejam Cloudflare, mantendo SSH restrito ao administrador, e habilitar regras gerenciadas/WAF no painel Cloudflare.
 - Backend e serviço de migração compartilham explicitamente a mesma imagem Docker, impedindo deploy de código novo com um pacote antigo de migrações.
+- Sessão do painel usa cookie host-only `HttpOnly`, `Secure` e `SameSite=Strict`; o JWT não é mais devolvido ao JavaScript nem armazenado em Web Storage. Operações autenticadas por cookie validam também a origem administrativa configurada em `ADMIN_ORIGINS`.
 
 ### Validação R2/CDN de 09/08/2026
 

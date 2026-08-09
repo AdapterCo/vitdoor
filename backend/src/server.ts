@@ -4,6 +4,7 @@ import type { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import multer from 'multer';
+import cookieParser from 'cookie-parser';
 import http from 'http';
 import path from 'path';
 
@@ -55,6 +56,7 @@ app.use(helmet({
   contentSecurityPolicy: false
 }));
 app.use(cors({ origin: allowedOrigins, credentials: true }));
+app.use(cookieParser());
 app.use(express.json({ limit: '2mb', strict: true }));
 app.use(express.urlencoded({ extended: true, limit: '2mb', parameterLimit: 200 }));
 

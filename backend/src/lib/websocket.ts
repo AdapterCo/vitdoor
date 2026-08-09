@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
 import { prisma } from './prisma.js';
 import jwt from 'jsonwebtoken';
+import { readCookie, SESSION_COOKIE_NAME } from './session.js';
 
 interface ConnectedClient {
   ws: WebSocket;
@@ -13,6 +14,7 @@ interface ConnectedClient {
   authTimer?: ReturnType<typeof setTimeout>;
   messageWindowStartedAt: number;
   messagesInWindow: number;
+  sessionToken?: string;
 }
 
 const activeConnections = new Set<ConnectedClient>();
@@ -24,12 +26,13 @@ export function cleanCode(code?: string): string {
 export function initWebSocketServer(server: Server) {
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 6 * 1024 * 1024 });
 
-  wss.on('connection', (ws: WebSocket) => {
+  wss.on('connection', (ws: WebSocket, request) => {
     const client: ConnectedClient = {
       ws,
       type: 'PLAYER',
       messageWindowStartedAt: Date.now(),
-      messagesInWindow: 0
+      messagesInWindow: 0,
+      sessionToken: readCookie(request.headers.cookie, SESSION_COOKIE_NAME)
     };
     client.authTimer = setTimeout(() => {
       if (!client.screenId && !client.ownerId && ws.readyState === WebSocket.OPEN) {
@@ -208,7 +211,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
 
     case 'REGISTER_ADMIN': {
       try {
-        const auth = jwt.verify(msg.token || '', process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as any;
+        const auth = jwt.verify(client.sessionToken || msg.token || '', process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as any;
         const user = await prisma.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, active: true, tenant: { status: 'ACTIVE' } } });
         if (!user) throw new Error('INACTIVE_ADMIN');
         client.type = 'ADMIN';

@@ -26,6 +26,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET no arquivo .env}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      ADMIN_ORIGINS: ${ADMIN_ORIGINS:-https://app.vitdoor.com.br}
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}

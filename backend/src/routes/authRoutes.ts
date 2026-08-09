@@ -2,8 +2,14 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
+import { getSessionToken, SESSION_COOKIE_NAME, sessionCookieOptions } from '../lib/session.js';
 
 export const authRoutes = Router();
+authRoutes.use((_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
 
 authRoutes.post('/login', async (req: Request, res: Response): Promise<any> => {
   const { email, password } = req.body;
@@ -35,8 +41,8 @@ authRoutes.post('/login', async (req: Request, res: Response): Promise<any> => {
     { expiresIn: '12h', algorithm: 'HS256' }
   );
 
+  res.cookie(SESSION_COOKIE_NAME, token, sessionCookieOptions());
   return res.json({
-    token,
     user: {
       id: user.id,
       name: user.name,
@@ -51,8 +57,7 @@ authRoutes.post('/login', async (req: Request, res: Response): Promise<any> => {
 });
 
 authRoutes.get('/me', async (req: Request, res: Response): Promise<any> => {
-  const header = req.headers.authorization;
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
+  const token = getSessionToken(req);
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as any;
     const user = await prisma.user.findUnique({ where: { id: payload.userId }, include: { tenant: true } });
@@ -66,6 +71,11 @@ authRoutes.get('/me', async (req: Request, res: Response): Promise<any> => {
   } catch {
     return res.status(401).json({ error: 'Sessão inválida.' });
   }
+});
+
+authRoutes.post('/logout', (_req: Request, res: Response) => {
+  res.clearCookie(SESSION_COOKIE_NAME, { ...sessionCookieOptions(), maxAge: undefined });
+  return res.status(204).send();
 });
 
 authRoutes.post('/seed', async (_req: Request, res: Response): Promise<any> => {

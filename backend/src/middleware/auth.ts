@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
+import { getSessionToken } from '../lib/session.js';
 
 export interface AuthUser {
   userId: string;
@@ -17,11 +18,22 @@ declare global {
 }
 
 export async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const header = req.headers.authorization;
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  const token = getSessionToken(req);
   if (!token) {
     res.status(401).json({ error: 'Autenticação obrigatória.' });
     return;
+  }
+  const usesSessionCookie = Boolean(req.cookies?.vitdoor_session);
+  const origin = req.headers.origin;
+  if (usesSessionCookie && origin && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    const allowedAdminOrigins = (process.env.ADMIN_ORIGINS || process.env.PUBLIC_BASE_URL || '')
+      .split(',').map((value) => value.trim().replace(/\/$/, '')).filter(Boolean);
+    if (!allowedAdminOrigins.includes(origin.replace(/\/$/, ''))) {
+      res.status(403).json({ error: 'Origem da sessão não autorizada.' });
+      return;
+    }
   }
   try {
     const auth = jwt.verify(token, process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as AuthUser;
