@@ -16,6 +16,7 @@ services:
     networks: [internal]
 
   migrate:
+    image: vitdoor-backend
     build: ./backend
     restart: "no"
     environment: &backend_environment
@@ -41,6 +42,7 @@ services:
     networks: [internal]
 
   backend:
+    image: vitdoor-backend
     build: ./backend
     restart: unless-stopped
     environment: *backend_environment
