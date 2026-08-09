@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Clock } from 'lucide-react';
+import { MediaVideo } from './MediaVideo';
 
-export function MultiZoneLayout({ layout, activeAlert }: { layout: any; activeAlert?: any }) {
+export function MultiZoneLayout({ layout, activeAlert, volume = 80 }: { layout: any; activeAlert?: any; volume?: number }) {
   const config = useMemo(() => {
     try { return JSON.parse(layout.canvasConfigJson); } catch { return null; }
   }, [layout.id, layout.canvasConfigJson]);
@@ -14,7 +15,7 @@ export function MultiZoneLayout({ layout, activeAlert }: { layout: any; activeAl
 
   return <div style={{ width: '100vw', height: '100vh', background: '#000', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
     <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-      {(config.zones || []).map((zone: any) => <div key={zone.id} style={{ width: `${zone.widthPercent}%`, height: '100%', overflow: 'hidden', borderRight: '1px solid rgba(255,255,255,.08)' }}><ZonePlayer items={zone.items || []} fit={zone.fit || 'CONTAIN'} /></div>)}
+      {(config.zones || []).map((zone: any, zoneIndex: number) => <div key={zone.id} style={{ width: `${zone.widthPercent}%`, height: '100%', overflow: 'hidden', borderRight: '1px solid rgba(255,255,255,.08)' }}><ZonePlayer items={zone.items || []} fit={zone.fit || 'CONTAIN'} volume={volume} loop={zone.loop !== false} audioEnabled={zone.audioEnabled === true || zoneIndex === 0} /></div>)}
     </div>
     {config.ticker?.enabled && <div style={{ height: '64px', flexShrink: 0, background: '#0f172a', borderTop: '2px solid #2563eb', color: '#fff', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
       <div style={{ flex: 1, overflow: 'hidden' }}><div style={{ whiteSpace: 'nowrap', paddingLeft: '100%', animation: 'layout-marquee 28s linear infinite', fontSize: '1.15rem' }}>{config.ticker.text}</div></div>
@@ -46,11 +47,11 @@ function clockPositionStyle(position?: string): React.CSSProperties {
   }
 }
 
-function ZonePlayer({ items, fit }: { items: any[]; fit: string }) {
+function ZonePlayer({ items, fit, volume, loop, audioEnabled }: { items: any[]; fit: string; volume: number; loop: boolean; audioEnabled: boolean }) {
   const [index, setIndex] = useState(0);
   useEffect(() => setIndex(0), [JSON.stringify(items.map((item) => item.mediaId))]);
   const item = items[index % Math.max(1, items.length)];
-  const advance = () => items.length > 1 && setIndex((current) => (current + 1) % items.length);
+  const advance = () => items.length > 1 && setIndex((current) => loop ? (current + 1) % items.length : Math.min(current + 1, items.length - 1));
   useEffect(() => {
     if (!item || item.type === 'VIDEO') return;
     const timer = setTimeout(advance, Math.max(1, item.durationSeconds || 10) * 1000);
@@ -58,7 +59,7 @@ function ZonePlayer({ items, fit }: { items: any[]; fit: string }) {
   }, [index, item?.mediaId, item?.durationSeconds]);
   if (!item) return <div style={{ width: '100%', height: '100%', background: '#111827', color: '#64748b', display: 'grid', placeItems: 'center' }}>Área sem conteúdo</div>;
   const objectFit = fit === 'COVER' ? 'cover' : fit === 'FILL' ? 'fill' : 'contain';
-  if (item.type === 'VIDEO') return <video key={item.mediaId} src={item.url} crossOrigin="anonymous" autoPlay muted playsInline onEnded={advance} style={{ width: '100%', height: '100%', objectFit, background: '#000' }} />;
+  if (item.type === 'VIDEO') return <MediaVideo key={item.mediaId} src={item.url} volume={volume} audioEnabled={audioEnabled} loop={items.length === 1 && loop} onEnded={advance} objectFit={objectFit} />;
   if (item.type === 'WEB_PAGE') return <iframe src={item.url} title={item.name} style={{ width: '100%', height: '100%', border: 0 }} />;
   return <img src={item.url} crossOrigin="anonymous" alt={item.name} style={{ width: '100%', height: '100%', objectFit, background: '#000' }} />;
 }

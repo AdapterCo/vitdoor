@@ -1,19 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Clock, Newspaper } from 'lucide-react';
 import { MultiZoneLayout } from './MultiZoneLayout';
+import { MediaVideo } from './MediaVideo';
 
 interface LayoutRendererProps {
   activePlaylist?: any;
   activeLayout?: any;
   activeAlert?: any;
   onMediaChanged?: (mediaName: string) => void;
+  volume?: number;
 }
 
 export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
   activePlaylist,
   activeLayout,
   activeAlert,
-  onMediaChanged
+  onMediaChanged,
+  volume = 80
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [countdown, setCountdown] = useState(15);
@@ -58,7 +61,7 @@ export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
   }, [currentIndex, items.length, currentDuration, currentMedia, activePlaylist?.isLoop]);
 
   if (activeLayout) {
-    return <MultiZoneLayout layout={activeLayout} activeAlert={activeAlert} />;
+    return <MultiZoneLayout layout={activeLayout} activeAlert={activeAlert} volume={volume} />;
   }
 
   return (
@@ -75,14 +78,12 @@ export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
       <div style={{ flex: 1, position: 'relative', width: '100%', background: '#090d16', overflow: 'hidden' }}>
         {currentMedia ? (
           currentMedia.type === 'VIDEO' ? (
-            <video
+            <MediaVideo
               src={currentMedia.url}
-              crossOrigin="anonymous"
-              autoPlay
-              muted
-              playsInline
+              volume={volume}
+              loop={items.length === 1 && activePlaylist?.isLoop !== false}
               onEnded={advance}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              objectFit="cover"
             />
           ) : currentMedia.type === 'WEB_PAGE' ? (
             <iframe

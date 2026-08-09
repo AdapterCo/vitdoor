@@ -282,6 +282,7 @@ export function App() {
           activePlaylist={activePlaylist}
           activeLayout={activeLayout}
           activeAlert={activeAlert}
+          volume={volume}
           onMediaChanged={handleMediaChanged}
         />
       )}
