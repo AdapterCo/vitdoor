@@ -33,6 +33,8 @@ export function App() {
   // Restore and validate the authenticated session.
   useEffect(() => {
     const initData = async () => {
+      sessionStorage.removeItem('vitdoor_token');
+      localStorage.removeItem('vitdoor_token');
       try {
         const meResponse = await apiFetch('/auth/me');
         if (!meResponse.ok) return;
