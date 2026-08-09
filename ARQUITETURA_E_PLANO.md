@@ -517,7 +517,7 @@ Estados:
 | Upload de mídia | PARCIAL | Ainda passa pela memória da VPS |
 | Cloudflare R2 | CONCLUÍDO | Bucket `vitdoor-media`, credencial restrita, domínio próprio, chaves imutáveis por tenant/mídia e fail-fast sem fallback local validados na VPS |
 | Cloudflare CDN | CONCLUÍDO | `media.vitdoor.com.br`, CORS, Range, cache imutável e entrega `CF-Cache-Status: HIT` validados em arquivo MP4 real |
-| TLS Cloudflare → origem | PREPARADO | Gateway expõe TLS 1.2/1.3 com Origin CA montado fora do Git; falta instalar o certificado na VPS e validar Full (strict) |
+| TLS Cloudflare → origem | CONCLUÍDO | Origin CA montado fora do Git, TLS 1.2/1.3 e modo Complete (Strict) validados para painel, API e player |
 | Playlists | CONCLUÍDO | Criação, edição, loop, duração e telas |
 | Layouts multizona | CONCLUÍDO | Editor web e simulador funcionando |
 | Reprodução multizona web | SIMULADOR | Referência para implementação Android |
@@ -565,6 +565,16 @@ Estados:
 - Segunda requisição retornou `CF-Cache-Status: HIT` e `Age: 70`, confirmando entrega pelo CDN.
 - Healthcheck da API retornou `storage: r2`.
 - Upload direto/multipart permanece uma entrega separada: o armazenamento e o CDN estão concluídos, mas o upload atual ainda atravessa a memória da VPS.
+
+### Validação TLS de origem de 09/08/2026
+
+- Certificado Cloudflare Origin CA instalado fora do repositório e montado como somente leitura no gateway.
+- Configuração Nginx aprovada por `nginx -t`.
+- Cloudflare alterado de Flexible para **Complete (Strict)**, equivalente ao Full (strict).
+- `https://app.vitdoor.com.br/` retornou `HTTP/2 200` e `X-VitDoor-Frontend: admin-panel`.
+- `/api/health` retornou banco e armazenamento R2 saudáveis.
+- `https://player.vitdoor.com.br/` retornou `HTTP/2 200` e `X-VitDoor-Frontend: player`.
+- Tráfego navegador → Cloudflare e Cloudflare → VPS está criptografado com validação do certificado da origem.
 
 ---
 

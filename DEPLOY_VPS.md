@@ -213,7 +213,7 @@ O dump local ainda não atende o requisito de backup externo da arquitetura.
 - O player na porta 8081 é apenas simulador web.
 - Dispositivos usam credencial individual revogável; falta portar e validar o fluxo no aplicativo Android oficial.
 - WebSocket não persiste comandos e funciona em uma única instância.
-- O navegador usa HTTPS na borda Cloudflare; o procedimento de certificado de origem e Full (strict) está documentado acima.
+- HTTPS na borda e TLS Cloudflare → origem estão validados em modo Complete (Strict).
 - R2/CDN está operacional; ainda não há Redis, upload direto/multipart, manifesto imutável ou cache Android.
 - Proof-of-play exige autenticação do dispositivo; a fila offline definitiva ainda depende do Android/Room.
 
