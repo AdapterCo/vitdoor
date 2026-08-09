@@ -60,10 +60,27 @@ async function handleMessage(client: ConnectedClient, msg: any) {
     case 'REGISTER_PLAYER': {
       client.type = 'PLAYER';
       client.pairingCode = msg.pairingCode;
-      const targetCode = cleanCode(msg.pairingCode);
-      
-      const screens = await prisma.screen.findMany();
-      const screen = screens.find((s) => cleanCode(s.pairingCode) === targetCode);
+      let screen = null;
+      if (msg.deviceToken) {
+        try {
+          const auth = jwt.verify(msg.deviceToken, process.env.JWT_SECRET || 'secret') as any;
+          if (auth.type === 'DEVICE') {
+            screen = await prisma.screen.findFirst({ where: {
+              id: auth.screenId,
+              tenantId: auth.tenantId,
+              paired: true,
+              deviceTokenVersion: auth.version
+            } });
+          }
+        } catch {
+          client.ws.send(JSON.stringify({ type: 'DEVICE_AUTH_FAILED' }));
+        }
+      }
+      if (!screen && msg.pairingCode) {
+        const targetCode = cleanCode(msg.pairingCode);
+        const screens = await prisma.screen.findMany();
+        screen = screens.find((s) => cleanCode(s.pairingCode) === targetCode) || null;
+      }
 
       if (screen && screen.paired) {
         client.screenId = screen.id;

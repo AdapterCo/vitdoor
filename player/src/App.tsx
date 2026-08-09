@@ -5,19 +5,10 @@ import { LayoutRenderer } from './components/LayoutRenderer';
 import { setCache, getCache, addProofLog, getAllProofLogs, clearProofLogs } from './services/storageService';
 import { API_BASE, getWebSocketUrl } from './config';
 
-function getOrGeneratePairingCode(): string {
-  let code = localStorage.getItem('vitdoor_pairing_code');
-  if (!code) {
-    const num1 = Math.floor(100 + Math.random() * 900);
-    const num2 = Math.floor(100 + Math.random() * 900);
-    code = `${num1}-${num2}`;
-    localStorage.setItem('vitdoor_pairing_code', code);
-  }
-  return code;
-}
-
 export function App() {
-  const [pairingCode] = useState<string>(getOrGeneratePairingCode());
+  const [pairingCode, setPairingCode] = useState<string>('--- ---');
+  const [pairingId, setPairingId] = useState<string>('');
+  const [pairingSecret, setPairingSecret] = useState<string>('');
   const [paired, setPaired] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [screenInfo, setScreenInfo] = useState<any>(null);
@@ -35,7 +26,7 @@ export function App() {
       const cachedScreen = await getCache('screenInfo');
       const cachedPlaylist = await getCache('activePlaylist');
       const cachedLayout = await getCache('activeLayout');
-      if (cachedScreen) {
+      if (cachedScreen && localStorage.getItem('vitdoor_device_token')) {
         setScreenInfo(cachedScreen);
         setPaired(true);
       }
@@ -43,6 +34,50 @@ export function App() {
       if (cachedLayout) setActiveLayout(cachedLayout);
     })();
   }, []);
+
+  useEffect(() => {
+    if (paired || pairingId) return;
+    let cancelled = false;
+    const createPairing = async () => {
+      const response = await fetch(`${API_BASE}/device/pairing`, { method: 'POST' });
+      if (!response.ok) throw new Error(`Falha ao solicitar código (${response.status})`);
+      const session = await response.json();
+      if (cancelled) return;
+      setPairingId(session.pairingId);
+      setPairingCode(session.pairingCode);
+      setPairingSecret(session.pairingSecret);
+    };
+    createPairing().catch((error) => console.error('Pairing session error:', error));
+    return () => { cancelled = true; };
+  }, [paired, pairingId]);
+
+  useEffect(() => {
+    if (!pairingId || !pairingSecret || paired) return;
+    const checkStatus = async () => {
+      const response = await fetch(`${API_BASE}/device/pairing/${pairingId}/status`, {
+        method: 'POST',
+        headers: { Authorization: `Pairing ${pairingSecret}` }
+      });
+      if (response.status === 410) {
+        setPairingId('');
+        setPairingSecret('');
+        setPairingCode('--- ---');
+        return;
+      }
+      if (!response.ok) return;
+      const result = await response.json();
+      if (result.status === 'PAIRED') {
+        localStorage.setItem('vitdoor_device_token', result.deviceToken);
+        const info = { id: result.screenId, name: result.screenName };
+        setScreenInfo(info);
+        await setCache('screenInfo', info);
+        setPaired(true);
+      }
+    };
+    void checkStatus();
+    const interval = window.setInterval(() => void checkStatus(), 2500);
+    return () => window.clearInterval(interval);
+  }, [pairingId, pairingSecret, paired]);
 
   // WebSocket Connection Lifecycle
   useEffect(() => {
@@ -59,6 +94,7 @@ export function App() {
         ws.send(JSON.stringify({
           type: 'REGISTER_PLAYER',
           pairingCode,
+          deviceToken: localStorage.getItem('vitdoor_device_token'),
           ipAddress: '192.168.1.100',
           os: 'Android TV (Simulated)',
           appVersion: '1.0.0'
@@ -82,7 +118,6 @@ export function App() {
           const msg = JSON.parse(event.data);
 
           if (msg.type === 'PAIRING_SUCCESS' || msg.type === 'PAIRING_CONFIRMED') {
-            setPaired(true);
             const info = { id: msg.screenId, name: msg.screenName || 'TV Mídia Indoor', tenantId: msg.tenantId };
             setScreenInfo(info);
             await setCache('screenInfo', info);

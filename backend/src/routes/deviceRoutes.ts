@@ -20,8 +20,10 @@ deviceRoutes.post('/pairing/:id/status', async (req: Request, res: Response) => 
   const secret = req.headers.authorization?.startsWith('Pairing ') ? req.headers.authorization.slice(8) : '';
   const session = await prisma.pairingSession.findUnique({ where: { id: req.params.id }, include: { screen: true } });
   if (!session || !secret || !await bcrypt.compare(secret, session.secretHash)) return res.status(401).json({ error: 'Sessão inválida.' });
-  if (session.expiresAt <= new Date()) return res.status(410).json({ status: 'EXPIRED' });
-  if (!session.screen || !session.claimedAt) return res.json({ status: 'PENDING', expiresAt: session.expiresAt });
+  if (!session.screen || !session.claimedAt) {
+    if (session.expiresAt <= new Date()) return res.status(410).json({ status: 'EXPIRED' });
+    return res.json({ status: 'PENDING', expiresAt: session.expiresAt });
+  }
   const deviceToken = jwt.sign({ type: 'DEVICE', screenId: session.screen.id, tenantId: session.screen.tenantId, version: session.screen.deviceTokenVersion }, process.env.JWT_SECRET!, { expiresIn: '365d' });
   return res.json({ status: 'PAIRED', deviceToken, screenId: session.screen.id, screenName: session.screen.name });
 });
