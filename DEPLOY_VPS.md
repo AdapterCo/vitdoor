@@ -73,6 +73,60 @@ Resposta esperada do healthcheck:
 {"status":"OK","database":"OK"}
 ```
 
+## Cloudflare R2 e CDN de mídias
+
+1. No Cloudflare, abra **R2 Object Storage** e crie o bucket `vitdoor-media` na localização automática.
+2. No bucket, abra **Settings > Custom Domains > Add** e conecte `media.vitdoor.com.br`. Aguarde os estados de domínio e SSL ficarem ativos.
+3. Mantenha o endereço público `r2.dev` desativado. O acesso público deve ocorrer somente pelo domínio personalizado.
+4. Em **R2 > Manage API Tokens**, crie um token de conta com permissão **Object Read & Write**, limitado somente ao bucket `vitdoor-media`. Guarde o Access Key ID e o Secret Access Key; o segredo só é exibido uma vez.
+5. Em **Settings > CORS Policy**, aplique:
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "https://app.vitdoor.com.br",
+      "https://player.vitdoor.com.br"
+    ],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["Range"],
+    "ExposeHeaders": ["Accept-Ranges", "Content-Length", "Content-Range", "ETag", "cf-cache-status"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+6. Em **Caching > Cache Rules**, crie `VitDoor R2 Media`: hostname igual a `media.vitdoor.com.br`, elegível para cache, Edge TTL respeitando o `Cache-Control` da origem. Os objetos novos recebem `public, max-age=31536000, immutable` e nunca são sobrescritos.
+7. Em **Caching > Tiered Cache**, ative Smart Tiered Cache para reduzir leituras repetidas no R2.
+8. Preencha no `/opt/vitdoor/.env`:
+
+```ini
+STORAGE_DRIVER=r2
+R2_ACCOUNT_ID=SEU_ACCOUNT_ID
+R2_ACCESS_KEY_ID=SEU_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY=SEU_SECRET_ACCESS_KEY
+R2_BUCKET_NAME=vitdoor-media
+R2_PUBLIC_URL=https://media.vitdoor.com.br
+```
+
+Não coloque aspas, espaços ou as credenciais no Git. Depois recrie somente backend e migração:
+
+```bash
+docker compose build backend migrate
+docker compose up -d --force-recreate backend
+docker compose logs --tail=100 backend
+curl -s https://app.vitdoor.com.br/api/health
+```
+
+O healthcheck deve informar `"storage":"r2"`. Faça um upload pequeno pelo painel e copie a URL retornada pela API/biblioteca. Ela deve começar com `https://media.vitdoor.com.br/tenants/`. Valide o CDN duas vezes:
+
+```bash
+curl -sI 'URL_DA_MIDIA'
+curl -sI 'URL_DA_MIDIA'
+```
+
+Confira `cache-control: public, max-age=31536000, immutable` e `cf-cache-status`. O primeiro acesso pode ser `MISS` ou `DYNAMIC` enquanto a regra propaga; os seguintes devem chegar a `HIT` quando elegíveis.
+
 Verifique os logs:
 
 ```bash

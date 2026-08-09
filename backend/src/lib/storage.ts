@@ -24,21 +24,35 @@ if (
   });
 }
 
-export async function saveFile(file: Express.Multer.File): Promise<{ url: string; storagePath: string }> {
-  const filename = `${Date.now()}-${path.basename(file.originalname).replace(/\s+/g, '_')}`;
+export function assertStorageConfiguration(): void {
+  if (process.env.STORAGE_DRIVER !== 'r2') return;
+  const required = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME', 'R2_PUBLIC_URL'];
+  const missing = required.filter((name) => !process.env[name]?.trim());
+  if (missing.length) throw new Error(`Configuração R2 incompleta. Variáveis ausentes: ${missing.join(', ')}`);
+  if (process.env.NODE_ENV === 'production' && !process.env.R2_PUBLIC_URL!.startsWith('https://')) {
+    throw new Error('R2_PUBLIC_URL deve usar HTTPS em produção.');
+  }
+}
+
+export async function saveFile(file: Express.Multer.File, tenantId: string, mediaId: string): Promise<{ url: string; storagePath: string }> {
+  const safeName = path.basename(file.originalname).normalize('NFKD').replace(/[^a-zA-Z0-9._-]+/g, '_');
+  const filename = `${Date.now()}-${safeName || 'media'}`;
+  const objectKey = `tenants/${tenantId}/media/${mediaId}/${filename}`;
   
   if (s3Client && process.env.R2_BUCKET_NAME) {
     try {
       await s3Client.send(
         new PutObjectCommand({
           Bucket: process.env.R2_BUCKET_NAME,
-          Key: filename,
+          Key: objectKey,
           Body: file.buffer,
           ContentType: file.mimetype,
+          ContentDisposition: 'inline',
+          CacheControl: 'public, max-age=31536000, immutable'
         })
       );
-      const url = `${process.env.R2_PUBLIC_URL}/${filename}`;
-      return { url, storagePath: filename };
+      const publicUrl = process.env.R2_PUBLIC_URL!.replace(/\/$/, '');
+      return { url: `${publicUrl}/${objectKey.split('/').map(encodeURIComponent).join('/')}`, storagePath: objectKey };
     } catch (err) {
       if (process.env.NODE_ENV === 'production' && process.env.STORAGE_DRIVER === 'r2') {
         throw err;

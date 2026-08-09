@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { saveFile } from '../lib/storage.js';
 import { tenantScope } from '../middleware/auth.js';
 import { detectMediaDuration } from '../lib/mediaMetadata.js';
+import { randomUUID } from 'crypto';
 
 export const mediaRoutes = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -92,7 +93,8 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
   else if (mime.startsWith('audio/')) type = 'AUDIO';
   else if (mime.includes('pdf')) type = 'PDF';
 
-  const { url, storagePath } = await saveFile(req.file);
+  const mediaId = randomUUID();
+  const { url, storagePath } = await saveFile(req.file, tenantId, mediaId);
   const detectedDuration = (type === 'VIDEO' || type === 'AUDIO')
     ? detectMediaDuration(req.file.buffer, mime)
     : null;
@@ -101,6 +103,7 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
 
   const media = await prisma.media.create({
     data: {
+      id: mediaId,
       tenantId,
       createdById: req.auth!.userId,
       folderId,

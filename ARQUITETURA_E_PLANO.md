@@ -515,8 +515,8 @@ Estados:
 | Isolamento por cliente | PARCIAL | Implementado, precisa auditoria completa de todas as rotas |
 | Limite de dispositivos | CONCLUÍDO | Validado no pareamento |
 | Upload de mídia | PARCIAL | Ainda passa pela memória da VPS |
-| Cloudflare R2 | PARCIAL | Cliente S3 preparado, falta configuração real e upload direto |
-| Cloudflare CDN | PENDENTE | Falta domínio e regras de cache |
+| Cloudflare R2 | PARCIAL | Backend validado para R2, chaves imutáveis por tenant/mídia e configuração de VPS documentada; falta ativar credenciais reais e upload direto |
+| Cloudflare CDN | PARCIAL | Domínio, CORS, Cache-Control e regras documentados; falta ativar e validar HIT no ambiente real |
 | Playlists | CONCLUÍDO | Criação, edição, loop, duração e telas |
 | Layouts multizona | CONCLUÍDO | Editor web e simulador funcionando |
 | Reprodução multizona web | SIMULADOR | Referência para implementação Android |

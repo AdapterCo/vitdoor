@@ -18,6 +18,7 @@ import { emergencyRoutes } from './routes/emergencyRoutes.js';
 import { tenantRoutes } from './routes/tenantRoutes.js';
 import { deviceRoutes } from './routes/deviceRoutes.js';
 import { authenticate } from './middleware/auth.js';
+import { assertStorageConfiguration } from './lib/storage.js';
 
 (BigInt.prototype as any).toJSON = function () {
   return Number(this);
@@ -25,6 +26,7 @@ import { authenticate } from './middleware/auth.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+assertStorageConfiguration();
 app.set('trust proxy', 1);
 
 if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) {
@@ -54,7 +56,7 @@ app.use('/api/tenants', authenticate, tenantRoutes);
 app.get('/api/health', async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    res.json({ status: 'OK', database: 'OK', system: 'VitDoor Mídia Indoor SaaS', timestamp: new Date() });
+    res.json({ status: 'OK', database: 'OK', storage: process.env.STORAGE_DRIVER || 'local', system: 'VitDoor Mídia Indoor SaaS', timestamp: new Date() });
   } catch {
     res.status(503).json({ status: 'ERROR', database: 'UNAVAILABLE', timestamp: new Date() });
   }
