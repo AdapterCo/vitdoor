@@ -54,8 +54,6 @@ services:
   admin:
     build: ./admin
     restart: unless-stopped
-    ports:
-      - "${HTTP_PORT:-80}:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -64,9 +62,21 @@ services:
   player-simulator:
     build: ./player
     restart: unless-stopped
-    ports:
-      - "${PLAYER_PORT:-8081}:80"
     depends_on:
+      backend:
+        condition: service_healthy
+    networks: [internal]
+
+  gateway:
+    build: ./gateway
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    depends_on:
+      admin:
+        condition: service_started
+      player-simulator:
+        condition: service_started
       backend:
         condition: service_healthy
     networks: [internal]

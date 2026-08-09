@@ -6,7 +6,7 @@ Este procedimento disponibiliza o painel web, a API, PostgreSQL e o player web d
 
 - VPS Linux com pelo menos 2 vCPU, 4 GB de RAM e disco SSD.
 - Docker Engine e Docker Compose Plugin instalados.
-- Portas TCP 22, 80 e 8081 liberadas temporariamente.
+- Portas TCP 22 e 80 liberadas durante a homologação com Cloudflare Flexible.
 - Repositório copiado ou clonado na VPS.
 
 A porta 5432 não deve ser aberta no firewall. O PostgreSQL existe somente na rede interna dos containers.
@@ -49,9 +49,9 @@ O comando é idempotente: quando executado novamente, atualiza a senha do admini
 
 ## 4. Testes iniciais
 
-- Painel: `http://IP_DA_VPS/`
+- Painel: `https://app.vitdoor.com.br/`
 - Healthcheck: `http://IP_DA_VPS/api/health`
-- Simulador web: `http://IP_DA_VPS:8081/`
+- Simulador web: `https://player.vitdoor.com.br/`
 
 Resposta esperada do healthcheck:
 
