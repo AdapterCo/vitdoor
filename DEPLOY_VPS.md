@@ -53,6 +53,20 @@ O comando é idempotente: quando executado novamente, atualiza a senha do admini
 - Healthcheck: `http://IP_DA_VPS/api/health`
 - Simulador web: `https://player.vitdoor.com.br/`
 
+Validação do roteamento dos subdomínios:
+
+```bash
+curl -sI https://app.vitdoor.com.br/ | grep -i x-vitdoor-frontend
+curl -sI https://player.vitdoor.com.br/ | grep -i x-vitdoor-frontend
+```
+
+O primeiro deve retornar `admin-panel` e o segundo `player`. Se uma VPS estiver com imagens antigas ou invertidas, reconstrua sem cache:
+
+```bash
+docker compose build --no-cache admin player-simulator gateway
+docker compose up -d --force-recreate admin player-simulator gateway
+```
+
 Resposta esperada do healthcheck:
 
 ```json
