@@ -682,6 +682,45 @@ Mantenha contratos HTTP/WebSocket em modelos tipados, isole a integração Media
 Não implemente mocks na configuração de production.
 ```
 
+## 25. Contrato vivo entre web/backend e Android
+
+Este documento é o handoff oficial para o futuro repositório Flutter. Toda entrega feita no painel ou backend que afete telas/dispositivos deve atualizar este arquivo no mesmo commit, mesmo que o aplicativo Android ainda não exista.
+
+Para cada recurso compartilhado, documentar obrigatoriamente:
+
+1. objetivo e comportamento esperado na TV;
+2. endpoint HTTP, método, autenticação, headers e rate limit;
+3. request, response e códigos de erro com exemplos JSON reais;
+4. mensagens WebSocket recebidas/enviadas e confirmação esperada;
+5. modelos, campos obrigatórios, enumerações, versões e compatibilidade;
+6. regra de isolamento por `tenantId`, proprietário e `screenId`;
+7. comportamento online, offline, durante reconexão e após reinicialização;
+8. política de download, cache, checksum, ativação atômica e rollback;
+9. telemetria, proof-of-play, logs e diagnóstico necessários;
+10. testes unitários, integrados e cenários em TV Box real;
+11. estado da entrega: `BACKEND_PRONTO`, `FLUTTER_PENDENTE`, `EM_TESTE` ou `CONCLUÍDO`.
+
+Regras de trabalho:
+
+- o painel web administra clientes, usuários, telas, mídias, layouts, playlists, campanhas e relatórios;
+- o backend concentra autorização, isolamento, contratos, versionamento, sincronização e persistência;
+- o Flutter é o único player comercial e concentra download físico, validação dos arquivos, reprodução, offline, boot e quiosque;
+- o simulador React não define arquitetura, persistência ou critério de conclusão do Android;
+- nenhum endpoint, campo ou comportamento deve ser inventado durante a criação do Flutter: ausências devem ser implementadas primeiro no backend e registradas aqui;
+- mudanças incompatíveis exigem nova versão de contrato e estratégia de migração, preservando dispositivos que ainda não atualizaram;
+- credenciais, segredos e exemplos com dados reais nunca devem ser registrados neste arquivo.
+
+Checklist obrigatório antes de encerrar uma entrega web/backend com impacto no Android:
+
+- [ ] contrato implementado e protegido no backend;
+- [ ] isolamento e autorização validados;
+- [ ] payload mínimo e sem campos internos;
+- [ ] falhas, timeouts e limites documentados;
+- [ ] comportamento offline/rollback especificado;
+- [ ] seção correspondente deste documento atualizada;
+- [ ] pendência Flutter inserida na fase correta;
+- [ ] comando ou roteiro de teste de integração registrado.
+
 Referências técnicas principais:
 
 - Flutter Platform Channels: https://docs.flutter.dev/platform-integration/platform-channels

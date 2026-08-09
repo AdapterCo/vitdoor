@@ -734,5 +734,7 @@ Ao concluir uma entrega:
 4. Adicionar uma ADR se a decisão for relevante.
 5. Não marcar itens do simulador web como concluídos no Android.
 6. Manter as prioridades alinhadas com o produto comercial.
+7. Toda mudança web/backend que afete o dispositivo deve atualizar `PLAYER_ANDROID_FLUTTER.md` no mesmo commit com contrato, segurança, comportamento offline e testes esperados.
+8. Não criar lógica comercial de player no React; preparar contratos no backend e registrar a implementação correspondente para Flutter/Media3.
 
 Este arquivo deve permanecer no repositório e acompanhar todas as versões do sistema.
