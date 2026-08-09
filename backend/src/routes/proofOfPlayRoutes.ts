@@ -29,7 +29,7 @@ proofOfPlayRoutes.post('/log', authenticateDevice, async (req: Request, res: Res
     }
   });
 
-  return res.json(log);
+  return res.status(201).json({ success: true, id: log.id });
 });
 
 // Batch log proof of play events (offline queue sync)
@@ -97,7 +97,7 @@ proofOfPlayRoutes.get('/stats', authenticate, async (req: Request, res: Response
 
   const recentLogs = await prisma.proofOfPlay.findMany({
     where: { tenantId, screen: { createdById: ownerId } },
-    include: { screen: true },
+    include: { screen: { select: { id: true, name: true } } },
     orderBy: { playedAt: 'desc' },
     take: 20
   });
@@ -111,7 +111,14 @@ proofOfPlayRoutes.get('/stats', authenticate, async (req: Request, res: Response
     totalScreens,
     onlineScreens,
     offlineScreens,
-    recentLogs,
+    recentLogs: recentLogs.map((log) => ({
+      id: log.id,
+      mediaName: log.mediaName,
+      playedAt: log.playedAt,
+      durationSeconds: log.durationSeconds,
+      completed: log.completed,
+      screen: log.screen
+    })),
     storageUsedBytes: Number(storage._sum.sizeBytes || 0),
     maxStorageMb: tenant?.maxStorageMb || 0,
     maxScreens: tenant?.unlimitedScreens ? null : tenant?.maxScreens || 0,

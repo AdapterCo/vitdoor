@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { sendCommandToScreen, cleanCode } from '../lib/websocket.js';
 import { tenantScope } from '../middleware/auth.js';
+import { layoutDto, playlistDto, screenDto } from '../lib/dto.js';
 
 export const screenRoutes = Router();
 
@@ -22,7 +23,7 @@ screenRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
     },
     orderBy: { createdAt: 'desc' }
   });
-  return res.json(screens);
+  return res.json(screens.map(screenDto));
 });
 
 // Generate new pending screen with pairing code
@@ -103,7 +104,7 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
     data: { screenId: screen.id, claimedAt: new Date() }
   });
 
-  return res.json(screen);
+  return res.json(screenDto(screen));
 });
 
 // Update screen details
@@ -145,11 +146,11 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
     type: 'CONTENT_UPDATED',
     volume: screen.volume,
     orientation: screen.orientation,
-    activePlaylist: screen.activePlaylist,
-    activeLayout: screen.activeLayout
+    activePlaylist: playlistDto(screen.activePlaylist, true),
+    activeLayout: layoutDto(screen.activeLayout)
   });
 
-  return res.json(screen);
+  return res.json(screenDto(screen));
 });
 
 // Remote commands route (Screenshot, reboot, change volume, force sync)
@@ -173,7 +174,7 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
     });
     command = {
       type: 'CONTENT_UPDATED',
-      activePlaylist: refreshed?.activePlaylist,
+      activePlaylist: playlistDto(refreshed?.activePlaylist, true),
       activeLayout: refreshed?.activeLayout,
       volume: refreshed?.volume,
       orientation: refreshed?.orientation,

@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { sendCommandToScreen } from '../lib/websocket.js';
 import { tenantScope } from '../middleware/auth.js';
+import { alertDto } from '../lib/dto.js';
 
 export const emergencyRoutes = Router();
 
@@ -17,8 +18,8 @@ emergencyRoutes.post('/trigger', async (req: Request, res: Response): Promise<an
       targets: { create: screenIds.map((screenId) => ({ screenId })) } },
     include: { targets: true }
   });
-  for (const screenId of screenIds) sendCommandToScreen(screenId, { type: 'EMERGENCY_ALERT_TRIGGERED', alert });
-  return res.json({ success: true, alert });
+  for (const screenId of screenIds) sendCommandToScreen(screenId, { type: 'EMERGENCY_ALERT_TRIGGERED', alert: alertDto(alert) });
+  return res.json({ success: true, alert: alertDto(alert) });
 });
 
 emergencyRoutes.post('/clear', async (req: Request, res: Response): Promise<any> => {

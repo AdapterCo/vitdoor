@@ -6,6 +6,7 @@ import { tenantScope } from '../middleware/auth.js';
 import { detectMediaDuration } from '../lib/mediaMetadata.js';
 import { createHash, randomUUID } from 'crypto';
 import { fileTypeFromBuffer } from 'file-type';
+import { mediaDto, mediaFolderDto } from '../lib/dto.js';
 
 export const mediaRoutes = Router();
 const upload = multer({
@@ -32,21 +33,17 @@ mediaRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
     orderBy: { createdAt: 'desc' }
   });
 
-  const serialized = medias.map((m) => ({
-    ...m,
-    sizeBytes: m.sizeBytes ? Number(m.sizeBytes) : 0
-  }));
-
-  return res.json(serialized);
+  return res.json(medias.map(mediaDto));
 });
 
 mediaRoutes.get('/folders', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  return res.json(await prisma.mediaFolder.findMany({
+  const folders = await prisma.mediaFolder.findMany({
     where: { tenantId, createdById: req.auth!.userId },
     include: { _count: { select: { medias: true } } },
     orderBy: { name: 'asc' }
-  }));
+  });
+  return res.json(folders.map(mediaFolderDto));
 });
 
 mediaRoutes.post('/folders', async (req: Request, res: Response): Promise<any> => {
@@ -54,7 +51,7 @@ mediaRoutes.post('/folders', async (req: Request, res: Response): Promise<any> =
   const name = String(req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Informe o nome da pasta.' });
   try {
-    return res.status(201).json(await prisma.mediaFolder.create({ data: { tenantId, createdById: req.auth!.userId, name } }));
+    return res.status(201).json(mediaFolderDto(await prisma.mediaFolder.create({ data: { tenantId, createdById: req.auth!.userId, name } })));
   } catch {
     return res.status(409).json({ error: 'Você já possui uma pasta com este nome.' });
   }
@@ -66,7 +63,7 @@ mediaRoutes.put('/folders/:id', async (req: Request, res: Response): Promise<any
   if (!folder) return res.status(404).json({ error: 'Pasta não encontrada.' });
   const name = String(req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Informe o nome da pasta.' });
-  return res.json(await prisma.mediaFolder.update({ where: { id: folder.id }, data: { name } }));
+  return res.json(mediaFolderDto(await prisma.mediaFolder.update({ where: { id: folder.id }, data: { name } })));
 });
 
 mediaRoutes.delete('/folders/:id', async (req: Request, res: Response): Promise<any> => {
@@ -137,7 +134,7 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
     }
   });
 
-  return res.json({ ...media, sizeBytes: Number(media.sizeBytes || 0) });
+  return res.json(mediaDto(media));
 });
 
 // Create dynamic widget media (RSS, Clock, Custom Web URL)
@@ -166,7 +163,7 @@ mediaRoutes.post('/widget', async (req: Request, res: Response): Promise<any> =>
     }
   });
 
-  return res.json({ ...media, sizeBytes: Number(media.sizeBytes || 0) });
+  return res.json(mediaDto(media));
 });
 
 mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
@@ -191,7 +188,7 @@ mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
     await tx.playlistItem.updateMany({ where: { mediaId: id }, data: { durationSeconds } });
     return updated;
   });
-  return res.json({ ...media, sizeBytes: Number(media.sizeBytes || 0) });
+  return res.json(mediaDto(media));
 });
 
 async function validateFolder(tenantId: string, userId: string, value: unknown): Promise<string | null> {

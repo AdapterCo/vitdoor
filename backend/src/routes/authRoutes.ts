@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
 import { getAdminJwtSecret, getSessionToken, SESSION_COOKIE_NAME, sessionCookieOptions } from '../lib/session.js';
+import { tenantDto } from '../lib/dto.js';
 
 export const authRoutes = Router();
 authRoutes.use((_req, res, next) => {
@@ -66,7 +67,7 @@ authRoutes.get('/me', async (req: Request, res: Response): Promise<any> => {
     }
     return res.json({
       id: user.id, name: user.name, email: user.email, role: user.role,
-      tenantId: user.tenantId, tenantName: user.tenant.name, tenant: user.tenant
+      tenantId: user.tenantId, tenantName: user.tenant.name, tenant: tenantDto(user.tenant)
     });
   } catch {
     return res.status(401).json({ error: 'Sessão inválida.' });

@@ -121,7 +121,7 @@ export function App() {
 
           if (msg.type === 'PAIRING_SUCCESS' || msg.type === 'PAIRING_CONFIRMED') {
             setSuspended(false);
-            const info = { id: msg.screenId, name: msg.screenName || 'TV Mídia Indoor', tenantId: msg.tenantId };
+            const info = { id: msg.screenId, name: msg.screenName || 'TV Mídia Indoor' };
             setScreenInfo(info);
             await setCache('screenInfo', info);
 
@@ -219,7 +219,6 @@ export function App() {
     currentMediaNameRef.current = mediaName;
     if (!screenInfo?.id) return;
     const logItem = {
-      tenantId: screenInfo.tenantId || 'demo',
       screenId: screenInfo.id,
       mediaName,
       playedAt: new Date().toISOString(),

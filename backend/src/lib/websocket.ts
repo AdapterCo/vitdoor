@@ -3,6 +3,7 @@ import { Server } from 'http';
 import { prisma } from './prisma.js';
 import jwt from 'jsonwebtoken';
 import { getAdminJwtSecret, readCookie, SESSION_COOKIE_NAME } from './session.js';
+import { alertDto, layoutDto, playlistDto } from './dto.js';
 
 interface ConnectedClient {
   ws: WebSocket;
@@ -166,12 +167,11 @@ async function handleMessage(client: ConnectedClient, msg: any) {
           type: 'PAIRING_SUCCESS',
           screenId: screen.id,
           screenName: screen.name,
-          tenantId: screen.tenantId,
           volume: screen.volume,
           orientation: screen.orientation,
-          activePlaylist,
-          activeLayout,
-          activeAlert
+          activePlaylist: playlistDto(activePlaylist, true),
+          activeLayout: layoutDto(activeLayout),
+          activeAlert: alertDto(activeAlert)
         }));
 
         broadcastToAdmins(
@@ -200,7 +200,12 @@ async function handleMessage(client: ConnectedClient, msg: any) {
           {
             type: 'SCREEN_TELEMETRY_UPDATE',
             screenId: client.screenId,
-            telemetry: msg
+            telemetry: {
+              ...(telemetry.ramUsagePercent !== undefined ? { ramUsagePercent: telemetry.ramUsagePercent } : {}),
+              ...(telemetry.cpuUsagePercent !== undefined ? { cpuUsagePercent: telemetry.cpuUsagePercent } : {}),
+              ...(telemetry.storageFreeMb !== undefined ? { storageFreeMb: telemetry.storageFreeMb } : {}),
+              ...(telemetry.currentMediaName !== undefined ? { currentMediaName: telemetry.currentMediaName } : {})
+            }
           },
           client.tenantId,
           client.ownerId
@@ -250,7 +255,13 @@ async function handleMessage(client: ConnectedClient, msg: any) {
     case 'COMMAND_RESULT': {
       if (client.screenId) {
         broadcastToAdmins(
-          { type: 'COMMAND_RESULT', screenId: client.screenId, action: msg.action, success: !!msg.success, message: msg.message },
+          {
+            type: 'COMMAND_RESULT',
+            screenId: client.screenId,
+            action: typeof msg.action === 'string' ? msg.action.slice(0, 40) : 'UNKNOWN',
+            success: !!msg.success,
+            message: typeof msg.message === 'string' ? msg.message.slice(0, 300) : undefined
+          },
           client.tenantId,
           client.ownerId
         );

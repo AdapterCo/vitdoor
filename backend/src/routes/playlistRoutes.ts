@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { sendCommandToScreen } from '../lib/websocket.js';
 import { tenantScope } from '../middleware/auth.js';
+import { playlistDto } from '../lib/dto.js';
 
 export const playlistRoutes = Router();
 
@@ -18,7 +19,7 @@ playlistRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
     },
     orderBy: { updatedAt: 'desc' }
   });
-  return res.json(playlists);
+  return res.json(playlists.map((playlist) => playlistDto(playlist)));
 });
 
 playlistRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
@@ -72,7 +73,7 @@ playlistRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
     }
   }
 
-  return res.json(playlist);
+  return res.json(playlistDto(playlist));
 });
 
 playlistRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
@@ -141,7 +142,7 @@ playlistRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => 
     for (const screen of ownedScreens) sendPlaylistToScreen(screen.id, playlist);
   }
 
-  return res.json(playlist);
+  return res.json(playlistDto(playlist));
 });
 
 playlistRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
@@ -154,7 +155,7 @@ playlistRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> 
 });
 
 function sendPlaylistToScreen(screenId: string, playlist: any) {
-  sendCommandToScreen(screenId, { type: 'CONTENT_UPDATED', activePlaylist: playlist });
+  sendCommandToScreen(screenId, { type: 'CONTENT_UPDATED', activePlaylist: playlistDto(playlist, true) });
 }
 
 async function validateItems(tenantId: string, userId: string, items: any[]): Promise<boolean> {

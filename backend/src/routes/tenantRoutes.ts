@@ -3,19 +3,17 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { requireSuperAdmin } from '../middleware/auth.js';
 import { disconnectTenant } from '../lib/websocket.js';
+import { tenantDto } from '../lib/dto.js';
 
 export const tenantRoutes = Router();
 tenantRoutes.use(requireSuperAdmin);
 
 tenantRoutes.get('/', async (_req: Request, res: Response): Promise<any> => {
   const tenants = await prisma.tenant.findMany({
-    include: {
-      users: { select: { id: true, name: true, email: true, role: true, active: true } },
-      _count: { select: { screens: true, users: true, medias: true } }
-    },
+    include: { _count: { select: { screens: true, users: true, medias: true } } },
     orderBy: { createdAt: 'desc' }
   });
-  return res.json(tenants);
+  return res.json(tenants.map(tenantDto));
 });
 
 tenantRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
@@ -56,7 +54,7 @@ tenantRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
       });
       return created;
     });
-    return res.status(201).json(tenant);
+    return res.status(201).json(tenantDto(tenant));
   } catch (error: any) {
     if (error?.code === 'P2002') return res.status(409).json({ error: 'Slug ou e-mail já cadastrado.' });
     throw error;
@@ -83,5 +81,5 @@ tenantRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
     await prisma.screen.updateMany({ where: { tenantId: id }, data: { status: 'OFFLINE' } });
     disconnectTenant(id);
   }
-  return res.json(tenant);
+  return res.json(tenantDto(tenant));
 });

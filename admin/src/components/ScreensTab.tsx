@@ -63,7 +63,6 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', color: '#94a3b8', fontSize: '0.85rem' }}>
               <th style={{ padding: '12px' }}>TELA</th>
-              <th style={{ padding: '12px' }}>CÓDIGO PAREAMENTO</th>
               <th style={{ padding: '12px' }}>LOCALIZAÇÃO / GRUPO</th>
               <th style={{ padding: '12px' }}>ORIENTAÇÃO</th>
               <th style={{ padding: '12px' }}>PLAYLIST ATIVA</th>
@@ -82,10 +81,6 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                       <span style={{ fontSize: '0.75rem', color: '#64748b' }}>IP: {screen.ipAddress || 'não informado'}</span>
                     </div>
                   </div>
-                </td>
-
-                <td style={{ padding: '16px 12px', fontFamily: 'monospace', color: '#60a5fa', fontWeight: 700 }}>
-                  {screen.pairingCode}
                 </td>
 
                 <td style={{ padding: '16px 12px', color: '#cbd5e1' }}>

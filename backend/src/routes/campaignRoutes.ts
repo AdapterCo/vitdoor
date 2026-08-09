@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { tenantScope } from '../middleware/auth.js';
+import { campaignDto } from '../lib/dto.js';
 
 export const campaignRoutes = Router();
 
@@ -11,7 +12,7 @@ campaignRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
     include: { playlist: true },
     orderBy: { createdAt: 'desc' }
   });
-  return res.json(campaigns);
+  return res.json(campaigns.map(campaignDto));
 });
 
 campaignRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
@@ -45,7 +46,7 @@ campaignRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
     }
   });
 
-  return res.json(campaign);
+  return res.json(campaignDto(campaign));
 });
 
 campaignRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {

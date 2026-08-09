@@ -2,16 +2,18 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { tenantScope } from '../middleware/auth.js';
 import { sendCommandToScreen } from '../lib/websocket.js';
+import { layoutDto } from '../lib/dto.js';
 
 export const layoutRoutes = Router();
 
 layoutRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  return res.json(await prisma.layout.findMany({
+  const layouts = await prisma.layout.findMany({
     where: { tenantId, createdById: req.auth!.userId },
     include: { screens: { select: { id: true, name: true } } },
     orderBy: { updatedAt: 'desc' }
-  }));
+  });
+  return res.json(layouts.map(layoutDto));
 });
 
 layoutRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
@@ -30,7 +32,7 @@ layoutRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
     }
   });
   await publishLayout(tenantId, req.auth!.userId, layout, screenIds);
-  return res.status(201).json(layout);
+  return res.status(201).json(layoutDto(layout));
 });
 
 layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
@@ -55,7 +57,7 @@ layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   await prisma.screen.updateMany({ where: { tenantId, createdById: req.auth!.userId, activeLayoutId: id, id: { notIn: screenIds } }, data: { activeLayoutId: null } });
   for (const screenId of removed) sendCommandToScreen(screenId, { type: 'CONTENT_UPDATED', activeLayout: null, forceReload: true });
   await publishLayout(tenantId, req.auth!.userId, layout, screenIds);
-  return res.json(layout);
+  return res.json(layoutDto(layout));
 });
 
 layoutRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
@@ -107,6 +109,6 @@ async function publishLayout(tenantId: string, userId: string, layout: any, scre
     data: { activeLayoutId: layout.id, activePlaylistId: null }
   });
   for (const screenId of screenIds) {
-    sendCommandToScreen(screenId, { type: 'CONTENT_UPDATED', activeLayout: layout, activePlaylist: null, forceReload: true });
+    sendCommandToScreen(screenId, { type: 'CONTENT_UPDATED', activeLayout: layoutDto(layout), activePlaylist: null, forceReload: true });
   }
 }

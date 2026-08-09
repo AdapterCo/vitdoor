@@ -581,6 +581,7 @@ Estados:
 - Backend e serviço de migração compartilham explicitamente a mesma imagem Docker, impedindo deploy de código novo com um pacote antigo de migrações.
 - Sessão do painel usa cookie host-only `HttpOnly`, `Secure` e `SameSite=Strict`; o JWT não é mais devolvido ao JavaScript nem armazenado em Web Storage. Operações autenticadas por cookie validam também a origem administrativa configurada em `ADMIN_ORIGINS`.
 - Sessões administrativas e dispositivos usam segredos JWT distintos. A rotação de `ADMIN_JWT_SECRET` invalida logins do painel sem desparear TVs que continuam protegidas por `JWT_SECRET`.
+- Respostas HTTP e mensagens WebSocket usam DTOs explícitos por consumidor. Campos internos como `passwordHash`, `storagePath`, `createdById`, `deviceTokenVersion`, relações Prisma completas e payloads arbitrários de telemetria não são expostos ao painel ou ao player.
 
 ### Validação R2/CDN de 09/08/2026
 

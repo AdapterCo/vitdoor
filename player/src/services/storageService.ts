@@ -5,7 +5,6 @@ const DB_VERSION = 1;
 
 export interface OfflineProofLog {
   id?: number;
-  tenantId: string;
   screenId: string;
   mediaName: string;
   playedAt: string;
