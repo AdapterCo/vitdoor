@@ -14,7 +14,7 @@ model Tenant {
   slug         String   @unique
   logoUrl      String?
   brandColor   String?  @default("#3b82f6")
-  plan         String   @default("PROFESSIONAL") // BASIC, PROFESSIONAL, ENTERPRISE
+  plan         String   @default("CUSTOM") // Campo legado; contratação usa maxScreens
   maxScreens   Int      @default(10)
   maxStorageMb Int      @default(5000)
   status       String   @default("ACTIVE") // ACTIVE, SUSPENDED, CANCELLED

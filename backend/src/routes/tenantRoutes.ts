@@ -19,7 +19,7 @@ tenantRoutes.get('/', async (_req: Request, res: Response): Promise<any> => {
 
 tenantRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
   const {
-    name, slug, plan, maxScreens, maxStorageMb, brandColor, logoUrl, customDomain,
+    name, slug, maxScreens, maxStorageMb, brandColor, logoUrl, customDomain,
     adminName, adminEmail, adminPassword
   } = req.body;
 
@@ -37,7 +37,6 @@ tenantRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
         data: {
           name,
           slug: String(slug).toLowerCase().trim().replace(/[^a-z0-9-]/g, '-'),
-          plan: plan || 'PROFESSIONAL',
           maxScreens: Math.max(1, parseInt(maxScreens, 10) || 1),
           maxStorageMb: Math.max(100, parseInt(maxStorageMb, 10) || 5000),
           brandColor: brandColor || '#2563eb',
@@ -65,11 +64,11 @@ tenantRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
 
 tenantRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
-  const { name, plan, status, maxScreens, maxStorageMb, brandColor, customDomain } = req.body;
+  const { name, status, maxScreens, maxStorageMb, brandColor, customDomain } = req.body;
   const tenant = await prisma.tenant.update({
     where: { id },
     data: {
-      name, plan, status,
+      name, status,
       maxScreens: maxScreens !== undefined ? Math.max(1, parseInt(maxScreens, 10)) : undefined,
       maxStorageMb: maxStorageMb !== undefined ? Math.max(100, parseInt(maxStorageMb, 10)) : undefined,
       brandColor, customDomain

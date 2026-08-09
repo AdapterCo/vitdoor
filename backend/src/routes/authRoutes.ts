@@ -80,7 +80,6 @@ authRoutes.post('/seed', async (_req: Request, res: Response): Promise<any> => {
       data: {
         name: 'VitDoor Mídia Demo',
         slug: 'vitdoor-demo',
-        plan: 'ENTERPRISE',
         maxScreens: 50,
         maxStorageMb: 20000,
         brandColor: '#2563eb'

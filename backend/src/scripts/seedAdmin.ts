@@ -18,7 +18,6 @@ async function main() {
     create: {
       name: 'VitDoor',
       slug: 'vitdoor-master',
-      plan: 'ENTERPRISE',
       maxScreens: 1,
       maxStorageMb: 100,
       status: 'ACTIVE'
