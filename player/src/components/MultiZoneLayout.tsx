@@ -60,6 +60,6 @@ function ZonePlayer({ items, fit, volume, loop, audioEnabled }: { items: any[]; 
   if (!item) return <div style={{ width: '100%', height: '100%', background: '#111827', color: '#64748b', display: 'grid', placeItems: 'center' }}>Área sem conteúdo</div>;
   const objectFit = fit === 'COVER' ? 'cover' : fit === 'FILL' ? 'fill' : 'contain';
   if (item.type === 'VIDEO') return <MediaVideo key={item.mediaId} src={item.url} volume={volume} audioEnabled={audioEnabled} loop={items.length === 1 && loop} onEnded={advance} objectFit={objectFit} />;
-  if (item.type === 'WEB_PAGE') return <iframe src={item.url} title={item.name} style={{ width: '100%', height: '100%', border: 0 }} />;
+  if (item.type === 'WEB_PAGE') return <iframe src={item.url} title={item.name} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', border: 0 }} />;
   return <img src={item.url} crossOrigin="anonymous" alt={item.name} style={{ width: '100%', height: '100%', objectFit, background: '#000' }} />;
 }

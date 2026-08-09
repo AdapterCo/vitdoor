@@ -27,12 +27,12 @@ tenantRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
   if (!name || !slug || !adminName || !adminEmail || !adminPassword) {
     return res.status(400).json({ error: 'Empresa e dados do administrador são obrigatórios.' });
   }
-  if (String(adminPassword).length < 8) {
-    return res.status(400).json({ error: 'A senha deve ter ao menos 8 caracteres.' });
+  if (String(adminPassword).length < 12) {
+    return res.status(400).json({ error: 'A senha deve ter ao menos 12 caracteres.' });
   }
 
   try {
-    const passwordHash = await bcrypt.hash(adminPassword, 10);
+    const passwordHash = await bcrypt.hash(adminPassword, 12);
     const tenant = await prisma.$transaction(async (tx) => {
       const created = await tx.tenant.create({
         data: {

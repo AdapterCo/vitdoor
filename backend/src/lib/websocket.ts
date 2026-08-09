@@ -10,6 +10,9 @@ interface ConnectedClient {
   pairingCode?: string;
   tenantId?: string;
   ownerId?: string;
+  authTimer?: ReturnType<typeof setTimeout>;
+  messageWindowStartedAt: number;
+  messagesInWindow: number;
 }
 
 const activeConnections = new Set<ConnectedClient>();
@@ -22,10 +25,30 @@ export function initWebSocketServer(server: Server) {
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 6 * 1024 * 1024 });
 
   wss.on('connection', (ws: WebSocket) => {
-    const client: ConnectedClient = { ws, type: 'PLAYER' };
+    const client: ConnectedClient = {
+      ws,
+      type: 'PLAYER',
+      messageWindowStartedAt: Date.now(),
+      messagesInWindow: 0
+    };
+    client.authTimer = setTimeout(() => {
+      if (!client.screenId && !client.ownerId && ws.readyState === WebSocket.OPEN) {
+        ws.close(1008, 'Authentication timeout');
+      }
+    }, 10_000);
     activeConnections.add(client);
 
     ws.on('message', async (data: string) => {
+      const now = Date.now();
+      if (now - client.messageWindowStartedAt >= 60_000) {
+        client.messageWindowStartedAt = now;
+        client.messagesInWindow = 0;
+      }
+      client.messagesInWindow += 1;
+      if (client.messagesInWindow > 120) {
+        ws.close(1008, 'Message rate exceeded');
+        return;
+      }
       try {
         const message = JSON.parse(data.toString());
         await handleMessage(client, message);
@@ -36,6 +59,7 @@ export function initWebSocketServer(server: Server) {
 
     ws.on('close', async () => {
       activeConnections.delete(client);
+      if (client.authTimer) clearTimeout(client.authTimer);
       if (client.screenId) {
         const hasAnotherConnection = [...activeConnections].some((connection) =>
           connection.type === 'PLAYER' &&
@@ -71,7 +95,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
       let screen = null;
       if (msg.deviceToken) {
         try {
-          const auth = jwt.verify(msg.deviceToken, process.env.JWT_SECRET || 'secret') as any;
+          const auth = jwt.verify(msg.deviceToken, process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as any;
           if (auth.type === 'DEVICE') {
             screen = await prisma.screen.findFirst({ where: {
               id: auth.screenId,
@@ -104,6 +128,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
         client.screenId = screen.id;
         client.tenantId = screen.tenantId;
         client.ownerId = screen.createdById || undefined;
+        if (client.authTimer) clearTimeout(client.authTimer);
         await prisma.screen.update({
           where: { id: screen.id },
           data: {
@@ -183,12 +208,13 @@ async function handleMessage(client: ConnectedClient, msg: any) {
 
     case 'REGISTER_ADMIN': {
       try {
-        const auth = jwt.verify(msg.token || '', process.env.JWT_SECRET || 'secret') as any;
+        const auth = jwt.verify(msg.token || '', process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as any;
         const user = await prisma.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, active: true, tenant: { status: 'ACTIVE' } } });
         if (!user) throw new Error('INACTIVE_ADMIN');
         client.type = 'ADMIN';
         client.tenantId = auth.tenantId;
         client.ownerId = auth.userId;
+        if (client.authTimer) clearTimeout(client.authTimer);
       } catch {
         client.ws.close(1008, 'Unauthorized');
       }

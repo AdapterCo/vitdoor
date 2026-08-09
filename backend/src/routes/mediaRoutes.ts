@@ -5,13 +5,14 @@ import { saveFile } from '../lib/storage.js';
 import { tenantScope } from '../middleware/auth.js';
 import { detectMediaDuration } from '../lib/mediaMetadata.js';
 import { createHash, randomUUID } from 'crypto';
+import { fileTypeFromBuffer } from 'file-type';
 
 export const mediaRoutes = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 512 * 1024 * 1024, files: 1 },
+  limits: { fileSize: 256 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, callback) => {
-    const allowed = file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/') || file.mimetype === 'application/pdf';
+    const allowed = file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/') || file.mimetype === 'application/pdf' || file.mimetype === 'application/octet-stream';
     if (!allowed) return callback(new Error('Tipo de arquivo não permitido.'));
     return callback(null, true);
   }
@@ -95,7 +96,13 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
     return res.status(413).json({ error: 'Limite de armazenamento contratado atingido.' });
   }
 
-  const mime = req.file.mimetype;
+  const detectedFileType = await fileTypeFromBuffer(req.file.buffer);
+  const mime = detectedFileType?.mime || '';
+  const allowedDetectedType = mime.startsWith('video/') || mime.startsWith('image/') || mime.startsWith('audio/') || mime === 'application/pdf';
+  if (!allowedDetectedType) {
+    return res.status(415).json({ error: 'O conteúdo real do arquivo não corresponde a um formato de mídia permitido.' });
+  }
+  req.file.mimetype = mime;
   let type = 'IMAGE';
   if (mime.startsWith('video/')) type = 'VIDEO';
   else if (mime.startsWith('audio/')) type = 'AUDIO';

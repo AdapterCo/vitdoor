@@ -89,6 +89,8 @@ export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
             <iframe
               src={currentMedia.url}
               title={currentMedia.name}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              referrerPolicy="no-referrer"
               style={{ width: '100%', height: '100%', border: 'none' }}
             />
           ) : currentMedia.type === 'RSS' ? (

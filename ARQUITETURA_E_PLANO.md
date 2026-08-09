@@ -539,6 +539,7 @@ Estados:
 | Assinatura e distribuição APK | PENDENTE | Play Store privada, MDM ou atualização própria |
 | Deploy em VPS | CONCLUÍDO | Compose, gateway, migrações, volumes e healthchecks operando na VPS de homologação |
 | Monitoramento e backups | PARCIAL | Healthcheck preparado; faltam métricas, alertas e backup externo automatizado |
+| Proteção HTTP/API | PARCIAL | Rate limits por finalidade, Helmet, CSP, HSTS, limites de payload e IP real da Cloudflare implementados; falta restringir portas da origem às faixas Cloudflare e ativar regras WAF |
 
 ### Auditoria funcional de 08/08/2026
 
@@ -563,6 +564,20 @@ Estados:
 - Playlists rejeitam itens ambíguos, duração inválida e telas de outro usuário antes da escrita; a troca dos itens ocorre em transação.
 - Upload convencional recebeu limite de 512 MB, lista de tipos permitidos e cálculo SHA-256. Upload direto/multipart continua sendo a solução definitiva para arquivos grandes.
 - Build de produção do backend, painel e player web aprovado localmente; validação funcional cruzada continua reservada para a VPS.
+
+### Endurecimento de segurança de 09/08/2026
+
+- API geral limitada a 300 requisições por IP por minuto.
+- Login limitado a 10 falhas por IP a cada 15 minutos; logins bem-sucedidos não consomem a cota de falhas.
+- Criação de pareamento limitada a 30 por hora, consulta de ativação a 600 por cinco minutos e upload a 30 por hora por IP.
+- WebSocket exige autenticação em até 10 segundos, aceita no máximo 120 mensagens por minuto por conexão e limita cada payload a 6 MB.
+- Tokens JWT aceitam somente HS256; sessões administrativas novas expiram em 12 horas e senhas de novos clientes exigem ao menos 12 caracteres com bcrypt cost 12.
+- CORS deixa de aceitar configuração implícita em produção; JSON e formulários foram reduzidos para 2 MB. Upload convencional fica limitado a 256 MB, dois processamentos simultâneos por instância e deve ser substituído pelo upload direto/multipart.
+- Upload identifica o tipo real pelo conteúdo binário antes de salvar no R2 e rejeita arquivos disfarçados ou formatos executáveis como SVG/HTML.
+- Gateway aplica HTTPS obrigatório, HSTS, CSP, proteção contra iframe, MIME sniffing e políticas restritivas de navegador.
+- Páginas externas exibidas no simulador usam iframe isolado, sem permissão para navegar a janela principal e sem envio de referrer.
+- Gateway restaura o IP real somente para conexões originadas nas faixas oficiais publicadas pela Cloudflare; a lista deve ser revisada quando a Cloudflare anunciar alterações.
+- Pendente na infraestrutura: bloquear as portas 80/443 da VPS para origens que não sejam Cloudflare, mantendo SSH restrito ao administrador, e habilitar regras gerenciadas/WAF no painel Cloudflare.
 
 ### Validação R2/CDN de 09/08/2026
 

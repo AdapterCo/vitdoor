@@ -24,7 +24,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     return;
   }
   try {
-    const auth = jwt.verify(token, process.env.JWT_SECRET || 'secret') as AuthUser;
+    const auth = jwt.verify(token, process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as AuthUser;
     const user = await prisma.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, active: true }, include: { tenant: true } });
     if (!user || user.tenant.status !== 'ACTIVE') {
       res.status(401).json({ error: 'Conta ou empresa suspensa.' });

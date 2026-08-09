@@ -32,7 +32,7 @@ authRoutes.post('/login', async (req: Request, res: Response): Promise<any> => {
   const token = jwt.sign(
     { userId: user.id, tenantId: user.tenantId, role: user.role },
     process.env.JWT_SECRET || 'secret',
-    { expiresIn: '7d' }
+    { expiresIn: '12h', algorithm: 'HS256' }
   );
 
   return res.json({
@@ -54,7 +54,7 @@ authRoutes.get('/me', async (req: Request, res: Response): Promise<any> => {
   const header = req.headers.authorization;
   const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret') as any;
+    const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as any;
     const user = await prisma.user.findUnique({ where: { id: payload.userId }, include: { tenant: true } });
     if (!user || !user.active || user.tenant.status !== 'ACTIVE') {
       return res.status(401).json({ error: 'Sessão inválida.' });

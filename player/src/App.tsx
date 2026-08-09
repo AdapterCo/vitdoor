@@ -83,6 +83,7 @@ export function App() {
 
   // WebSocket Connection Lifecycle
   useEffect(() => {
+    if (!paired) return;
     let ws: WebSocket;
     let heartbeatInterval: any;
     let reconnectTimeout: number | undefined;

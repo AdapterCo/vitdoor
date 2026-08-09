@@ -24,6 +24,6 @@ deviceRoutes.post('/pairing/:id/status', async (req: Request, res: Response) => 
     if (session.expiresAt <= new Date()) return res.status(410).json({ status: 'EXPIRED' });
     return res.json({ status: 'PENDING', expiresAt: session.expiresAt });
   }
-  const deviceToken = jwt.sign({ type: 'DEVICE', screenId: session.screen.id, tenantId: session.screen.tenantId, version: session.screen.deviceTokenVersion }, process.env.JWT_SECRET!, { expiresIn: '365d' });
+  const deviceToken = jwt.sign({ type: 'DEVICE', screenId: session.screen.id, tenantId: session.screen.tenantId, version: session.screen.deviceTokenVersion }, process.env.JWT_SECRET!, { expiresIn: '365d', algorithm: 'HS256' });
   return res.json({ status: 'PAIRED', deviceToken, screenId: session.screen.id, screenName: session.screen.name });
 });
