@@ -7,6 +7,8 @@ import { detectMediaDuration } from '../lib/mediaMetadata.js';
 import { createHash, randomUUID } from 'crypto';
 import { fileTypeFromBuffer } from 'file-type';
 import { mediaDto, mediaFolderDto } from '../lib/dto.js';
+import { bumpOwnerManifestVersions } from '../lib/manifest.js';
+import { sendManifestToScreen } from '../lib/websocket.js';
 
 export const mediaRoutes = Router();
 const upload = multer({
@@ -182,12 +184,15 @@ mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
         name: req.body.name ?? existing.name,
         durationSeconds,
         tags: req.body.tags ?? existing.tags,
-        folderId
+        folderId,
+        version: { increment: 1 }
       }
     });
     await tx.playlistItem.updateMany({ where: { mediaId: id }, data: { durationSeconds } });
     return updated;
   });
+  const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
+  for (const screenId of affectedIds) await sendManifestToScreen(screenId);
   return res.json(mediaDto(media));
 });
 
@@ -204,6 +209,27 @@ mediaRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => 
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const media = await prisma.media.findFirst({ where: { id, tenantId, createdById: req.auth!.userId } });
   if (!media) return res.status(404).json({ error: 'Mídia não encontrada.' });
+  const layouts = await prisma.layout.findMany({
+    where: { tenantId, createdById: req.auth!.userId },
+    select: { name: true, canvasConfigJson: true }
+  });
+  const layoutUsingMedia = layouts.find((layout) => layoutContainsMedia(layout.canvasConfigJson, id));
+  if (layoutUsingMedia) {
+    return res.status(409).json({ error: `Remova esta mídia do layout "${layoutUsingMedia.name}" antes de excluí-la.` });
+  }
   await prisma.media.delete({ where: { id } });
+  const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
+  for (const screenId of affectedIds) await sendManifestToScreen(screenId, true);
   return res.json({ success: true });
 });
+
+function layoutContainsMedia(canvasConfigJson: string, mediaId: string): boolean {
+  try {
+    const config = JSON.parse(canvasConfigJson);
+    return (Array.isArray(config?.zones) ? config.zones : []).some((zone: any) =>
+      (Array.isArray(zone?.items) ? zone.items : []).some((item: any) => item?.mediaId === mediaId)
+    );
+  } catch {
+    return false;
+  }
+}

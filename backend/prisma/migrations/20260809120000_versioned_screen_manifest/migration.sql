@@ -1,0 +1,2 @@
+ALTER TABLE "Screen"
+ADD COLUMN "manifestVersion" INTEGER NOT NULL DEFAULT 1;

@@ -517,6 +517,7 @@ Estados:
 | Upload de mídia | PARCIAL | Ainda passa pela memória da VPS; limitado a 256 MB e dois processamentos simultâneos por instância |
 | Cloudflare R2 | CONCLUÍDO | Bucket `vitdoor-media`, credencial restrita, domínio próprio, chaves imutáveis por tenant/mídia e fail-fast sem fallback local validados na VPS |
 | Cloudflare CDN | CONCLUÍDO | `media.vitdoor.com.br`, CORS, Range, cache imutável e entrega `CF-Cache-Status: HIT` validados em arquivo MP4 real |
+| Mídias legadas no R2 | CONCLUÍDO | Confirmado que não restam mídias de produção dependentes do volume local da VPS |
 | TLS Cloudflare → origem | CONCLUÍDO | Origin CA montado fora do Git, TLS 1.2/1.3 e modo Complete (Strict) validados para painel, API e player |
 | Playlists | CONCLUÍDO | Criação e edição validam conteúdo/telas do proprietário; substituição de itens é transacional e o loop permanece obrigatório |
 | Layouts multizona | CONCLUÍDO | Editor web e simulador funcionando |
@@ -528,8 +529,8 @@ Estados:
 | Redis | PENDENTE | Necessário antes de escalar |
 | Cache de JSON no navegador | SIMULADOR | Não representa cache offline final |
 | Cache físico de mídias Android | PENDENTE | Requisito crítico |
-| Manifesto versionado | PENDENTE | Requisito crítico |
-| Checksum de download | PARCIAL | Upload calcula e persiste SHA-256, MIME type e versão; manifesto e validação no dispositivo ainda estão pendentes |
+| Manifesto versionado | PARCIAL | Backend e player web usam versão monotônica por tela, manifesto canônico e SHA-256; validação física final ainda será portada ao Android |
+| Checksum de download | PARCIAL | Upload persiste SHA-256, tamanho, MIME e versão; manifesto entrega o inventário e o player web valida sua integridade, restando validar os bytes no cache físico Android |
 | Proof-of-play offline web | SIMULADOR | Deve ser refeito com fila SQLite persistente no aplicativo Android |
 | Aplicativo Android TV | PENDENTE | Especificação preservada, mas desenvolvimento adiado enquanto o projeto web é consolidado |
 | Inicialização automática | PENDENTE | Android |
@@ -586,6 +587,15 @@ Estados:
 - Cloudflare aplica rate limiting específico em `/api/auth/login` e quatro regras WAF personalizadas: bloqueio de métodos HTTP não utilizados, scanners/arquivos sensíveis, rotas administrativas no domínio do player e escrita no domínio público de mídia.
 - As regras Cloudflare foram testadas individualmente sem impedir o painel, healthcheck, pareamento do player ou leitura de mídia pelo CDN.
 
+### Manifesto versionado e integridade de 09/08/2026
+
+- Cada tela possui `manifestVersion` monotônico persistido no PostgreSQL.
+- O backend monta um manifesto isolado por tela com orientação, volume, playlist, layout e inventário completo das mídias utilizadas, inclusive mídias internas de layouts multizona.
+- Cada ativo binário contém URL imutável, tamanho, MIME type, versão e checksum SHA-256 calculado no upload.
+- O manifesto completo possui checksum SHA-256 próprio sobre uma representação canônica e é disponibilizado por endpoint autenticado de dispositivo e WebSocket.
+- Alterações de tela, playlist, layout ou mídia incrementam a versão antes da notificação em tempo real.
+- O player web rejeita versões regressivas, manifesto adulterado e mídia binária sem metadados de integridade; a verificação dos bytes no cache físico permanece responsabilidade do futuro aplicativo Android.
+
 ### Validação R2/CDN de 09/08/2026
 
 - Bucket: `vitdoor-media`.
@@ -617,9 +627,9 @@ Estados:
 1. ~~Migrar Prisma de SQLite para PostgreSQL.~~ Concluído.
 2. ~~Criar migrações versionadas.~~ Concluído.
 3. ~~Configurar R2 real e CDN.~~ Concluído e validado com `HIT`.
-4. Implementar versões, checksums e manifesto por dispositivo.
+4. Implementar versões, checksums e manifesto por dispositivo. Parcial concluído no backend e player web; falta validação no cache físico Android.
 5. Implementar upload direto e multipart.
-6. Migrar as mídias legadas do volume local para o R2.
+6. ~~Migrar as mídias legadas do volume local para o R2.~~ Concluído; não restam mídias de produção dependentes do volume local.
 
 ### Fase 2 — Criar aplicativo Android TV
 

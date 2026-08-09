@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { sendCommandToScreen, cleanCode } from '../lib/websocket.js';
+import { sendCommandToScreen, sendManifestToScreen, cleanCode } from '../lib/websocket.js';
 import { tenantScope } from '../middleware/auth.js';
 import { layoutDto, playlistDto, screenDto } from '../lib/dto.js';
 
@@ -133,7 +133,8 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
       orientation,
       volume: volume !== undefined ? parseInt(volume, 10) : undefined,
       activePlaylistId,
-      activeLayoutId
+      activeLayoutId,
+      manifestVersion: { increment: 1 }
     },
     include: {
       activePlaylist: { include: { items: { include: { media: true, layout: true } } } },
@@ -142,13 +143,7 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   });
 
   // Push immediate websocket update to the physical screen
-  sendCommandToScreen(id, {
-    type: 'CONTENT_UPDATED',
-    volume: screen.volume,
-    orientation: screen.orientation,
-    activePlaylist: playlistDto(screen.activePlaylist, true),
-    activeLayout: layoutDto(screen.activeLayout)
-  });
+  await sendManifestToScreen(id);
 
   return res.json(screenDto(screen));
 });
@@ -163,23 +158,12 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
 
   let command: any = { type: action, payload };
   if (action === 'SYNC') {
-    const refreshed = await prisma.screen.findUnique({
-      where: { id },
-      include: {
-        activePlaylist: {
-          include: { items: { include: { media: true, layout: true }, orderBy: { orderIndex: 'asc' } } }
-        },
-        activeLayout: true
-      }
+    await prisma.screen.update({ where: { id }, data: { manifestVersion: { increment: 1 } } });
+    const sent = await sendManifestToScreen(id, true);
+    return res.json({
+      success: sent,
+      message: sent ? 'Manifesto atualizado enviado em tempo real para a tela.' : 'Tela offline ou inacessível no momento.'
     });
-    command = {
-      type: 'CONTENT_UPDATED',
-      activePlaylist: playlistDto(refreshed?.activePlaylist, true),
-      activeLayout: refreshed?.activeLayout,
-      volume: refreshed?.volume,
-      orientation: refreshed?.orientation,
-      forceReload: true
-    };
   }
   const sent = sendCommandToScreen(id, command);
 

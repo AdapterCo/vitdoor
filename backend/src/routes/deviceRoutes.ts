@@ -3,8 +3,17 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
+import { authenticateDevice } from '../middleware/deviceAuth.js';
+import { buildScreenManifest } from '../lib/manifest.js';
 
 export const deviceRoutes = Router();
+
+deviceRoutes.get('/manifest', authenticateDevice, async (req: Request, res: Response) => {
+  const manifest = await buildScreenManifest(req.deviceAuth!.screenId);
+  if (!manifest) return res.status(404).json({ error: 'Manifesto da tela não encontrado.' });
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(manifest);
+});
 
 deviceRoutes.post('/pairing', async (_req: Request, res: Response) => {
   const secret = crypto.randomBytes(32).toString('base64url');

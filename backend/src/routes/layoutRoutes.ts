@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { tenantScope } from '../middleware/auth.js';
-import { sendCommandToScreen } from '../lib/websocket.js';
+import { sendManifestToScreen } from '../lib/websocket.js';
 import { layoutDto } from '../lib/dto.js';
+import { bumpOwnerManifestVersions, bumpScreenManifestVersions } from '../lib/manifest.js';
 
 export const layoutRoutes = Router();
 
@@ -55,8 +56,9 @@ layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   });
   const removed = existing.screens.map((screen) => screen.id).filter((screenId) => !screenIds.includes(screenId));
   await prisma.screen.updateMany({ where: { tenantId, createdById: req.auth!.userId, activeLayoutId: id, id: { notIn: screenIds } }, data: { activeLayoutId: null } });
-  for (const screenId of removed) sendCommandToScreen(screenId, { type: 'CONTENT_UPDATED', activeLayout: null, forceReload: true });
-  await publishLayout(tenantId, req.auth!.userId, layout, screenIds);
+  await publishLayout(tenantId, req.auth!.userId, layout, screenIds, false);
+  const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
+  for (const screenId of affectedIds) await sendManifestToScreen(screenId, removed.includes(screenId));
   return res.json(layoutDto(layout));
 });
 
@@ -65,8 +67,9 @@ layoutRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> =>
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const existing = await prisma.layout.findFirst({ where: { id, tenantId, createdById: req.auth!.userId }, include: { screens: { select: { id: true } } } });
   if (!existing) return res.status(404).json({ error: 'Layout não encontrado.' });
-  for (const screen of existing.screens) sendCommandToScreen(screen.id, { type: 'CONTENT_UPDATED', activeLayout: null, forceReload: true });
   await prisma.layout.delete({ where: { id } });
+  const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
+  for (const screenId of affectedIds) await sendManifestToScreen(screenId, true);
   return res.json({ success: true });
 });
 
@@ -102,13 +105,16 @@ function normalizeIds(value: unknown): string[] {
   return value.filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
 
-async function publishLayout(tenantId: string, userId: string, layout: any, screenIds: string[]) {
+async function publishLayout(tenantId: string, userId: string, layout: any, screenIds: string[], notify = true) {
   if (!screenIds.length) return;
   await prisma.screen.updateMany({
     where: { tenantId, createdById: userId, id: { in: screenIds } },
     data: { activeLayoutId: layout.id, activePlaylistId: null }
   });
-  for (const screenId of screenIds) {
-    sendCommandToScreen(screenId, { type: 'CONTENT_UPDATED', activeLayout: layoutDto(layout), activePlaylist: null, forceReload: true });
+  if (notify) {
+    await bumpScreenManifestVersions(screenIds);
+    for (const screenId of screenIds) {
+      await sendManifestToScreen(screenId, true);
+    }
   }
 }

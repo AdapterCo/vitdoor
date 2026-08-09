@@ -4,6 +4,7 @@ import { prisma } from './prisma.js';
 import jwt from 'jsonwebtoken';
 import { getAdminJwtSecret, readCookie, SESSION_COOKIE_NAME } from './session.js';
 import { alertDto, layoutDto, playlistDto } from './dto.js';
+import { buildScreenManifest } from './manifest.js';
 
 interface ConnectedClient {
   ws: WebSocket;
@@ -162,6 +163,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
         const activeLayout = screen.activeLayoutId
           ? await prisma.layout.findFirst({ where: { id: screen.activeLayoutId, tenantId: screen.tenantId, createdById: screen.createdById } })
           : null;
+        const manifest = await buildScreenManifest(screen.id);
 
         client.ws.send(JSON.stringify({
           type: 'PAIRING_SUCCESS',
@@ -171,7 +173,8 @@ async function handleMessage(client: ConnectedClient, msg: any) {
           orientation: screen.orientation,
           activePlaylist: playlistDto(activePlaylist, true),
           activeLayout: layoutDto(activeLayout),
-          activeAlert: alertDto(activeAlert)
+          activeAlert: alertDto(activeAlert),
+          manifest
         }));
 
         broadcastToAdmins(
@@ -283,6 +286,12 @@ export function sendCommandToScreen(screenId: string, command: any) {
     }
   }
   return false;
+}
+
+export async function sendManifestToScreen(screenId: string, forceReload = false): Promise<boolean> {
+  const manifest = await buildScreenManifest(screenId);
+  if (!manifest) return false;
+  return sendCommandToScreen(screenId, { type: 'MANIFEST_UPDATED', manifest, forceReload });
 }
 
 export function broadcastToAdmins(data: any, tenantId?: string, ownerId?: string) {

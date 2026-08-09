@@ -90,6 +90,7 @@ model Screen {
   currentMediaName   String?
   lastScreenshotUrl  String?
   deviceTokenVersion Int       @default(1)
+  manifestVersion    Int       @default(1)
 
   // Active Content
   activePlaylistId String?
