@@ -512,9 +512,9 @@ Estados:
 |---|---|---|
 | Painel web React | CONCLUÍDO | Base funcional para administração |
 | Login de usuários | CONCLUÍDO | Master e cliente |
-| Isolamento por cliente | PARCIAL | Rotas, alertas, programação e notificações WebSocket têm dupla fronteira; falta executar a auditoria cruzada na VPS após o deploy |
+| Isolamento por cliente | CONCLUÍDO | Rotas, alertas, programação, relatórios e notificações WebSocket validados na versão `ee9a98d` implantada na VPS |
 | Limite de dispositivos | CONCLUÍDO | Validado no pareamento |
-| Upload de mídia | PARCIAL | Ainda passa pela memória da VPS |
+| Upload de mídia | PARCIAL | Ainda passa pela memória da VPS; limitado a 256 MB e dois processamentos simultâneos por instância |
 | Cloudflare R2 | CONCLUÍDO | Bucket `vitdoor-media`, credencial restrita, domínio próprio, chaves imutáveis por tenant/mídia e fail-fast sem fallback local validados na VPS |
 | Cloudflare CDN | CONCLUÍDO | `media.vitdoor.com.br`, CORS, Range, cache imutável e entrega `CF-Cache-Status: HIT` validados em arquivo MP4 real |
 | TLS Cloudflare → origem | CONCLUÍDO | Origin CA montado fora do Git, TLS 1.2/1.3 e modo Complete (Strict) validados para painel, API e player |
@@ -553,7 +553,7 @@ Estados:
 | Áudio por zona | SIMULADOR | Configurável no editor e respeitado no player web; falta portar ao Android |
 | Loop obrigatório | SIMULADOR | Forçado no backend e no player web; falta portar ao Android |
 | Proof-of-play do dispositivo | PARCIAL | Escrita exige token revogável e impede registrar evento em nome de outra tela; persistência offline final será SQLite no app Android |
-| Auditoria cruzada | PREPARADO | `npm --prefix backend run audit:isolation` valida master e dois clientes reais na VPS e suspende os tenants de auditoria ao terminar |
+| Auditoria cruzada | CONCLUÍDO | Versão `ee9a98d` implantada e validada na VPS com master e clientes isolados; o script permanece disponível para regressão |
 
 ### Consolidação web de 09/08/2026
 
@@ -562,8 +562,8 @@ Estados:
 - Programação inicial, layouts, telemetria, screenshots, status e resultados de comando são entregues somente ao proprietário da tela.
 - Campos de CPU, RAM, armazenamento, IP e versão deixaram de receber números ou textos fictícios.
 - Playlists rejeitam itens ambíguos, duração inválida e telas de outro usuário antes da escrita; a troca dos itens ocorre em transação.
-- Upload convencional recebeu limite de 512 MB, lista de tipos permitidos e cálculo SHA-256. Upload direto/multipart continua sendo a solução definitiva para arquivos grandes.
-- Build de produção do backend, painel e player web aprovado localmente; validação funcional cruzada continua reservada para a VPS.
+- Upload convencional recebeu limite de 256 MB, dois processamentos simultâneos, validação binária de tipo e cálculo SHA-256. Upload direto/multipart continua sendo a solução definitiva para arquivos grandes.
+- Build de produção do backend, painel e player web aprovado localmente; validação funcional cruzada aprovada na VPS na versão `ee9a98d`.
 
 ### Endurecimento de segurança de 09/08/2026
 
@@ -637,7 +637,7 @@ Estados:
 
 1. Adicionar Redis.
 2. Persistir comandos pendentes.
-3. Configurar Cloudflare CDN.
+3. ~~Configurar Cloudflare CDN.~~ Concluído e validado com `CF-Cache-Status: HIT`.
 4. Configurar backups.
 5. Configurar logs e métricas.
 6. Criar ambiente de homologação.
