@@ -114,6 +114,7 @@ Não coloque aspas, espaços ou as credenciais no Git. Depois recrie somente bac
 ```bash
 docker compose build backend migrate
 docker compose up -d --force-recreate backend
+docker compose restart gateway
 docker compose logs --tail=100 backend
 curl -s https://app.vitdoor.com.br/api/health
 ```
