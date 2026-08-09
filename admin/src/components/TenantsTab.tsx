@@ -4,11 +4,10 @@ import { Building2, Plus, Shield, CheckCircle2, Globe, HardDrive, Tv } from 'luc
 interface TenantsTabProps {
   tenants: any[];
   onCreateTenant: (tenantData: any) => void;
-  onSelectTenant: (tenant: any) => void;
-  activeTenantId?: string;
+  onUpdateTenant: (tenantId: string, data: { maxScreens: number; status: string }) => Promise<void>;
 }
 
-export const TenantsTab: React.FC<TenantsTabProps> = ({ tenants, onCreateTenant, onSelectTenant, activeTenantId }) => {
+export const TenantsTab: React.FC<TenantsTabProps> = ({ tenants, onCreateTenant, onUpdateTenant }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -17,6 +16,9 @@ export const TenantsTab: React.FC<TenantsTabProps> = ({ tenants, onCreateTenant,
   const [adminName, setAdminName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
+  const [editingTenant, setEditingTenant] = useState<any>(null);
+  const [editMaxScreens, setEditMaxScreens] = useState(1);
+  const [editStatus, setEditStatus] = useState('ACTIVE');
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +56,7 @@ export const TenantsTab: React.FC<TenantsTabProps> = ({ tenants, onCreateTenant,
       {/* Tenants Cards Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
         {tenants.map((t) => (
-          <div key={t.id} className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', borderColor: activeTenantId === t.id ? '#3b82f6' : undefined }}>
+          <div key={t.id} className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <h4 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>{t.name}</h4>
@@ -73,14 +75,14 @@ export const TenantsTab: React.FC<TenantsTabProps> = ({ tenants, onCreateTenant,
             </div>
 
             <div style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
-              <span>Status: <strong style={{ color: '#4ade80' }}>{t.status || 'ACTIVE'}</strong></span>
+              <span>Status: <strong style={{ color: t.status === 'ACTIVE' ? '#4ade80' : '#f87171' }}>{t.status === 'ACTIVE' ? 'ATIVO' : 'SUSPENSO'}</strong></span>
               <span>Criado em: {new Date(t.createdAt).toLocaleDateString()}</span>
             </div>
             <div style={{ fontSize: '.8rem', color: '#94a3b8' }}>
               Uso: <strong style={{ color: '#fff' }}>{t._count?.screens || 0}/{t.maxScreens}</strong> dispositivos • {t._count?.medias || 0} mídias
             </div>
-            <button className="btn-secondary" onClick={() => onSelectTenant(t)}>
-              Gerenciar telas e conteúdos
+            <button className="btn-secondary" onClick={() => { setEditingTenant(t); setEditMaxScreens(t.maxScreens); setEditStatus(t.status || 'ACTIVE'); }}>
+              Editar cliente
             </button>
           </div>
         ))}
@@ -176,6 +178,19 @@ export const TenantsTab: React.FC<TenantsTabProps> = ({ tenants, onCreateTenant,
           </div>
         </div>
       )}
+      {editingTenant && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', display: 'grid', placeItems: 'center', zIndex: 1000 }}>
+        <form className="glass-panel" style={{ width: '420px', padding: '30px', display: 'flex', flexDirection: 'column', gap: '16px' }} onSubmit={async (event) => {
+          event.preventDefault();
+          await onUpdateTenant(editingTenant.id, { maxScreens: editMaxScreens, status: editStatus });
+          setEditingTenant(null);
+        }}>
+          <div><h3>Editar cliente</h3><p style={{ color: '#94a3b8' }}>{editingTenant.name}</p></div>
+          <label>Telas contratadas<input className="input-field" type="number" min={1} step={1} required value={editMaxScreens} onChange={(e) => setEditMaxScreens(Math.max(1, parseInt(e.target.value, 10) || 1))} /></label>
+          <label>Status<select className="input-field" value={editStatus} onChange={(e) => setEditStatus(e.target.value)}><option value="ACTIVE">Ativo</option><option value="SUSPENDED">Suspenso por inadimplência</option></select></label>
+          {editStatus === 'SUSPENDED' && <div style={{ color: '#fca5a5', background: 'rgba(239,68,68,.1)', padding: '12px', borderRadius: '8px' }}>A suspensão encerra acessos e transmissões imediatamente, sem excluir dados.</div>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}><button type="button" className="btn-secondary" onClick={() => setEditingTenant(null)}>Cancelar</button><button type="submit" className="btn-primary">Salvar</button></div>
+        </form>
+      </div>}
     </div>
   );
 };

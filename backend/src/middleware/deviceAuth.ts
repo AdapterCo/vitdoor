@@ -11,7 +11,8 @@ export async function authenticateDevice(req: Request, res: Response, next: Next
     const payload = jwt.verify(token, process.env.JWT_SECRET!) as DeviceAuth;
     if (payload.type !== 'DEVICE') throw new Error('INVALID_TOKEN_TYPE');
     const screen = await prisma.screen.findFirst({ where: {
-      id: payload.screenId, tenantId: payload.tenantId, paired: true, deviceTokenVersion: payload.version
+      id: payload.screenId, tenantId: payload.tenantId, paired: true, deviceTokenVersion: payload.version,
+      tenant: { status: 'ACTIVE' }
     } });
     if (!screen) throw new Error('REVOKED_DEVICE');
     req.deviceAuth = payload;

@@ -370,6 +370,13 @@ export function App() {
     }
   };
 
+  const handleUpdateTenant = async (tenantId: string, data: any) => {
+    const response = await apiFetch(`/tenants/${tenantId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    if (!response.ok) throw new Error('Não foi possível atualizar o cliente.');
+    const tenantsResponse = await apiFetch('/tenants');
+    if (tenantsResponse.ok) setTenants(await tenantsResponse.json());
+  };
+
   const handleLogin = async (loggedUser: any) => {
     setUser(loggedUser);
     setAuthLoading(true);
@@ -494,12 +501,7 @@ export function App() {
           <TenantsTab
             tenants={tenants}
             onCreateTenant={handleCreateTenant}
-            activeTenantId={activeTenant?.id}
-            onSelectTenant={(tenant) => {
-              setActiveTenant(tenant);
-              setActiveTab('dashboard');
-              loadTenantData(tenant.id);
-            }}
+            onUpdateTenant={handleUpdateTenant}
           />
         )}
       </main>

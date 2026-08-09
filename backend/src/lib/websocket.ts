@@ -81,6 +81,14 @@ async function handleMessage(client: ConnectedClient, msg: any) {
         const screens = await prisma.screen.findMany();
         screen = screens.find((s) => cleanCode(s.pairingCode) === targetCode) || null;
       }
+      if (screen) {
+        const tenant = await prisma.tenant.findUnique({ where: { id: screen.tenantId }, select: { status: true } });
+        if (tenant?.status !== 'ACTIVE') {
+          client.ws.send(JSON.stringify({ type: 'TENANT_SUSPENDED' }));
+          client.ws.close(4003, 'Tenant suspended');
+          break;
+        }
+      }
 
       if (screen && screen.paired) {
         client.screenId = screen.id;
@@ -273,6 +281,15 @@ export function broadcastToAdmins(data: any, tenantId?: string) {
       conn.ws.readyState === WebSocket.OPEN
     ) {
       conn.ws.send(JSON.stringify(data));
+    }
+  }
+}
+
+export function disconnectTenant(tenantId: string) {
+  for (const connection of activeConnections) {
+    if (connection.tenantId === tenantId && connection.ws.readyState === WebSocket.OPEN) {
+      connection.ws.send(JSON.stringify({ type: 'TENANT_SUSPENDED' }));
+      connection.ws.close(4003, 'Tenant suspended');
     }
   }
 }

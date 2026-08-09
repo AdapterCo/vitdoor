@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import { prisma } from '../lib/prisma.js';
 
 export interface AuthUser {
   userId: string;
@@ -15,7 +16,7 @@ declare global {
   }
 }
 
-export function authenticate(req: Request, res: Response, next: NextFunction): void {
+export async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization;
   const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
   if (!token) {
@@ -23,7 +24,13 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
     return;
   }
   try {
-    req.auth = jwt.verify(token, process.env.JWT_SECRET || 'secret') as AuthUser;
+    const auth = jwt.verify(token, process.env.JWT_SECRET || 'secret') as AuthUser;
+    const user = await prisma.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, active: true }, include: { tenant: true } });
+    if (!user || user.tenant.status !== 'ACTIVE') {
+      res.status(401).json({ error: 'Conta ou empresa suspensa.' });
+      return;
+    }
+    req.auth = auth;
     next();
   } catch {
     res.status(401).json({ error: 'Sessão inválida ou expirada.' });

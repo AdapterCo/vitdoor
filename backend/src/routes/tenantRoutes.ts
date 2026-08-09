@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { requireSuperAdmin } from '../middleware/auth.js';
+import { disconnectTenant } from '../lib/websocket.js';
 
 export const tenantRoutes = Router();
 tenantRoutes.use(requireSuperAdmin);
@@ -65,6 +66,10 @@ tenantRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
 tenantRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const { name, status, maxScreens, maxStorageMb, brandColor, customDomain } = req.body;
+  const existing = await prisma.tenant.findUnique({ where: { id } });
+  if (!existing) return res.status(404).json({ error: 'Cliente não encontrado.' });
+  if (status && !['ACTIVE', 'SUSPENDED'].includes(status)) return res.status(400).json({ error: 'Status inválido.' });
+  if (existing.slug === 'vitdoor-master' && status === 'SUSPENDED') return res.status(400).json({ error: 'O tenant master da plataforma não pode ser suspenso.' });
   const tenant = await prisma.tenant.update({
     where: { id },
     data: {
@@ -74,5 +79,9 @@ tenantRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
       brandColor, customDomain
     }
   });
+  if (tenant.status !== 'ACTIVE') {
+    await prisma.screen.updateMany({ where: { tenantId: id }, data: { status: 'OFFLINE' } });
+    disconnectTenant(id);
+  }
   return res.json(tenant);
 });

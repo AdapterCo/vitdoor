@@ -16,6 +16,7 @@ export function App() {
   const [activeLayout, setActiveLayout] = useState<any>(null);
   const [activeAlert, setActiveAlert] = useState<any>(null);
   const [volume, setVolume] = useState<number>(80);
+  const [suspended, setSuspended] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -118,6 +119,7 @@ export function App() {
           const msg = JSON.parse(event.data);
 
           if (msg.type === 'PAIRING_SUCCESS' || msg.type === 'PAIRING_CONFIRMED') {
+            setSuspended(false);
             const info = { id: msg.screenId, name: msg.screenName || 'TV Mídia Indoor', tenantId: msg.tenantId };
             setScreenInfo(info);
             await setCache('screenInfo', info);
@@ -174,6 +176,9 @@ export function App() {
           } else if (msg.type === 'EMERGENCY_ALERT_TRIGGERED') {
             setActiveAlert(msg.alert);
           } else if (msg.type === 'EMERGENCY_ALERT_CLEARED') {
+            setActiveAlert(null);
+          } else if (msg.type === 'TENANT_SUSPENDED') {
+            setSuspended(true);
             setActiveAlert(null);
           }
         } catch (err) {
@@ -268,7 +273,9 @@ export function App() {
 
   return (
     <div ref={containerRef} style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      {!paired ? (
+      {suspended ? (
+        <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#020617', color: '#94a3b8', textAlign: 'center' }}><div><h1 style={{ color: '#fff' }}>Dispositivo temporariamente indisponível</h1><p>Entre em contato com o responsável pela conta.</p></div></div>
+      ) : !paired ? (
         <PairingScreen pairingCode={pairingCode} isConnected={isConnected} />
       ) : (
         <LayoutRenderer
