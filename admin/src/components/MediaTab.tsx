@@ -1,20 +1,28 @@
 import React, { useState } from 'react';
-import { UploadCloud, Image, Film, Globe, Rss, Trash2, Save, Plus } from 'lucide-react';
+import { UploadCloud, Image, Film, Globe, Rss, Trash2, Save, Plus, Folder, FolderPlus, Pencil } from 'lucide-react';
 
 interface MediaTabProps {
   medias: any[];
-  onUploadFile: (file: File, name: string, durationSeconds: number, tags: string) => Promise<boolean>;
+  folders: any[];
+  onUploadFile: (file: File, name: string, durationSeconds: number, tags: string, folderId?: string | null) => Promise<boolean>;
   onUpdateMedia: (id: string, data: any) => Promise<boolean>;
   onCreateWidget: (widgetData: any) => void;
   onDeleteMedia: (id: string) => void;
+  onCreateFolder: (name: string) => Promise<boolean>;
+  onRenameFolder: (id: string, name: string) => Promise<boolean>;
+  onDeleteFolder: (id: string) => Promise<boolean>;
 }
 
 export const MediaTab: React.FC<MediaTabProps> = ({
   medias,
+  folders,
   onUploadFile,
   onCreateWidget,
   onDeleteMedia,
-  onUpdateMedia
+  onUpdateMedia,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder
 }) => {
   const [isWidgetModalOpen, setIsWidgetModalOpen] = useState(false);
   const [widgetName, setWidgetName] = useState('');
@@ -23,6 +31,8 @@ export const MediaTab: React.FC<MediaTabProps> = ({
   const [duration, setDuration] = useState(15);
   const [durationDrafts, setDurationDrafts] = useState<Record<string, number>>({});
   const [uploading, setUploading] = useState(false);
+  const [selectedFolder, setSelectedFolder] = useState<string>('ALL');
+  const visibleMedias = medias.filter((media) => selectedFolder === 'ALL' ? true : selectedFolder === 'ROOT' ? !media.folderId : media.folderId === selectedFolder);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -32,7 +42,7 @@ export const MediaTab: React.FC<MediaTabProps> = ({
         detectedDuration = await readMediaDuration(file);
       }
       setUploading(true);
-      await onUploadFile(file, file.name, detectedDuration, 'Geral');
+      await onUploadFile(file, file.name, detectedDuration, 'Geral', selectedFolder !== 'ALL' && selectedFolder !== 'ROOT' ? selectedFolder : null);
       setUploading(false);
       e.target.value = '';
     }
@@ -46,7 +56,8 @@ export const MediaTab: React.FC<MediaTabProps> = ({
       type: widgetType,
       url: widgetUrl,
       durationSeconds: duration,
-      tags: 'Widget'
+      tags: 'Widget',
+      folderId: selectedFolder !== 'ALL' && selectedFolder !== 'ROOT' ? selectedFolder : null
     });
     setWidgetName('');
     setWidgetUrl('');
@@ -77,9 +88,20 @@ export const MediaTab: React.FC<MediaTabProps> = ({
         </div>
       </div>
 
+      <div className="glass-panel" style={{ padding: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className={selectedFolder === 'ALL' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSelectedFolder('ALL')}><Folder size={16} /> Todas</button>
+        <button className={selectedFolder === 'ROOT' ? 'btn-primary' : 'btn-secondary'} onClick={() => setSelectedFolder('ROOT')}>Sem pasta</button>
+        {folders.map((folder) => <div key={folder.id} style={{ display: 'flex', gap: '4px' }}>
+          <button className={selectedFolder === folder.id ? 'btn-primary' : 'btn-secondary'} onClick={() => setSelectedFolder(folder.id)}><Folder size={16} /> {folder.name} ({folder._count?.medias || 0})</button>
+          <button className="btn-secondary" style={{ padding: '7px' }} title="Renomear pasta" onClick={async () => { const name = prompt('Novo nome da pasta:', folder.name)?.trim(); if (name) await onRenameFolder(folder.id, name); }}><Pencil size={14} /></button>
+          <button className="btn-danger" style={{ padding: '7px' }} title="Excluir pasta (as mídias serão mantidas)" onClick={async () => { if (confirm(`Excluir a pasta ${folder.name}? As mídias serão mantidas sem pasta.`) && await onDeleteFolder(folder.id)) setSelectedFolder('ALL'); }}><Trash2 size={14} /></button>
+        </div>)}
+        <button className="btn-secondary" onClick={async () => { const name = prompt('Nome da nova pasta:')?.trim(); if (name) await onCreateFolder(name); }}><FolderPlus size={16} /> Nova pasta</button>
+      </div>
+
       {/* Media Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-        {medias.map((media) => (
+        {visibleMedias.map((media) => (
           <div key={media.id} className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Thumbnail Box */}
             <div style={{
@@ -159,6 +181,10 @@ export const MediaTab: React.FC<MediaTabProps> = ({
               </button>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <select className="input-field" value={media.folderId || ''} onChange={(e) => onUpdateMedia(media.id, { folderId: e.target.value || null })} title="Mover para pasta" style={{ padding: '8px' }}>
+                <option value="">Sem pasta</option>
+                {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+              </select>
               <label style={{ color: '#94a3b8', fontSize: '.78rem', flex: 1 }}>
                 Duração (segundos)
                 <input

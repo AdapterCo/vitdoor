@@ -23,6 +23,7 @@ export const LayoutsTab: React.FC<Props> = ({ layouts, medias, screens, onCreate
   const [preset, setPreset] = useState('70_30');
   const [zoneMedia, setZoneMedia] = useState<Record<string, string[]>>({ main: [], side: [] });
   const [zoneFit, setZoneFit] = useState<Record<string, string>>({ main: 'CONTAIN', side: 'CONTAIN' });
+  const [zoneAudio, setZoneAudio] = useState<Record<string, boolean>>({ main: true, side: false });
   const [screenIds, setScreenIds] = useState<string[]>([]);
   const [tickerEnabled, setTickerEnabled] = useState(false);
   const [tickerText, setTickerText] = useState('');
@@ -31,7 +32,7 @@ export const LayoutsTab: React.FC<Props> = ({ layouts, medias, screens, onCreate
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
-    setEditingId(null); setName(''); setPreset('70_30'); setZoneMedia({ main: [], side: [] }); setZoneFit({ main: 'CONTAIN', side: 'CONTAIN' }); setScreenIds([]);
+    setEditingId(null); setName(''); setPreset('70_30'); setZoneMedia({ main: [], side: [] }); setZoneFit({ main: 'CONTAIN', side: 'CONTAIN' }); setZoneAudio({ main: true, side: false }); setScreenIds([]);
     setTickerEnabled(false); setTickerText(''); setClockEnabled(false); setClockPosition('TOP_RIGHT');
   };
   const create = () => { reset(); setOpen(true); };
@@ -41,6 +42,7 @@ export const LayoutsTab: React.FC<Props> = ({ layouts, medias, screens, onCreate
     setEditingId(layout.id); setName(layout.name); setPreset(config.preset || '70_30');
     setZoneMedia(Object.fromEntries((config.zones || []).map((zone: any) => [zone.id, (zone.items || []).map((item: any) => item.mediaId)])));
     setZoneFit(Object.fromEntries((config.zones || []).map((zone: any) => [zone.id, zone.fit || 'CONTAIN'])));
+    setZoneAudio(Object.fromEntries((config.zones || []).map((zone: any, index: number) => [zone.id, typeof zone.audioEnabled === 'boolean' ? zone.audioEnabled : index === 0])));
     setScreenIds((layout.screens || []).map((screen: any) => screen.id));
     setTickerEnabled(!!config.ticker?.enabled); setTickerText(config.ticker?.text || '');
     setClockEnabled(!!config.clock?.enabled); setClockPosition(config.clock?.position || 'TOP_RIGHT');
@@ -55,6 +57,8 @@ export const LayoutsTab: React.FC<Props> = ({ layouts, medias, screens, onCreate
     const zones = presetZones(preset).map((zone) => ({
       ...zone,
       fit: zoneFit[zone.id] || 'CONTAIN',
+      loop: true,
+      audioEnabled: !!zoneAudio[zone.id],
       items: (zoneMedia[zone.id] || []).map((mediaId) => {
         const media = medias.find((item) => item.id === mediaId);
         return media ? { mediaId: media.id, name: media.name, type: media.type, url: media.url, durationSeconds: media.durationSeconds } : null;
@@ -114,6 +118,10 @@ export const LayoutsTab: React.FC<Props> = ({ layouts, medias, screens, onCreate
                 <option value="COVER">Preencher a área — pode cortar bordas</option>
                 <option value="FILL">Esticar exatamente no espaço</option>
               </select>
+            </label>
+            <label style={{ display: 'block', color: '#cbd5e1', fontSize: '.82rem', marginBottom: '10px' }}>
+              <input type="checkbox" checked={!!zoneAudio[zone.id]} onChange={(e) => setZoneAudio((current) => e.target.checked ? { ...Object.fromEntries(Object.keys(current).map((id) => [id, false])), [zone.id]: true } : { ...current, [zone.id]: false })} /> Reproduzir áudio nesta zona
+              <span style={{ display: 'block', color: '#64748b', marginTop: '3px' }}>Apenas uma zona pode emitir som para evitar sobreposição.</span>
             </label>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>{medias.map((media) => <button type="button" key={media.id} className={(zoneMedia[zone.id] || []).includes(media.id) ? 'btn-primary' : 'btn-secondary'} onClick={() => toggleZoneMedia(zone.id, media.id)}>{media.name} · {media.durationSeconds}s</button>)}</div>
             {(zoneMedia[zone.id] || []).length > 0 && <div style={{ marginTop: '10px', color: '#60a5fa', fontSize: '.8rem' }}>Sequência: {(zoneMedia[zone.id] || []).map((id) => medias.find((m) => m.id === id)?.name).join(' → ')}</div>}

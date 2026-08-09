@@ -20,6 +20,7 @@ export function App() {
   const [screens, setScreens] = useState<any[]>([]);
   const [playlists, setPlaylists] = useState<any[]>([]);
   const [medias, setMedias] = useState<any[]>([]);
+  const [mediaFolders, setMediaFolders] = useState<any[]>([]);
   const [layouts, setLayouts] = useState<any[]>([]);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [tenants, setTenants] = useState<any[]>([]);
@@ -76,22 +77,24 @@ export function App() {
   };
 
   const loadTenantData = async (tenantId: string) => {
-    setScreens([]); setPlaylists([]); setMedias([]); setLayouts([]); setCampaigns([]); setStats(null);
+    setScreens([]); setPlaylists([]); setMedias([]); setMediaFolders([]); setLayouts([]); setCampaigns([]); setStats(null);
     try {
-      const [screensRes, playlistsRes, mediasRes, layoutsRes, campaignsRes, statsRes] = await Promise.all([
+      const [screensRes, playlistsRes, mediasRes, foldersRes, layoutsRes, campaignsRes, statsRes] = await Promise.all([
         apiFetch(`/screens?tenantId=${tenantId}`),
         apiFetch(`/playlists?tenantId=${tenantId}`),
         apiFetch(`/media?tenantId=${tenantId}`),
+        apiFetch(`/media/folders?tenantId=${tenantId}`),
         apiFetch(`/layouts?tenantId=${tenantId}`),
         apiFetch(`/campaigns?tenantId=${tenantId}`),
         apiFetch(`/proof-of-play/stats?tenantId=${tenantId}`)
       ]);
 
-      const responses = [screensRes, playlistsRes, mediasRes, layoutsRes, campaignsRes, statsRes];
+      const responses = [screensRes, playlistsRes, mediasRes, foldersRes, layoutsRes, campaignsRes, statsRes];
       if (responses.some((response) => !response.ok)) throw new Error('Acesso ao cliente recusado.');
       setScreens(await screensRes.json());
       setPlaylists(await playlistsRes.json());
       setMedias(await mediasRes.json());
+      setMediaFolders(await foldersRes.json());
       setLayouts(await layoutsRes.json());
       setCampaigns(await campaignsRes.json());
       setStats(await statsRes.json());
@@ -201,7 +204,7 @@ export function App() {
     loadTenantData(activeTenant.id);
   };
 
-  const handleUploadFile = async (file: File, name: string, durationSeconds: number, tags: string) => {
+  const handleUploadFile = async (file: File, name: string, durationSeconds: number, tags: string, folderId?: string | null) => {
     if (!activeTenant) return false;
     const formData = new FormData();
     formData.append('file', file);
@@ -209,6 +212,7 @@ export function App() {
     formData.append('name', name);
     formData.append('durationSeconds', durationSeconds.toString());
     formData.append('tags', tags);
+    if (folderId) formData.append('folderId', folderId);
 
     const response = await apiFetch('/media/upload', { method: 'POST', body: formData });
     if (!response.ok) {
@@ -248,6 +252,24 @@ export function App() {
   const handleDeleteMedia = async (id: string) => {
     await apiFetch(`/media/${id}?tenantId=${activeTenant.id}`, { method: 'DELETE' });
     loadTenantData(activeTenant.id);
+  };
+
+  const handleCreateMediaFolder = async (name: string) => {
+    const response = await apiFetch('/media/folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantId: activeTenant.id, name }) });
+    if (!response.ok) { const error = await response.json(); alert(error.error); return false; }
+    await loadTenantData(activeTenant.id); return true;
+  };
+
+  const handleRenameMediaFolder = async (id: string, name: string) => {
+    const response = await apiFetch(`/media/folders/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantId: activeTenant.id, name }) });
+    if (!response.ok) { const error = await response.json(); alert(error.error); return false; }
+    await loadTenantData(activeTenant.id); return true;
+  };
+
+  const handleDeleteMediaFolder = async (id: string) => {
+    const response = await apiFetch(`/media/folders/${id}?tenantId=${activeTenant.id}`, { method: 'DELETE' });
+    if (!response.ok) { const error = await response.json(); alert(error.error); return false; }
+    await loadTenantData(activeTenant.id); return true;
   };
 
   const handleCreateLayout = async (layoutData: any) => {
@@ -395,7 +417,7 @@ export function App() {
     wsRef.current = null;
     setUser(null);
     setActiveTenant(null);
-    setTenants([]); setScreens([]); setPlaylists([]); setMedias([]); setLayouts([]); setCampaigns([]); setStats(null);
+    setTenants([]); setScreens([]); setPlaylists([]); setMedias([]); setMediaFolders([]); setLayouts([]); setCampaigns([]); setStats(null);
     setActiveTab('dashboard');
     setIsPairModalOpen(false);
   };
@@ -447,10 +469,14 @@ export function App() {
         {activeTab === 'media' && (
           <MediaTab
             medias={medias}
+            folders={mediaFolders}
             onUploadFile={handleUploadFile}
             onUpdateMedia={handleUpdateMedia}
             onCreateWidget={handleCreateWidget}
             onDeleteMedia={handleDeleteMedia}
+            onCreateFolder={handleCreateMediaFolder}
+            onRenameFolder={handleRenameMediaFolder}
+            onDeleteFolder={handleDeleteMediaFolder}
           />
         )}
 

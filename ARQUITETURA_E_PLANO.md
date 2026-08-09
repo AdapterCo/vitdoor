@@ -5,7 +5,7 @@
 > Toda nova funcionalidade, correção ou decisão técnica deve ser comparada com este arquivo.
 > Quando uma entrega for concluída, sua situação deve ser atualizada na matriz de acompanhamento.
 
-**Versão do documento:** 1.1  
+**Versão do documento:** 1.2
 **Última atualização:** 08/08/2026  
 **Produto:** Plataforma SaaS de mídia indoor para totens e TV Boxes  
 **Status geral:** MVP em evolução — ainda não pronto para produção comercial
@@ -18,8 +18,8 @@ O VitDoor será uma plataforma SaaS para venda e gerenciamento de totens de míd
 
 A operação comercial será:
 
-1. A VitDoor cadastra uma empresa cliente e define seu plano.
-2. O plano determina quantidade de dispositivos/totens, usuários e armazenamento.
+1. A VitDoor cadastra uma empresa cliente, sem catálogo fixo de planos.
+2. A VitDoor informa diretamente a quantidade contratada de telas e o armazenamento; o workspace master possui telas ilimitadas.
 3. A empresa recebe acesso ao painel web.
 4. Cada TV Box executa o aplicativo VitDoor Player para Android TV.
 5. A empresa ativa cada TV Box usando um código de pareamento.
@@ -451,6 +451,8 @@ Nada pode ser fixo globalmente no player:
 - Divisão de tela é configurável.
 - Mídias de cada zona são selecionadas explicitamente.
 - Enquadramento é configurado por zona.
+- Áudio é configurado por zona e somente uma zona deve emitir som por vez.
+- O loop de layouts e playlists é obrigatório e aplicado pelo backend.
 
 Modos de enquadramento:
 
@@ -468,6 +470,7 @@ Cada zona deve ter:
 - Sequência própria de mídias.
 - Duração por item.
 - Loop próprio, quando aplicável.
+- Destinos pertencentes ao mesmo usuário que criou o layout.
 
 As zonas devem reproduzir independentemente.
 
@@ -535,6 +538,20 @@ Estados:
 | Assinatura e distribuição APK | PENDENTE | Play Store privada, MDM ou atualização própria |
 | Deploy em VPS | PARCIAL | Compose, proxy, volumes, healthcheck e procedimento de homologação preparados |
 | Monitoramento e backups | PARCIAL | Healthcheck preparado; faltam métricas, alertas e backup externo automatizado |
+
+### Auditoria funcional de 08/08/2026
+
+| Entrega | Situação | Evidência no repositório |
+|---|---|---|
+| Workspace pessoal do master | CONCLUÍDO | Master administra clientes e também seus próprios conteúdos; telas ilimitadas apenas no tenant master |
+| Propriedade individual | CONCLUÍDO | Telas, mídias, pastas, layouts, playlists e campanhas filtradas por `tenantId` e `createdById` |
+| Relatórios individuais | CONCLUÍDO | Proof-of-play, telas e armazenamento são calculados somente sobre telas/mídias do usuário autenticado |
+| Pastas de mídia | CONCLUÍDO | Criar, renomear, excluir sem apagar mídias e mover itens entre pastas |
+| Autoria e destino de layout | CONCLUÍDO | Backend valida telas e reconstrói o JSON usando somente mídias canônicas do proprietário |
+| Áudio por zona | SIMULADOR | Configurável no editor e respeitado no player web; falta portar ao Android |
+| Loop obrigatório | SIMULADOR | Forçado no backend e no player web; falta portar ao Android |
+| Proof-of-play do dispositivo | PARCIAL | Escrita exige token revogável e impede registrar evento em nome de outra tela; persistência offline final será Android/Room |
+| Auditoria cruzada | PREPARADO | `npm --prefix backend run audit:isolation` valida master e dois clientes reais na VPS e suspende os tenants de auditoria ao terminar |
 
 ---
 
@@ -626,6 +643,18 @@ Implementações existentes somente no diretório `player/` devem permanecer com
 **Decisão:** Cloudflare R2 será a origem dos arquivos, servido por domínio personalizado e CDN.  
 **Motivo:** Escala, custo de saída e integração com Cloudflare.  
 **Consequência:** O fallback local deve ser desativado em produção.
+
+### ADR-005 — Escopo individual dentro do tenant
+
+**Decisão:** cada usuário administra apenas as telas, mídias, pastas, layouts, playlists, campanhas e relatórios que criou. O `tenantId` continua sendo a fronteira empresarial e o `createdById` define o workspace individual.
+**Motivo:** impedir que usuários da mesma empresa ou o master alterem acidentalmente o material operacional de outro usuário.
+**Consequência:** toda rota de leitura, escrita, publicação e relatório deve validar as duas fronteiras. O painel de clientes do master controla apenas cadastro, status e limites contratados.
+
+### ADR-006 — Testes funcionais somente na VPS
+
+**Decisão:** a validação integrada será executada contra a aplicação implantada na VPS, usando o script de auditoria cruzada.
+**Motivo:** reproduzir proxy, TLS, PostgreSQL, containers e comunicação do ambiente real.
+**Consequência:** builds e verificações estáticas rodam antes do push; a aprovação funcional integrada ocorre após um único deploy do pacote fechado.
 
 ---
 

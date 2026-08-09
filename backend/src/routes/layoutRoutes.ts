@@ -21,10 +21,12 @@ layoutRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
   if (!name || !canvasConfigJson) return res.status(400).json({ error: 'Nome e configuração são obrigatórios.' });
   if (!await validateScreens(tenantId, req.auth!.userId, screenIds)) return res.status(400).json({ error: 'Uma ou mais telas selecionadas são inválidas.' });
 
+  const safeConfig = await prepareCanvasConfig(tenantId, req.auth!.userId, canvasConfigJson);
+  if (!safeConfig) return res.status(400).json({ error: 'O layout contém mídia ausente ou pertencente a outro usuário.' });
   const layout = await prisma.layout.create({
     data: {
       tenantId, createdById: req.auth!.userId, name, description, orientation: orientation || 'HORIZONTAL',
-      canvasConfigJson: stringifyConfig(canvasConfigJson), isTemplate: !!isTemplate
+      canvasConfigJson: safeConfig, isTemplate: !!isTemplate
     }
   });
   await publishLayout(tenantId, req.auth!.userId, layout, screenIds);
@@ -43,9 +45,11 @@ layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const screenIds = normalizeIds(req.body.screenIds);
   if (!await validateScreens(tenantId, req.auth!.userId, screenIds)) return res.status(400).json({ error: 'Uma ou mais telas selecionadas são inválidas.' });
 
+  const safeConfig = await prepareCanvasConfig(tenantId, req.auth!.userId, canvasConfigJson);
+  if (!safeConfig) return res.status(400).json({ error: 'O layout contém mídia ausente ou pertencente a outro usuário.' });
   const layout = await prisma.layout.update({
     where: { id },
-    data: { name, description, orientation, canvasConfigJson: stringifyConfig(canvasConfigJson) }
+    data: { name, description, orientation, canvasConfigJson: safeConfig }
   });
   const removed = existing.screens.map((screen) => screen.id).filter((screenId) => !screenIds.includes(screenId));
   await prisma.screen.updateMany({ where: { tenantId, activeLayoutId: id, id: { notIn: screenIds } }, data: { activeLayoutId: null } });
@@ -64,8 +68,25 @@ layoutRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> =>
   return res.json({ success: true });
 });
 
-function stringifyConfig(value: any): string {
-  return typeof value === 'string' ? value : JSON.stringify(value);
+async function prepareCanvasConfig(tenantId: string, userId: string, value: any): Promise<string | null> {
+  let config: any;
+  try { config = typeof value === 'string' ? JSON.parse(value) : structuredClone(value); } catch { return null; }
+  if (!config || !Array.isArray(config.zones) || config.zones.length === 0) return null;
+  const ids = [...new Set(config.zones.flatMap((zone: any) => Array.isArray(zone.items) ? zone.items.map((item: any) => item?.mediaId) : []).filter((id: any) => typeof id === 'string'))] as string[];
+  const medias = await prisma.media.findMany({ where: { tenantId, createdById: userId, id: { in: ids } } });
+  if (medias.length !== ids.length) return null;
+  const byId = new Map(medias.map((media) => [media.id, media]));
+  for (const zone of config.zones) {
+    if (!Array.isArray(zone.items) || zone.items.length === 0) return null;
+    zone.loop = true;
+    zone.audioEnabled = zone.audioEnabled === true;
+    zone.items = zone.items.map((item: any) => {
+      const media = byId.get(item.mediaId);
+      return media ? { mediaId: media.id, name: media.name, type: media.type, url: media.url, durationSeconds: media.durationSeconds } : null;
+    });
+    if (zone.items.some((item: any) => !item)) return null;
+  }
+  return JSON.stringify(config);
 }
 
 async function validateScreens(tenantId: string, userId: string, screenIds: string[]): Promise<boolean> {

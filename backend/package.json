@@ -9,6 +9,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:seed-admin": "node dist/scripts/seedAdmin.js",
+    "audit:isolation": "node dist/scripts/auditIsolation.js",
     "db:studio": "prisma studio"
   },
   "dependencies": {

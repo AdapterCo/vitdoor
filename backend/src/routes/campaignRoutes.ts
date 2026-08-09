@@ -7,7 +7,7 @@ export const campaignRoutes = Router();
 campaignRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const campaigns = await prisma.campaign.findMany({
-    where: tenantId ? { tenantId } : {},
+    where: { tenantId, createdById: req.auth!.userId },
     include: { playlist: true },
     orderBy: { createdAt: 'desc' }
   });
@@ -23,13 +23,14 @@ campaignRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
   }
 
   if (playlistId) {
-    const playlist = await prisma.playlist.findFirst({ where: { id: playlistId, tenantId } });
+    const playlist = await prisma.playlist.findFirst({ where: { id: playlistId, tenantId, createdById: req.auth!.userId } });
     if (!playlist) return res.status(400).json({ error: 'Playlist inválida para este cliente.' });
   }
 
   const campaign = await prisma.campaign.create({
     data: {
       tenantId,
+      createdById: req.auth!.userId,
       name,
       advertiserName,
       playlistId,
@@ -50,7 +51,7 @@ campaignRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
 campaignRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const existing = await prisma.campaign.findFirst({ where: { id, tenantId } });
+  const existing = await prisma.campaign.findFirst({ where: { id, tenantId, createdById: req.auth!.userId } });
   if (!existing) return res.status(404).json({ error: 'Campanha não encontrada.' });
   await prisma.campaign.delete({ where: { id } });
   return res.json({ success: true });
