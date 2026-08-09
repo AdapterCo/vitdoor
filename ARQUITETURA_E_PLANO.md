@@ -582,6 +582,7 @@ Estados:
 - Sessão do painel usa cookie host-only `HttpOnly`, `Secure` e `SameSite=Strict`; o JWT não é mais devolvido ao JavaScript nem armazenado em Web Storage. Operações autenticadas por cookie validam também a origem administrativa configurada em `ADMIN_ORIGINS`.
 - Sessões administrativas e dispositivos usam segredos JWT distintos. A rotação de `ADMIN_JWT_SECRET` invalida logins do painel sem desparear TVs que continuam protegidas por `JWT_SECRET`.
 - Respostas HTTP e mensagens WebSocket usam DTOs explícitos por consumidor. Campos internos como `passwordHash`, `storagePath`, `createdById`, `deviceTokenVersion`, relações Prisma completas e payloads arbitrários de telemetria não são expostos ao painel ou ao player.
+- Gateway possui lista de permissão de origem baseada em `$realip_remote_addr`: hostnames públicos aceitam conexão somente das faixas oficiais Cloudflare e encerram acesso direto com código Nginx 444. A ativação permanece condicionada ao teste `nginx -t` e à validação pública/direta na VPS.
 
 ### Validação R2/CDN de 09/08/2026
 
