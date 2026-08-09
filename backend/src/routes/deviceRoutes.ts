@@ -5,8 +5,13 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
 import { authenticateDevice } from '../middleware/deviceAuth.js';
 import { buildScreenManifest } from '../lib/manifest.js';
+import multer from 'multer';
+import { fileTypeFromBuffer } from 'file-type';
+import { broadcastToAdmins } from '../lib/websocket.js';
+import { screenshotRateLimiter } from '../middleware/security.js';
 
 export const deviceRoutes = Router();
+const screenshotUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
 
 deviceRoutes.get('/manifest', authenticateDevice, async (req: Request, res: Response) => {
   const manifest = await buildScreenManifest(req.deviceAuth!.screenId);
@@ -17,6 +22,52 @@ deviceRoutes.get('/manifest', authenticateDevice, async (req: Request, res: Resp
   if (req.headers['if-none-match'] === etag) return res.status(304).end();
   return res.json(manifest);
 });
+
+deviceRoutes.post('/screenshots/:commandId', screenshotRateLimiter, authenticateDevice, receiveScreenshot, async (req: Request, res: Response) => {
+  if (!req.file) return res.status(400).json({ error: 'Envie o screenshot no campo file.' });
+  const detected = await fileTypeFromBuffer(req.file.buffer);
+  if (!detected || !['image/jpeg', 'image/png'].includes(detected.mime)) {
+    return res.status(415).json({ error: 'Screenshot deve ser JPEG ou PNG válido.' });
+  }
+  const command = await prisma.remoteCommand.findFirst({
+    where: { commandId: req.params.commandId, screenId: req.deviceAuth!.screenId, tenantId: req.deviceAuth!.tenantId, action: 'TAKE_SCREENSHOT' }
+  });
+  if (!command) return res.status(404).json({ error: 'Comando de screenshot não encontrado para este dispositivo.' });
+  if (command.status === 'SUCCEEDED') {
+    return res.json({ commandId: command.commandId, status: command.status, capturedAt: command.completedAt, duplicate: true });
+  }
+  if (['FAILED', 'EXPIRED'].includes(command.status)) {
+    return res.status(409).json({ error: 'Este comando já foi finalizado.', status: command.status });
+  }
+
+  const capturedAt = new Date();
+  const imageDataUrl = `data:${detected.mime};base64,${req.file.buffer.toString('base64')}`;
+  await prisma.$transaction([
+    prisma.screen.update({ where: { id: req.deviceAuth!.screenId }, data: { lastScreenshotUrl: imageDataUrl } }),
+    prisma.remoteCommand.update({
+      where: { commandId: command.commandId },
+      data: { status: 'SUCCEEDED', success: true, message: 'Screenshot recebido.', completedAt: capturedAt }
+    })
+  ]);
+  broadcastToAdmins({
+    type: 'SCREENSHOT_UPDATED',
+    screenId: req.deviceAuth!.screenId,
+    commandId: command.commandId,
+    imageUrl: imageDataUrl,
+    capturedAt: capturedAt.toISOString()
+  }, req.deviceAuth!.tenantId, command.createdById);
+  return res.status(201).json({ commandId: command.commandId, status: 'SUCCEEDED', capturedAt, mimeType: detected.mime, sizeBytes: req.file.size, duplicate: false });
+});
+
+function receiveScreenshot(req: Request, res: Response, next: (error?: any) => void) {
+  screenshotUpload.single('file')(req, res, (error: any) => {
+    if (error instanceof multer.MulterError) {
+      res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: error.code === 'LIMIT_FILE_SIZE' ? 'Screenshot maior que 2 MB.' : 'Upload de screenshot inválido.' });
+      return;
+    }
+    next(error);
+  });
+}
 
 deviceRoutes.post('/pairing', async (_req: Request, res: Response) => {
   const secret = crypto.randomBytes(32).toString('base64url');

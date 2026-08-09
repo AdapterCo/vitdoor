@@ -177,6 +177,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
           manifestVersion: manifest?.version,
           manifestChecksum: manifest?.checksum
         }));
+        await deliverPendingCommands(client);
 
         broadcastToAdmins(
           { type: 'SCREEN_STATUS_CHANGED', screenId: screen.id, status: 'ONLINE' },
@@ -236,10 +237,13 @@ async function handleMessage(client: ConnectedClient, msg: any) {
     case 'SCREENSHOT_RESULT': {
       if (
         client.screenId &&
+        typeof msg.commandId === 'string' &&
         typeof msg.imageDataUrl === 'string' &&
         msg.imageDataUrl.startsWith('data:image/jpeg;base64,') &&
         msg.imageDataUrl.length <= 5 * 1024 * 1024
       ) {
+        const command = await completeCommand(client.screenId, msg.commandId, true, 'Screenshot recebido pelo canal legado do simulador.', 'TAKE_SCREENSHOT');
+        if (!command) break;
         await prisma.screen.update({
           where: { id: client.screenId },
           data: { lastScreenshotUrl: msg.imageDataUrl }
@@ -248,7 +252,9 @@ async function handleMessage(client: ConnectedClient, msg: any) {
           {
             type: 'SCREENSHOT_UPDATED',
             screenId: client.screenId,
-            imageUrl: msg.imageDataUrl
+            commandId: msg.commandId,
+            imageUrl: msg.imageDataUrl,
+            capturedAt: new Date().toISOString()
           },
           client.tenantId,
           client.ownerId
@@ -257,14 +263,19 @@ async function handleMessage(client: ConnectedClient, msg: any) {
       break;
     }
     case 'COMMAND_RESULT': {
-      if (client.screenId) {
+      if (client.screenId && typeof msg.commandId === 'string') {
+        const action = typeof msg.action === 'string' ? msg.action.slice(0, 40).toUpperCase() : 'UNKNOWN';
+        const message = typeof msg.message === 'string' ? msg.message.slice(0, 300) : undefined;
+        const command = await completeCommand(client.screenId, msg.commandId, !!msg.success, message, action);
+        if (!command) break;
         broadcastToAdmins(
           {
             type: 'COMMAND_RESULT',
             screenId: client.screenId,
-            action: typeof msg.action === 'string' ? msg.action.slice(0, 40) : 'UNKNOWN',
+            commandId: msg.commandId,
+            action: command.action,
             success: !!msg.success,
-            message: typeof msg.message === 'string' ? msg.message.slice(0, 300) : undefined
+            message
           },
           client.tenantId,
           client.ownerId
@@ -289,14 +300,51 @@ export function sendCommandToScreen(screenId: string, command: any) {
   return false;
 }
 
-export async function sendManifestToScreen(screenId: string, forceReload = false): Promise<boolean> {
+export async function sendManifestToScreen(screenId: string, forceReload = false, commandId?: string): Promise<boolean> {
   const manifest = await buildScreenManifest(screenId);
   if (!manifest) return false;
   return sendCommandToScreen(screenId, {
     type: 'MANIFEST_UPDATED',
     manifestVersion: manifest.version,
     manifestChecksum: manifest.checksum,
-    forceReload
+    forceReload,
+    ...(commandId ? { commandId } : {})
+  });
+}
+
+async function deliverPendingCommands(client: ConnectedClient): Promise<void> {
+  if (!client.screenId || client.ws.readyState !== WebSocket.OPEN) return;
+  const expiresBefore = new Date(Date.now() - 24 * 60 * 60_000);
+  await prisma.remoteCommand.updateMany({
+    where: { screenId: client.screenId, status: { in: ['PENDING', 'SENT'] }, createdAt: { lt: expiresBefore } },
+    data: { status: 'EXPIRED', completedAt: new Date(), success: false, message: 'Comando expirado após 24 horas.' }
+  });
+  const commands = await prisma.remoteCommand.findMany({
+    where: { screenId: client.screenId, status: { in: ['PENDING', 'SENT'] }, createdAt: { gte: expiresBefore } },
+    orderBy: { createdAt: 'asc' },
+    take: 50
+  });
+  for (const command of commands) {
+    if (command.action === 'SYNC') {
+      const manifest = await buildScreenManifest(client.screenId);
+      if (!manifest) continue;
+      client.ws.send(JSON.stringify({ type: 'MANIFEST_UPDATED', commandId: command.commandId, manifestVersion: manifest.version, manifestChecksum: manifest.checksum, forceReload: true }));
+    } else {
+      let payload: any;
+      try { payload = command.payloadJson ? JSON.parse(command.payloadJson) : undefined; } catch { payload = undefined; }
+      client.ws.send(JSON.stringify({ type: command.action, commandId: command.commandId, ...(payload ? { payload } : {}) }));
+    }
+    await prisma.remoteCommand.update({ where: { commandId: command.commandId }, data: { status: 'SENT', sentAt: new Date() } });
+  }
+}
+
+async function completeCommand(screenId: string, commandId: string, success: boolean, message?: string, action?: string) {
+  const command = await prisma.remoteCommand.findFirst({ where: { commandId, screenId } });
+  if (!command || (action && command.action !== action)) return null;
+  if (['SUCCEEDED', 'FAILED', 'EXPIRED'].includes(command.status)) return null;
+  return prisma.remoteCommand.update({
+    where: { commandId },
+    data: { status: success ? 'SUCCEEDED' : 'FAILED', success, message, completedAt: new Date() }
   });
 }
 

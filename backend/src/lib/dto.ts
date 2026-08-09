@@ -31,6 +31,16 @@ export function layoutDto(layout: any) {
   };
 }
 
+export function playerLayoutDto(layout: any) {
+  if (!layout) return null;
+  let canvasConfig: any = null;
+  try { canvasConfig = JSON.parse(layout.canvasConfigJson); } catch { canvasConfig = null; }
+  return {
+    ...pick(layout, ['id', 'name', 'description', 'orientation', 'updatedAt']),
+    canvasConfig
+  };
+}
+
 export function playlistDto(playlist: any, forPlayer = false) {
   if (!playlist) return null;
   return {
@@ -40,7 +50,7 @@ export function playlistDto(playlist: any, forPlayer = false) {
       items: playlist.items.map((item: any) => ({
         ...pick(item, ['id', 'mediaId', 'layoutId', 'orderIndex', 'durationSeconds']),
         media: forPlayer ? playerMediaDto(item.media) : mediaDto(item.media),
-        layout: layoutDto(item.layout)
+        layout: forPlayer ? playerLayoutDto(item.layout) : layoutDto(item.layout)
       }))
     } : {})
   };

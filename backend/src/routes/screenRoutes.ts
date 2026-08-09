@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { sendCommandToScreen, sendManifestToScreen, cleanCode } from '../lib/websocket.js';
 import { tenantScope } from '../middleware/auth.js';
 import { layoutDto, playlistDto, screenDto } from '../lib/dto.js';
+import { randomUUID } from 'crypto';
 
 export const screenRoutes = Router();
 
@@ -154,30 +155,54 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
   const scopedTenantId = tenantScope(req, req.body.tenantId);
   const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, createdById: req.auth!.userId } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
-  const { action, payload } = req.body;
+  const action = typeof req.body.action === 'string' ? req.body.action.trim().toUpperCase() : '';
+  const payload = normalizeCommandPayload(action, req.body.payload);
+  if (!payload.valid) return res.status(400).json({ error: payload.error });
+  const commandId = randomUUID();
+  await prisma.remoteCommand.create({
+    data: {
+      commandId,
+      tenantId: scopedTenantId,
+      screenId: id,
+      createdById: req.auth!.userId,
+      action,
+      payloadJson: payload.value ? JSON.stringify(payload.value) : null
+    }
+  });
 
-  let command: any = { type: action, payload };
+  let sent = false;
   if (action === 'SYNC') {
     await prisma.screen.update({ where: { id }, data: { manifestVersion: { increment: 1 } } });
-    const sent = await sendManifestToScreen(id, true);
-    return res.json({
-      success: sent,
-      message: sent ? 'Manifesto atualizado enviado em tempo real para a tela.' : 'Tela offline ou inacessível no momento.'
-    });
+    sent = await sendManifestToScreen(id, true, commandId);
+  } else {
+    sent = sendCommandToScreen(id, { type: action, commandId, ...(payload.value ? { payload: payload.value } : {}) });
   }
-  const sent = sendCommandToScreen(id, command);
 
-  if (action === 'SET_VOLUME' && payload?.volume !== undefined) {
+  if (action === 'SET_VOLUME') {
     await prisma.screen.update({
       where: { id },
-      data: { volume: payload.volume }
+      data: { volume: payload.value!.volume, manifestVersion: { increment: 1 } }
     });
   }
+  if (sent) await prisma.remoteCommand.update({ where: { commandId }, data: { status: 'SENT', sentAt: new Date() } });
 
-  return res.json({
-    success: sent,
-    message: sent ? `Comando ${action} enviado em tempo real para a tela.` : `Tela offline ou inacessível no momento.`
+  return res.status(202).json({
+    commandId,
+    action,
+    status: sent ? 'SENT' : 'PENDING',
+    delivered: sent,
+    message: sent ? `Comando ${action} entregue ao dispositivo; aguardando confirmação.` : 'Dispositivo offline; comando persistido para entrega posterior.'
   });
+});
+
+screenRoutes.get('/:id/commands/:commandId', async (req: Request, res: Response): Promise<any> => {
+  const scopedTenantId = tenantScope(req, req.query.tenantId as string | undefined);
+  const command = await prisma.remoteCommand.findFirst({
+    where: { commandId: req.params.commandId, screenId: req.params.id, tenantId: scopedTenantId, createdById: req.auth!.userId },
+    select: { commandId: true, action: true, status: true, success: true, message: true, createdAt: true, sentAt: true, completedAt: true }
+  });
+  if (!command) return res.status(404).json({ error: 'Comando não encontrado.' });
+  return res.json(command);
 });
 
 // Delete screen
@@ -189,3 +214,18 @@ screenRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> =>
   await prisma.screen.delete({ where: { id } });
   return res.json({ success: true });
 });
+
+function normalizeCommandPayload(action: string, value: any): { valid: boolean; value?: any; error?: string } {
+  if (!['SYNC', 'TAKE_SCREENSHOT', 'SET_VOLUME', 'REBOOT'].includes(action)) {
+    return { valid: false, error: 'Ação inválida. Use SYNC, TAKE_SCREENSHOT, SET_VOLUME ou REBOOT.' };
+  }
+  if (action === 'SET_VOLUME') {
+    const volume = Number(value?.volume);
+    if (!Number.isInteger(volume) || volume < 0 || volume > 100) return { valid: false, error: 'Volume deve ser um inteiro entre 0 e 100.' };
+    return { valid: true, value: { volume } };
+  }
+  if (value !== undefined && value !== null && (typeof value !== 'object' || Object.keys(value).length > 0)) {
+    return { valid: false, error: `O comando ${action} não aceita payload.` };
+  }
+  return { valid: true };
+}

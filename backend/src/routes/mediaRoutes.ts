@@ -146,6 +146,7 @@ mediaRoutes.post('/widget', async (req: Request, res: Response): Promise<any> =>
   if (!name || !url) {
     return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
   }
+  if (!['RSS', 'WEB_PAGE'].includes(type)) return res.status(400).json({ error: 'Tipo dinâmico inválido. Use RSS ou WEB_PAGE.' });
 
   const duration = durationSeconds ? parseInt(durationSeconds, 10) : 15;
   const folderId = await validateFolder(tenantId, req.auth!.userId, requestedFolderId);
@@ -157,7 +158,7 @@ mediaRoutes.post('/widget', async (req: Request, res: Response): Promise<any> =>
       createdById: req.auth!.userId,
       folderId,
       name,
-      type: type || 'WEB_PAGE',
+      type,
       mimeType: type === 'RSS' ? 'application/rss+xml' : 'text/html',
       url,
       durationSeconds: duration,

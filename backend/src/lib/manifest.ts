@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { prisma } from './prisma.js';
-import { layoutDto, playlistDto, playerMediaDto } from './dto.js';
+import { playerLayoutDto, playlistDto, playerMediaDto } from './dto.js';
 
 export const MANIFEST_SCHEMA_VERSION = 1;
 
@@ -63,7 +63,7 @@ export async function buildScreenManifest(screenId: string) {
       volume: screen.volume
     },
     activePlaylist: playlistDto(screen.activePlaylist, true),
-    activeLayout: layoutDto(screen.activeLayout),
+    activeLayout: playerLayoutDto(screen.activeLayout),
     assets: medias.map((media) => playerMediaDto(media))
   };
 

@@ -4,7 +4,7 @@
 >
 > Repositório sugerido: `vitdoor-player-flutter`. O painel web e o backend permanecem no repositório `vitdoor`.
 
-**Versão:** 1.0  
+**Versão:** 1.1
 **Data:** 09/08/2026  
 **Estado:** especificação aprovada; backend de manifesto disponível, projeto Flutter ainda não criado
 
@@ -98,8 +98,8 @@ Criar três ambientes:
 Configuração de produção:
 
 ```text
-API_BASE_URL=https://api.vitdoor.com.br/api
-WS_URL=wss://api.vitdoor.com.br/ws
+API_BASE_URL=https://app.vitdoor.com.br/api
+WS_URL=wss://app.vitdoor.com.br/ws
 MEDIA_HOST=https://media.vitdoor.com.br
 ```
 
@@ -230,7 +230,7 @@ O token é diferente do token de usuário, é revogável por versão e atualment
 
 ## 8. WebSocket atual
 
-Ao conectar em `wss://api.vitdoor.com.br/ws`, enviar:
+Ao conectar em `wss://app.vitdoor.com.br/ws`, enviar:
 
 ```json
 {
@@ -351,6 +351,139 @@ Regras:
 - o app rejeita versão menor que a ativa ou a mesma versão acompanhada por outro checksum;
 - conteúdo atual continua tocando durante download da próxima versão.
 
+### 9.1 Schema canônico de `activePlaylist`
+
+**Estado:** `BACKEND_PRONTO` — integração Flutter pendente.
+
+```json
+{
+  "id": "uuid",
+  "name": "Ofertas da semana",
+  "description": "Programação principal",
+  "category": "Geral",
+  "isLoop": true,
+  "createdAt": "2026-08-09T12:00:00.000Z",
+  "updatedAt": "2026-08-09T12:10:00.000Z",
+  "items": [
+    {
+      "id": "uuid",
+      "mediaId": "uuid-ou-null",
+      "layoutId": null,
+      "orderIndex": 0,
+      "durationSeconds": 8,
+      "media": {
+        "id": "uuid",
+        "name": "Oferta.mp4",
+        "type": "VIDEO",
+        "url": "https://media.vitdoor.com.br/tenants/.../arquivo.mp4",
+        "thumbnailUrl": null,
+        "durationSeconds": 8,
+        "sizeBytes": 5818290,
+        "checksum": "sha256-hexadecimal",
+        "mimeType": "video/mp4",
+        "version": 1
+      },
+      "layout": null
+    }
+  ]
+}
+```
+
+Regras:
+
+- `activePlaylist` pode ser `null`;
+- `isLoop` é sempre `true` no produto atual;
+- cada item possui exatamente um entre `mediaId` e `layoutId`;
+- `orderIndex` começa em zero e define a ordem;
+- `durationSeconds` é inteiro entre 1 e 86400;
+- para item de mídia, `media` é preenchido e `layout` é `null`; para item de layout ocorre o inverso;
+- tipos binários atuais: `VIDEO`, `IMAGE`, `AUDIO` e `PDF`; tipos dinâmicos aceitos: `RSS` e `WEB_PAGE`;
+- `assets` do manifesto é a fonte canônica de URL, tamanho, MIME, versão e checksum; referências repetidas dentro de playlist/layout devem ser resolvidas por `mediaId`.
+
+### 9.2 Schema canônico de `activeLayout`
+
+**Estado:** `BACKEND_PRONTO` — integração Flutter pendente.
+
+```json
+{
+  "id": "uuid",
+  "name": "Mercado 70/30",
+  "description": null,
+  "orientation": "HORIZONTAL",
+  "updatedAt": "2026-08-09T12:10:00.000Z",
+  "canvasConfig": {
+    "version": 2,
+    "preset": "70_30",
+    "zones": [
+      {
+        "id": "main",
+        "name": "Área principal",
+        "widthPercent": 70,
+        "fit": "CONTAIN",
+        "loop": true,
+        "audioEnabled": true,
+        "items": [
+          {
+            "mediaId": "uuid",
+            "name": "Vídeo do produto",
+            "type": "VIDEO",
+            "url": "https://media.vitdoor.com.br/tenants/.../arquivo.mp4",
+            "durationSeconds": 5
+          }
+        ]
+      },
+      {
+        "id": "side",
+        "name": "Área lateral",
+        "widthPercent": 30,
+        "fit": "COVER",
+        "loop": true,
+        "audioEnabled": false,
+        "items": [
+          {
+            "mediaId": "uuid",
+            "name": "Encarte do produto",
+            "type": "IMAGE",
+            "url": "https://media.vitdoor.com.br/tenants/.../encarte.png",
+            "durationSeconds": 5
+          }
+        ]
+      }
+    ],
+    "ticker": {
+      "enabled": true,
+      "text": "Ofertas válidas enquanto durarem os estoques"
+    },
+    "clock": {
+      "enabled": true,
+      "position": "FOOTER"
+    }
+  }
+}
+```
+
+Contrato de layout v2:
+
+- `activeLayout` pode ser `null`;
+- orientação suportada nesta versão: `HORIZONTAL`;
+- `preset`: `FULL`, `HALF` ou `70_30`;
+- `FULL`: zona `main` com 100%; `HALF`: `main` 50% e `side` 50%; `70_30`: `main` 70% e `side` 30%;
+- `fit`: `CONTAIN` (inteira, sem corte), `COVER` (preenche e pode cortar) ou `FILL` (estica);
+- cada zona deve possuir ao menos um item quando criada/publicada pelo painel;
+- `loop` é sempre `true`;
+- no máximo uma zona pode ter `audioEnabled: true`; as demais devem ficar mudas;
+- os itens rodam independentemente dentro da própria zona, na ordem recebida;
+- vídeos avançam pelo término real; imagens e conteúdos estáticos usam `durationSeconds`;
+- `ticker.enabled` é opcional; quando ativo, `text` é obrigatório e limitado a 500 caracteres;
+- `clock.position`: `TOP_LEFT`, `TOP_RIGHT`, `BOTTOM_LEFT`, `BOTTOM_RIGHT` ou `FOOTER`;
+- `FOOTER` só é válido quando o ticker está ativo;
+- data/hora vêm do relógio real do Android;
+- dentro de playlists, o campo `layout` usa este mesmo objeto com `canvasConfig` estruturado.
+
+### 9.3 Validação de compatibilidade
+
+O Flutter deve rejeitar `schemaVersion` ou `canvasConfig.version` desconhecida, manter a última versão ativa e registrar diagnóstico. Não tentar inferir presets, zonas, enumerações ou valores ausentes.
+
 ## 10. Banco e arquivos locais
 
 Tabelas/entidades mínimas:
@@ -421,7 +554,6 @@ Em qualquer falha, registrar diagnóstico, informar falha ao servidor e continua
 - `FILL`: estica para ocupar;
 - rodapé e relógio são opcionais;
 - relógio pode ocupar cantos ou rodapé conforme manifesto;
-- não implementar temperatura sem fonte real;
 - alerta emergencial sobrepõe a programação sem destruir o estado atual.
 
 ### 12.4 Áudio
@@ -435,10 +567,13 @@ Em qualquer falha, registrar diagnóstico, informar falha ao servidor e continua
 
 ## 13. Proof-of-play
 
+**Estado:** `BACKEND_PRONTO` — integração Flutter pendente.
+
 Registrar ao finalizar ou interromper cada item:
 
 ```json
 {
+  "eventId": "uuid-v4-gerado-uma-vez-no-dispositivo",
   "screenId": "uuid",
   "mediaName": "Oferta de sábado",
   "playedAt": "2026-08-09T12:00:00.000Z",
@@ -453,14 +588,35 @@ Sincronização atual:
 POST /api/proof-of-play/log-batch
 Authorization: Bearer {deviceToken}
 Content-Type: application/json
+
+{
+  "items": ["até 500 eventos no schema acima"]
+}
 ```
+
+Resposta `200`:
+
+```json
+{
+  "received": 3,
+  "accepted": 2,
+  "duplicates": 1,
+  "rejected": 0,
+  "eventIds": ["uuid-1", "uuid-2", "uuid-3"]
+}
+```
+
+Também existe `POST /api/proof-of-play/log` para um único evento. Uma criação retorna `201` com `duplicate: false`; um reenvio retorna `200` com `duplicate: true` e o mesmo `eventId`.
 
 Regras:
 
 - fila persistente offline;
 - lotes limitados e reenvio com backoff;
-- remover somente eventos confirmados;
-- usar identificador idempotente quando o backend for evoluído;
+- `eventId` é UUID obrigatório, criado uma única vez e persistido junto ao evento antes da primeira tentativa;
+- nunca gerar outro `eventId` durante retry, reinicialização ou reconexão;
+- o banco possui índice único composto por `screenId + eventId` e o lote usa inserção com descarte de duplicatas;
+- remover da fila os `eventIds` devolvidos; manter e diagnosticar os rejeitados;
+- `durationSeconds` é inteiro de 1 a 86400 e `playedAt` é ISO-8601 válido;
 - horário monotônico/local e horário de parede devem ser tratados com cuidado;
 - nunca aceitar `screenId` diferente da credencial.
 
@@ -480,14 +636,107 @@ Modo quiosque completo depende de provisionamento/MDM ou Device Owner. Não prom
 
 ## 15. Comandos remotos
 
-Cada comando futuro deve possuir `commandId`, validade e confirmação idempotente.
+**Estado:** `BACKEND_PRONTO` para `SYNC`, `SET_VOLUME`, `TAKE_SCREENSHOT` e `REBOOT`; integração Flutter pendente.
 
-- `SYNC`: buscar e ativar manifesto mais recente;
-- `SET_VOLUME`: ajustar volume;
-- `TAKE_SCREENSHOT`: capturar frame/tela quando permitido;
-- `REBOOT_APP`: reiniciar somente o aplicativo;
-- `REBOOT_DEVICE`: apenas em Device Owner/firmware autorizado;
-- `CLEAR_CACHE`: nunca remover assets da versão ativa;
+Criação pelo painel:
+
+```http
+POST /api/screens/{screenId}/remote-command
+Content-Type: application/json
+
+{
+  "tenantId": "uuid",
+  "action": "SET_VOLUME",
+  "payload": { "volume": 70 }
+}
+```
+
+Resposta `202`:
+
+```json
+{
+  "commandId": "uuid-v4-gerado-pelo-backend",
+  "action": "SET_VOLUME",
+  "status": "SENT",
+  "delivered": true,
+  "message": "Comando SET_VOLUME entregue ao dispositivo; aguardando confirmação."
+}
+```
+
+Se a tela estiver offline, `status` será `PENDING` e `delivered` será `false`. O backend persiste e entrega na reconexão. Estados: `PENDING`, `SENT`, `SUCCEEDED`, `FAILED` e `EXPIRED`. Comandos pendentes expiram após 24 horas. Consultar estado em `GET /api/screens/{screenId}/commands/{commandId}?tenantId={tenantId}`.
+
+Payloads recebidos pelo dispositivo:
+
+```json
+{ "type": "SET_VOLUME", "commandId": "uuid", "payload": { "volume": 70 } }
+{ "type": "TAKE_SCREENSHOT", "commandId": "uuid" }
+{ "type": "REBOOT", "commandId": "uuid" }
+{
+  "type": "MANIFEST_UPDATED",
+  "commandId": "uuid-do-comando-sync",
+  "manifestVersion": 19,
+  "manifestChecksum": "sha256-hexadecimal",
+  "forceReload": true
+}
+```
+
+Confirmação do dispositivo:
+
+```json
+{
+  "type": "COMMAND_RESULT",
+  "commandId": "uuid",
+  "action": "SET_VOLUME",
+  "success": true,
+  "message": "Volume aplicado em 70%."
+}
+```
+
+Regras idempotentes:
+
+- persistir `commandId` e o resultado antes de executar uma ação irreversível;
+- ao receber novamente o mesmo ID, não executar outra vez; devolver o resultado persistido;
+- confirmar `SYNC` apenas depois de validar e ativar o manifesto;
+- em `REBOOT`, persistir o sucesso antes de reiniciar para impedir ciclo de reboot;
+- `SET_VOLUME` aceita somente inteiro entre 0 e 100;
+- ação ou payload desconhecido deve retornar `success: false`, sem tentativa de inferência;
+- o backend pode reenviar até 50 comandos `PENDING`/`SENT` recentes após reconexão.
+
+### 15.1 Upload e resposta de screenshot
+
+O Flutter não envia imagem Base64 pelo WebSocket. Após receber `TAKE_SCREENSHOT`, captura JPEG ou PNG por PixelCopy/camada nativa e envia:
+
+```http
+POST /api/device/screenshots/{commandId}
+Authorization: Bearer {deviceToken}
+Content-Type: multipart/form-data
+
+file=@screenshot.jpg
+```
+
+Limite: 2 MB, um arquivo por requisição e 30 uploads por IP por hora. Tipos aceitos após validação binária: `image/jpeg` e `image/png`.
+
+Resposta `201`:
+
+```json
+{
+  "commandId": "uuid",
+  "status": "SUCCEEDED",
+  "capturedAt": "2026-08-09T12:00:00.000Z",
+  "mimeType": "image/jpeg",
+  "sizeBytes": 345678,
+  "duplicate": false
+}
+```
+
+Retry de comando já concluído retorna `200` e `duplicate: true`. Erros: `400` campo ausente, `401` token inválido, `404` comando não pertence à tela, `409` comando finalizado com falha/expirado, `413` acima de 2 MB e `415` tipo binário inválido. Se a captura falhar, enviar `COMMAND_RESULT` com o mesmo `commandId`, `action: TAKE_SCREENSHOT` e a razão curta.
+
+- `SYNC`: implementado;
+- `SET_VOLUME`: implementado;
+- `TAKE_SCREENSHOT`: implementado no backend;
+- `REBOOT`: reinicia o aplicativo; implementado no contrato;
+- `REBOOT_DEVICE`: não implementado; exige Device Owner/firmware autorizado;
+- `CLEAR_CACHE`: não implementado; quando existir, nunca removerá assets da versão ativa;
 - alertas: aplicar somente à tela destinatária;
 - suspensão: interromper transmissão, preservar dados locais e aguardar reativação.
 
@@ -523,7 +772,6 @@ Enviar dados reais, nunca valores aleatórios:
 - estado do download;
 - conexão Wi-Fi/Ethernet quando disponível;
 - memória do processo/dispositivo conforme APIs permitidas;
-- temperatura somente se existir sensor e contrato real; caso contrário, omitir;
 - último erro resumido sem dados pessoais ou segredos.
 
 CPU e RAM podem variar por limitações do Android; quando não houver medição confiável, enviar `null`, não inventar número.
@@ -583,6 +831,8 @@ Testar com master e dois clientes, comprovando que nenhuma tela recebe conteúdo
 
 ## 20. CI/CD e distribuição
 
+**Estado:** política aprovada; integração CI e homologação ainda pendentes.
+
 Pipeline mínimo:
 
 1. `flutter analyze`;
@@ -594,13 +844,77 @@ Pipeline mínimo:
 7. release notes e versão semântica;
 8. instalação automática em dispositivo de homologação quando possível.
 
-Segredos de assinatura ficam em cofre do CI. Nunca versionar keystore, senhas, `.jks`, tokens ou arquivos de ambiente reais.
+### 20.1 Assinatura release
 
-Definir distribuição antes do piloto:
+Decisão para `br.com.vitdoor.player`:
 
-- MDM/Device Owner para frota controlada;
-- loja privada/Managed Google Play quando disponível;
-- atualizador próprio apenas com manifesto assinado, HTTPS, hash e rollback.
+- usar Play App Signing para proteger a chave final de assinatura;
+- manter uma upload key exclusiva do VitDoor para envio de AAB;
+- armazenar o keystore da upload key no cofre de segredos do CI, codificado para transporte somente dentro do job protegido;
+- fornecer ao job `ANDROID_UPLOAD_KEYSTORE_BASE64`, `ANDROID_UPLOAD_STORE_PASSWORD`, `ANDROID_UPLOAD_KEY_ALIAS` e `ANDROID_UPLOAD_KEY_PASSWORD` como segredos mascarados;
+- o job decodifica o `.jks` em diretório temporário do runner, compila e elimina o arquivo ao terminar;
+- Gradle lê os valores diretamente de variáveis de ambiente; não criar `android/key.properties` persistente no CI;
+- para build release local excepcional, aceitar somente caminho externo indicado por `VITDOOR_KEY_PROPERTIES`, apontando para arquivo fora do repositório e com permissão restrita;
+- `.jks`, `.keystore`, `key.properties`, APK e AAB privados permanecem no `.gitignore`;
+- registrar em cofre separado o certificado público SHA-256, alias, data de criação, responsável e procedimento de rotação;
+- builds debug não podem ser instalados em clientes nem acessar produção.
+
+O repositório Flutter deve falhar o build `release` se qualquer segredo estiver ausente. Não assinar automaticamente com debug e não incluir senha literal em Gradle, YAML, Dart ou logs.
+
+### 20.2 Distribuição e MDM
+
+Canal inicial comercial aprovado:
+
+1. dispositivos certificados compatíveis com Android Enterprise/Managed Google Play;
+2. aplicativo privado no Managed Google Play;
+3. EMM com provisionamento Fully Managed/Dedicated Device;
+4. instalação obrigatória e atualização controlada do app;
+5. política Kiosk/Lock Task, bloqueio de configurações e reinicialização controlada;
+6. rollout em anéis: laboratório, piloto interno, clientes piloto e produção;
+7. rollback pela faixa anterior da loja/EMM, preservando banco, token e cache compatível.
+
+Não distribuir produção por link público, WhatsApp, e-mail, USB ou APK debug. TV Boxes AOSP sem serviços Google não entram no primeiro piloto comercial. Se forem adotadas depois, usar outro `applicationId` (sugestão `br.com.vitdoor.player.enterprise`), outra chave de assinatura e MDM próprio; esse canal não pode atualizar nem ser atualizado pelo pacote do Managed Google Play.
+
+### 20.3 Hardware e homologação
+
+**Estado:** `HOMOLOGAÇÃO PENDENTE`. Nenhum modelo está homologado nesta data. “Compatível no papel” não significa homologado.
+
+Antes do piloto, adquirir ao menos:
+
+- um modelo Google TV/Android TV certificado de entrada;
+- um modelo certificado com Ethernet e USB para uso contínuo;
+- um equipamento industrial candidato fornecido com suporte formal a Device Owner, boot automático e watchdog, somente se houver intenção de canal AOSP.
+
+Critérios mínimos do modelo comercial:
+
+- Android API 24 ou superior, 64 bits preferencialmente;
+- 2 GB de RAM no mínimo, 4 GB recomendados para multizona;
+- 16 GB úteis no mínimo, 32 GB recomendados para cache;
+- HDMI estável em 1080p60 e 2160p60 conforme oferta;
+- decodificação por hardware H.264 AVC e H.265 HEVC; AV1 é requisito para a classe 4K futura;
+- AAC-LC obrigatório; Dolby/DTS somente se licenciado e validado;
+- Wi-Fi 5 GHz e Ethernet nativa para instalações comerciais sempre que possível;
+- armazenamento privado persistente após reboot e falta de energia;
+- suporte comprovado a boot receiver, foreground service, modo imersivo e Lock Task/Device Owner;
+- firmware com atualização e identificação de versão controláveis.
+
+Bateria de homologação por modelo/firmware:
+
+1. 100 ciclos de corte e retorno de energia, confirmando boot, identidade e retomada offline;
+2. 168 horas contínuas com playlist simples e multizona, sem crescimento contínuo de RAM/disco;
+3. H.264 Baseline/Main/High em 720p, 1080p e 4K quando aplicável;
+4. H.265 Main/Main10, VP9 e AV1 somente quando declarados pelo fornecedor;
+5. imagens JPEG/PNG/WebP nos três modos de fit;
+6. AAC estéreo, mute por zona, volume remoto e troca de HDMI;
+7. HDMI hotplug, troca de resolução/EDID, tela desligada/ligada e CEC quando usado;
+8. Ethernet, Wi-Fi, perda total de rede e reconexão prolongada;
+9. download interrompido, falta de espaço, checksum inválido e rollback;
+10. kiosk/Lock Task, tentativa de Home/Back/Recentes, reboot remoto e saída administrativa;
+11. screenshot incluindo superfície Media3;
+12. medição de travamentos, frames perdidos e integridade do armazenamento;
+13. atualização e downgrade controlado preservando identidade, manifesto ativo e proof-of-play.
+
+Registrar por unidade: fabricante, modelo, SoC, RAM, armazenamento, versão Android, build/firmware, codecs reportados pelo `MediaCodecList`, portas, resultado de cada teste e restrições. Uma atualização de firmware exige regressão reduzida antes de continuar homologada.
 
 ## 21. Fases do projeto Flutter
 
@@ -649,8 +963,8 @@ O projeto Flutter pode começar pela Fase A agora. Dependências atuais:
 2. ~~`version`, `sizeBytes`, MIME e SHA-256 por asset;~~ concluído;
 3. ~~endpoint autenticado de manifesto com ETag/304;~~ concluído;
 4. ~~publicação atômica e aviso WebSocket contendo a versão;~~ concluído;
-5. confirmação idempotente de comandos;
-6. IDs idempotentes em proof-of-play;
+5. ~~confirmação idempotente de comandos;~~ contrato e persistência backend concluídos, execução Flutter pendente;
+6. ~~IDs idempotentes em proof-of-play;~~ backend concluído, fila Flutter pendente;
 7. URLs CDN estáveis e política de retenção.
 
 Upload direto/multipart, backup externo e Redis podem evoluir em paralelo e não devem bloquear o protótipo Flutter. Redis só se torna obrigatório antes de executar múltiplas instâncias do gateway/backend ou quando a escala exigir presença e comandos compartilhados.
@@ -727,3 +1041,6 @@ Referências técnicas principais:
 - Arquitetura Flutter: https://docs.flutter.dev/resources/architectural-overview
 - Android Media3 offline downloads: https://developer.android.com/media/media3/exoplayer/downloading-media
 - Android `DownloadService`: https://developer.android.com/reference/androidx/media3/exoplayer/offline/DownloadService
+- Android app signing e Play App Signing: https://developer.android.com/studio/publish/app-signing
+- Android Management API para Dedicated Devices: https://developers.google.com/android/management/policies/dedicated-devices
+- Publicação de aplicativos privados no Managed Google Play: https://support.google.com/googleplay/android-developer/answer/9874937

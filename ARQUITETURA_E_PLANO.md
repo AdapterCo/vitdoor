@@ -227,8 +227,8 @@ Responsabilidades:
 Exemplo de domínios:
 
 - `app.vitdoor.com.br` — painel.
-- `api.vitdoor.com.br` — API.
-- `ws.vitdoor.com.br` ou `api.vitdoor.com.br/ws` — WebSocket.
+- `app.vitdoor.com.br/api` — API atualmente implantada e validada; `api.vitdoor.com.br` permanece evolução futura opcional.
+- `app.vitdoor.com.br/ws` — WebSocket atualmente implantado e validado; subdomínio dedicado permanece evolução futura opcional.
 - `media.vitdoor.com.br` — R2 e CDN.
 
 ### 3.3 Cloudflare R2
@@ -447,7 +447,6 @@ Nada pode ser fixo globalmente no player:
 - Rodapé é opcional.
 - Texto do rodapé é configurável.
 - Relógio é opcional e possui posição configurável.
-- Não existe temperatura falsa.
 - Divisão de tela é configurável.
 - Mídias de cada zona são selecionadas explicitamente.
 - Enquadramento é configurado por zona.
@@ -537,7 +536,8 @@ Estados:
 | Modo quiosque | PENDENTE | Android |
 | ExoPlayer / Media3 | PENDENTE | Android |
 | Atualização remota do app | PENDENTE | Definir estratégia |
-| Assinatura e distribuição APK | PENDENTE | Play Store privada, MDM ou atualização própria |
+| Assinatura e distribuição APK | PARCIAL | Política definida para Play App Signing, Managed Google Play e EMM; CI, conta organizacional e frota ainda não configurados |
+| Comandos remotos idempotentes | PARCIAL | Backend persiste `commandId`, status, resultado, expiração e reentrega; execução idempotente depende do Flutter |
 | Deploy em VPS | CONCLUÍDO | Compose, gateway, migrações, volumes e healthchecks operando na VPS de homologação |
 | Monitoramento e backups | PARCIAL | Healthcheck preparado; faltam métricas, alertas e backup externo automatizado |
 | Proteção HTTP/API | CONCLUÍDO | Rate limits na API e na Cloudflare, headers defensivos, limites de payload, origem restrita às faixas oficiais da Cloudflare e quatro regras WAF personalizadas validados na VPS |
@@ -553,7 +553,7 @@ Estados:
 | Autoria e destino de layout | CONCLUÍDO | Backend valida telas e reconstrói o JSON usando somente mídias canônicas do proprietário |
 | Áudio por zona | SIMULADOR | Configurável no editor e respeitado no player web; falta portar ao Android |
 | Loop obrigatório | SIMULADOR | Forçado no backend e no player web; falta portar ao Android |
-| Proof-of-play do dispositivo | PARCIAL | Escrita exige token revogável e impede registrar evento em nome de outra tela; persistência offline final será SQLite no app Android |
+| Proof-of-play do dispositivo | PARCIAL | Backend exige `eventId` único, aceita lote idempotente e impede escrita para outra tela; fila offline final será SQLite no Flutter |
 | Auditoria cruzada | CONCLUÍDO | Versão `ee9a98d` implantada e validada na VPS com master e clientes isolados; o script permanece disponível para regressão |
 
 ### Consolidação web de 09/08/2026
@@ -596,6 +596,15 @@ Estados:
 - Alterações de tela, playlist, layout ou mídia incrementam a versão antes da notificação em tempo real.
 - O WebSocket envia somente a versão e o checksum disponíveis; o aplicativo Flutter será responsável por buscar, validar, armazenar e ativar o manifesto.
 - O diretório `player/` permanece apenas como simulador web e não implementa cache, validação ou ativação de manifesto de produção.
+
+### Contratos Android fechados em 09/08/2026
+
+- Manifesto entrega `activePlaylist` e `activeLayout` estruturados; layout v2 possui presets, zonas, fit, áudio único, relógio e ticker validados no backend.
+- Comandos remotos recebem UUID `commandId`, persistem estado, expiram após 24 horas, são reenviados após reconexão e exigem confirmação idempotente do Flutter.
+- Proof-of-play exige UUID `eventId`, possui índice único e lotes de até 500 eventos com descarte seguro de duplicatas.
+- Screenshot comercial usa upload HTTPS multipart autenticado, JPEG/PNG validado e limite de 2 MB; Base64 por WebSocket permanece apenas legado do simulador.
+- Assinatura aprovada com Play App Signing e upload key protegida no cofre do CI; distribuição inicial será Managed Google Play via EMM/Dedicated Device.
+- Nenhum hardware foi declarado homologado sem teste físico; a matriz obrigatória e a bateria de 168 horas estão registradas em `PLAYER_ANDROID_FLUTTER.md`.
 
 ### Validação R2/CDN de 09/08/2026
 
@@ -650,7 +659,7 @@ Estados:
 ### Fase 3 — Infraestrutura e escala
 
 1. Adicionar Redis.
-2. Persistir comandos pendentes.
+2. ~~Persistir comandos pendentes.~~ Concluído para uma instância; Redis será necessário para múltiplas instâncias.
 3. ~~Configurar Cloudflare CDN.~~ Concluído e validado com `CF-Cache-Status: HIT`.
 4. Configurar backups.
 5. Configurar logs e métricas.

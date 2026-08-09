@@ -226,7 +226,7 @@ export const MediaTab: React.FC<MediaTabProps> = ({
               Adicionar Widget Dinâmico
             </h3>
             <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '20px' }}>
-              Integre feeds RSS de notícias, relógio digital, previsão do tempo ou páginas web.
+              Integre feeds RSS de notícias ou páginas web autorizadas.
             </p>
 
             <form onSubmit={handleWidgetSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -250,7 +250,6 @@ export const MediaTab: React.FC<MediaTabProps> = ({
                   onChange={(e) => setWidgetType(e.target.value)}
                 >
                   <option value="RSS">Feed RSS de Notícias</option>
-                  <option value="CLOCK">Relógio Digital</option>
                   <option value="WEB_PAGE">Página da Internet (URL)</option>
                 </select>
               </div>

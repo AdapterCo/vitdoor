@@ -22,6 +22,7 @@ layoutRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
   const screenIds = normalizeIds(req.body.screenIds);
   const tenantId = tenantScope(req, requestedTenantId);
   if (!name || !canvasConfigJson) return res.status(400).json({ error: 'Nome e configuração são obrigatórios.' });
+  if (orientation && orientation !== 'HORIZONTAL') return res.status(400).json({ error: 'Layouts v2 aceitam somente orientação HORIZONTAL.' });
   if (!await validateScreens(tenantId, req.auth!.userId, screenIds)) return res.status(400).json({ error: 'Uma ou mais telas selecionadas são inválidas.' });
 
   const safeConfig = await prepareCanvasConfig(tenantId, req.auth!.userId, canvasConfigJson);
@@ -45,6 +46,7 @@ layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   });
   if (!existing) return res.status(404).json({ error: 'Layout não encontrado.' });
   const { name, description, orientation, canvasConfigJson } = req.body;
+  if (orientation && orientation !== 'HORIZONTAL') return res.status(400).json({ error: 'Layouts v2 aceitam somente orientação HORIZONTAL.' });
   const screenIds = normalizeIds(req.body.screenIds);
   if (!await validateScreens(tenantId, req.auth!.userId, screenIds)) return res.status(400).json({ error: 'Uma ou mais telas selecionadas são inválidas.' });
 
@@ -76,22 +78,48 @@ layoutRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> =>
 async function prepareCanvasConfig(tenantId: string, userId: string, value: any): Promise<string | null> {
   let config: any;
   try { config = typeof value === 'string' ? JSON.parse(value) : structuredClone(value); } catch { return null; }
-  if (!config || !Array.isArray(config.zones) || config.zones.length === 0) return null;
+  if (!config || config.version !== 2 || !['FULL', 'HALF', '70_30'].includes(config.preset) || !Array.isArray(config.zones)) return null;
+  const expectedZones = config.preset === 'FULL'
+    ? [{ id: 'main', name: 'Conteúdo principal', widthPercent: 100 }]
+    : config.preset === 'HALF'
+      ? [{ id: 'main', name: 'Lado esquerdo', widthPercent: 50 }, { id: 'side', name: 'Lado direito', widthPercent: 50 }]
+      : [{ id: 'main', name: 'Área principal', widthPercent: 70 }, { id: 'side', name: 'Área lateral', widthPercent: 30 }];
+  if (config.zones.length !== expectedZones.length || config.zones.some((zone: any, index: number) => zone?.id !== expectedZones[index].id)) return null;
   const ids = [...new Set(config.zones.flatMap((zone: any) => Array.isArray(zone.items) ? zone.items.map((item: any) => item?.mediaId) : []).filter((id: any) => typeof id === 'string'))] as string[];
   const medias = await prisma.media.findMany({ where: { tenantId, createdById: userId, id: { in: ids } } });
   if (medias.length !== ids.length) return null;
   const byId = new Map(medias.map((media) => [media.id, media]));
-  for (const zone of config.zones) {
+  let audioZoneCount = 0;
+  const zones = [];
+  for (let index = 0; index < config.zones.length; index += 1) {
+    const zone = config.zones[index];
     if (!Array.isArray(zone.items) || zone.items.length === 0) return null;
-    zone.loop = true;
-    zone.audioEnabled = zone.audioEnabled === true;
-    zone.items = zone.items.map((item: any) => {
+    const audioEnabled = zone.audioEnabled === true;
+    if (audioEnabled) audioZoneCount += 1;
+    const fit = ['CONTAIN', 'COVER', 'FILL'].includes(zone.fit) ? zone.fit : 'CONTAIN';
+    const items = zone.items.map((item: any) => {
       const media = byId.get(item.mediaId);
       return media ? { mediaId: media.id, name: media.name, type: media.type, url: media.url, durationSeconds: media.durationSeconds } : null;
     });
-    if (zone.items.some((item: any) => !item)) return null;
+    if (items.some((item: any) => !item)) return null;
+    zones.push({ ...expectedZones[index], fit, loop: true, audioEnabled, items });
   }
-  return JSON.stringify(config);
+  if (audioZoneCount > 1) return null;
+  const tickerEnabled = config.ticker?.enabled === true;
+  const tickerText = typeof config.ticker?.text === 'string' ? config.ticker.text.trim().slice(0, 500) : '';
+  if (tickerEnabled && !tickerText) return null;
+  const clockEnabled = config.clock?.enabled === true;
+  const clockPosition = ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_LEFT', 'BOTTOM_RIGHT', 'FOOTER'].includes(config.clock?.position)
+    ? config.clock.position
+    : 'TOP_RIGHT';
+  if (clockEnabled && clockPosition === 'FOOTER' && !tickerEnabled) return null;
+  return JSON.stringify({
+    version: 2,
+    preset: config.preset,
+    zones,
+    ticker: { enabled: tickerEnabled, text: tickerEnabled ? tickerText : '' },
+    clock: { enabled: clockEnabled, position: clockPosition }
+  });
 }
 
 async function validateScreens(tenantId: string, userId: string, screenIds: string[]): Promise<boolean> {

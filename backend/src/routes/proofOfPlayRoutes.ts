@@ -7,66 +7,68 @@ export const proofOfPlayRoutes = Router();
 
 // Log a proof of play event from Player
 proofOfPlayRoutes.post('/log', authenticateDevice, async (req: Request, res: Response): Promise<any> => {
-  const { screenId, mediaName, durationSeconds, completed } = req.body;
+  const item = normalizeProofEvent(req.body);
 
-  if (!screenId || !mediaName) {
-    return res.status(400).json({ error: 'TenantId, screenId e mediaName são obrigatórios.' });
+  if (!item) return res.status(400).json({ error: 'Evento inválido. eventId UUID, screenId, mediaName, playedAt e durationSeconds são obrigatórios.' });
+  if (item.screenId !== req.deviceAuth!.screenId) return res.status(403).json({ error: 'A tela não pode registrar reprodução para outro dispositivo.' });
+
+  const existing = await prisma.proofOfPlay.findUnique({ where: { screenId_eventId: { screenId: item.screenId, eventId: item.eventId } }, select: { id: true } });
+  if (existing) return res.json({ accepted: true, duplicate: true, eventId: item.eventId, id: existing.id });
+  try {
+    const log = await prisma.proofOfPlay.create({ data: { ...item, tenantId: req.deviceAuth!.tenantId } });
+    return res.status(201).json({ accepted: true, duplicate: false, eventId: item.eventId, id: log.id });
+  } catch (error: any) {
+    if (error?.code !== 'P2002') throw error;
+    const duplicate = await prisma.proofOfPlay.findUnique({ where: { screenId_eventId: { screenId: item.screenId, eventId: item.eventId } }, select: { id: true } });
+    return res.json({ accepted: true, duplicate: true, eventId: item.eventId, id: duplicate?.id });
   }
-
-  if (screenId !== req.deviceAuth!.screenId) return res.status(403).json({ error: 'A tela não pode registrar reprodução para outro dispositivo.' });
-  const screenExists = await prisma.screen.findFirst({ where: { id: screenId, tenantId: req.deviceAuth!.tenantId } });
-  if (!screenExists) {
-    return res.json({ success: false, message: 'Tela não encontrada' });
-  }
-
-  const log = await prisma.proofOfPlay.create({
-    data: {
-      tenantId: screenExists.tenantId,
-      screenId,
-      mediaName,
-      durationSeconds: durationSeconds || 10,
-      completed: completed !== undefined ? !!completed : true
-    }
-  });
-
-  return res.status(201).json({ success: true, id: log.id });
 });
 
 // Batch log proof of play events (offline queue sync)
 proofOfPlayRoutes.post('/log-batch', authenticateDevice, async (req: Request, res: Response): Promise<any> => {
   const { items } = req.body;
-  if (!Array.isArray(items)) {
-    return res.status(400).json({ error: 'Array de itens é obrigatório.' });
+  if (!Array.isArray(items) || items.length < 1 || items.length > 500) {
+    return res.status(400).json({ error: 'Envie entre 1 e 500 eventos por lote.' });
   }
 
   try {
-    const validItems = [];
+    const validItems: ReturnType<typeof normalizeProofEvent>[] = [];
     for (const item of items) {
-      if (!item.screenId) continue;
-      if (item.screenId !== req.deviceAuth!.screenId) continue;
-      const screenExists = await prisma.screen.findFirst({ where: { id: item.screenId, tenantId: req.deviceAuth!.tenantId } });
-      if (screenExists) {
-        validItems.push({
-          tenantId: screenExists.tenantId,
-          screenId: item.screenId,
-          mediaName: item.mediaName || 'Mídia',
-          playedAt: item.playedAt ? new Date(item.playedAt) : new Date(),
-          durationSeconds: item.durationSeconds || 10,
-          completed: item.completed !== undefined ? !!item.completed : true
-        });
-      }
+      const normalized = normalizeProofEvent(item);
+      if (normalized && normalized.screenId === req.deviceAuth!.screenId) validItems.push(normalized);
     }
 
-    if (validItems.length > 0) {
-      const created = await prisma.proofOfPlay.createMany({ data: validItems });
-      return res.json({ count: created.count });
-    }
-    return res.json({ count: 0 });
+    const uniqueItems = [...new Map(validItems.filter(Boolean).map((item) => [item!.eventId, item!])).values()];
+    const created = await prisma.proofOfPlay.createMany({
+      data: uniqueItems.map((item) => ({ ...item, tenantId: req.deviceAuth!.tenantId })),
+      skipDuplicates: true
+    });
+    return res.json({
+      received: items.length,
+      accepted: created.count,
+      duplicates: validItems.length - created.count,
+      rejected: items.length - validItems.length,
+      eventIds: uniqueItems.map((item) => item.eventId)
+    });
   } catch (err) {
     console.error('Error logging proof of play batch:', err);
-    return res.json({ count: 0 });
+    return res.status(500).json({ error: 'Não foi possível persistir o lote de proof-of-play.' });
   }
 });
+
+function normalizeProofEvent(value: any) {
+  const eventId = typeof value?.eventId === 'string' ? value.eventId.trim().toLowerCase() : '';
+  const screenId = typeof value?.screenId === 'string' ? value.screenId.trim() : '';
+  const mediaName = typeof value?.mediaName === 'string' ? value.mediaName.trim().slice(0, 255) : '';
+  const durationSeconds = Number(value?.durationSeconds);
+  const playedAt = new Date(value?.playedAt);
+  if (!isUuid(eventId) || !screenId || !mediaName || !Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > 86400 || Number.isNaN(playedAt.getTime())) return null;
+  return { eventId, screenId, mediaName, playedAt, durationSeconds, completed: value?.completed !== false };
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
 
 // Analytics dashboard summary
 proofOfPlayRoutes.get('/stats', authenticate, async (req: Request, res: Response): Promise<any> => {

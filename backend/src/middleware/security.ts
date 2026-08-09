@@ -49,6 +49,13 @@ export const uploadRateLimiter = rateLimit({
   handler: limitedMessage('Limite temporário de uploads atingido. Aguarde antes de enviar novos arquivos.')
 });
 
+export const screenshotRateLimiter = rateLimit({
+  ...commonOptions,
+  windowMs: 60 * 60_000,
+  limit: 30,
+  handler: limitedMessage('Limite temporário de screenshots atingido. Aguarde antes de tentar novamente.')
+});
+
 let activeUploads = 0;
 const MAX_CONCURRENT_UPLOADS = 2;
 

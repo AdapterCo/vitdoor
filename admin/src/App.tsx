@@ -189,10 +189,11 @@ export function App() {
       body: JSON.stringify({ action, payload, tenantId: activeTenant.id })
     });
     const result = await response.json();
-    if (!response.ok || !result.success) {
+    if (!response.ok) {
       alert(result.message || result.error || 'Não foi possível enviar o comando.');
       return false;
     }
+    alert(`${result.message || 'Comando registrado.'}\nID: ${result.commandId}`);
     return true;
   };
 
