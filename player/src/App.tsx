@@ -136,6 +136,9 @@ export function App() {
             }
             if (msg.activeAlert) setActiveAlert(msg.activeAlert);
             if (msg.volume !== undefined) setVolume(msg.volume);
+            if (msg.forceReload && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'COMMAND_RESULT', action: 'SYNC', success: true, message: 'Programação recebida e aplicada pela tela.' }));
+            }
           } else if (msg.type === 'CONTENT_UPDATED') {
             if (Object.prototype.hasOwnProperty.call(msg, 'activePlaylist')) {
               if (msg.forceReload) setActivePlaylist(null);

@@ -133,8 +133,8 @@ export function App() {
             setScreens((prev) =>
               prev.map((s) => (s.id === data.screenId ? { ...s, ...data.telemetry, status: 'ONLINE' } : s))
             );
-          } else if (data.type === 'COMMAND_RESULT' && !data.success) {
-            alert(data.message || 'O player não conseguiu executar o comando.');
+          } else if (data.type === 'COMMAND_RESULT') {
+            alert(data.success ? (data.message || 'Comando confirmado pela tela.') : (data.message || 'O player não conseguiu executar o comando.'));
           }
         } catch (e) {
           console.error('Error parsing admin websocket message:', e);
@@ -193,7 +193,6 @@ export function App() {
       alert(result.message || result.error || 'Não foi possível enviar o comando.');
       return false;
     }
-    if (action === 'SYNC') alert('Ressincronização enviada e recebida pela tela.');
     return true;
   };
 
