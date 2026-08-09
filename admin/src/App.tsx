@@ -61,11 +61,9 @@ export function App() {
       if (!tenantsRes.ok) return;
       const tenantsData = await tenantsRes.json();
       setTenants(tenantsData);
-      const tenant = tenantsData[0];
-      if (tenant) {
-        setActiveTenant(tenant);
-        await loadTenantData(tenant.id);
-      }
+      setActiveTenant(null);
+      setActiveTab('tenants');
+      setScreens([]); setPlaylists([]); setMedias([]); setLayouts([]); setCampaigns([]); setStats(null);
     } else {
       const tenant = loggedUser.tenant || {
         id: loggedUser.tenantId,

@@ -47,10 +47,6 @@ export function requireSuperAdmin(req: Request, res: Response, next: NextFunctio
 
 export function tenantScope(req: Request, requestedTenantId?: string): string {
   if (!req.auth) throw new Error('UNAUTHENTICATED');
-  if (req.auth.role === 'SUPER_ADMIN') {
-    if (!requestedTenantId) throw new Error('TENANT_REQUIRED');
-    return requestedTenantId;
-  }
   if (requestedTenantId && requestedTenantId !== req.auth.tenantId) throw new Error('FORBIDDEN_TENANT');
   return req.auth.tenantId;
 }

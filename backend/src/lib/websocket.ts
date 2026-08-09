@@ -174,9 +174,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
       try {
         const auth = jwt.verify(msg.token || '', process.env.JWT_SECRET || 'secret') as any;
         client.type = 'ADMIN';
-        client.tenantId = auth.role === 'SUPER_ADMIN'
-          ? (typeof msg.tenantId === 'string' ? msg.tenantId : undefined)
-          : auth.tenantId;
+        client.tenantId = auth.tenantId;
       } catch {
         client.ws.close(1008, 'Unauthorized');
       }

@@ -22,7 +22,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, tenantName, user, onLogout }) => {
-  const menuItems = [
+  const allMenuItems = [
     { id: 'dashboard', label: 'Dashboard Geral', icon: LayoutDashboard },
     { id: 'screens', label: 'Telas & Dispositivos', icon: Tv },
     { id: 'media', label: 'Biblioteca de Mídias', icon: FileVideo },
@@ -32,7 +32,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, tenan
     { id: 'proof-of-play', label: 'Proof of Play & Relatórios', icon: BarChart3 },
     { id: 'emergency', label: 'Alerta Emergencial', icon: AlertTriangle },
     { id: 'tenants', label: 'Clientes & Licenças', icon: Building2, masterOnly: true },
-  ].filter((item) => !item.masterOnly || user?.role === 'SUPER_ADMIN');
+  ];
+  const menuItems = user?.role === 'SUPER_ADMIN'
+    ? allMenuItems.filter((item) => item.id === 'tenants')
+    : allMenuItems.filter((item) => !item.masterOnly);
 
   return (
     <aside style={{
