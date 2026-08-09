@@ -2,6 +2,10 @@ import type { CookieOptions, Request } from 'express';
 
 export const SESSION_COOKIE_NAME = 'vitdoor_session';
 
+export function getAdminJwtSecret(): string {
+  return process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'secret';
+}
+
 export function sessionCookieOptions(): CookieOptions {
   return {
     httpOnly: true,

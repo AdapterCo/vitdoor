@@ -44,6 +44,9 @@ app.disable('x-powered-by');
 if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) {
   throw new Error('JWT_SECRET deve ter pelo menos 32 caracteres em produção.');
 }
+if (process.env.NODE_ENV === 'production' && (!process.env.ADMIN_JWT_SECRET || process.env.ADMIN_JWT_SECRET.length < 32)) {
+  throw new Error('ADMIN_JWT_SECRET deve ter pelo menos 32 caracteres em produção.');
+}
 
 if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
   throw new Error('CORS_ORIGINS deve ser definido explicitamente em produção.');

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
-import { getSessionToken, SESSION_COOKIE_NAME, sessionCookieOptions } from '../lib/session.js';
+import { getAdminJwtSecret, getSessionToken, SESSION_COOKIE_NAME, sessionCookieOptions } from '../lib/session.js';
 
 export const authRoutes = Router();
 authRoutes.use((_req, res, next) => {
@@ -37,7 +37,7 @@ authRoutes.post('/login', async (req: Request, res: Response): Promise<any> => {
 
   const token = jwt.sign(
     { userId: user.id, tenantId: user.tenantId, role: user.role },
-    process.env.JWT_SECRET || 'secret',
+    getAdminJwtSecret(),
     { expiresIn: '12h', algorithm: 'HS256' }
   );
 
@@ -59,7 +59,7 @@ authRoutes.post('/login', async (req: Request, res: Response): Promise<any> => {
 authRoutes.get('/me', async (req: Request, res: Response): Promise<any> => {
   const token = getSessionToken(req);
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as any;
+    const payload = jwt.verify(token, getAdminJwtSecret(), { algorithms: ['HS256'] }) as any;
     const user = await prisma.user.findUnique({ where: { id: payload.userId }, include: { tenant: true } });
     if (!user || !user.active || user.tenant.status !== 'ACTIVE') {
       return res.status(401).json({ error: 'Sessão inválida.' });

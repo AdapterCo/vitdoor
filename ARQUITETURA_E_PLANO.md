@@ -580,6 +580,7 @@ Estados:
 - Pendente na infraestrutura: bloquear as portas 80/443 da VPS para origens que não sejam Cloudflare, mantendo SSH restrito ao administrador, e habilitar regras gerenciadas/WAF no painel Cloudflare.
 - Backend e serviço de migração compartilham explicitamente a mesma imagem Docker, impedindo deploy de código novo com um pacote antigo de migrações.
 - Sessão do painel usa cookie host-only `HttpOnly`, `Secure` e `SameSite=Strict`; o JWT não é mais devolvido ao JavaScript nem armazenado em Web Storage. Operações autenticadas por cookie validam também a origem administrativa configurada em `ADMIN_ORIGINS`.
+- Sessões administrativas e dispositivos usam segredos JWT distintos. A rotação de `ADMIN_JWT_SECRET` invalida logins do painel sem desparear TVs que continuam protegidas por `JWT_SECRET`.
 
 ### Validação R2/CDN de 09/08/2026
 

@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
 import { prisma } from './prisma.js';
 import jwt from 'jsonwebtoken';
-import { readCookie, SESSION_COOKIE_NAME } from './session.js';
+import { getAdminJwtSecret, readCookie, SESSION_COOKIE_NAME } from './session.js';
 
 interface ConnectedClient {
   ws: WebSocket;
@@ -211,7 +211,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
 
     case 'REGISTER_ADMIN': {
       try {
-        const auth = jwt.verify(client.sessionToken || msg.token || '', process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as any;
+        const auth = jwt.verify(client.sessionToken || msg.token || '', getAdminJwtSecret(), { algorithms: ['HS256'] }) as any;
         const user = await prisma.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, active: true, tenant: { status: 'ACTIVE' } } });
         if (!user) throw new Error('INACTIVE_ADMIN');
         client.type = 'ADMIN';

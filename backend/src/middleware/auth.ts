@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
-import { getSessionToken } from '../lib/session.js';
+import { getAdminJwtSecret, getSessionToken } from '../lib/session.js';
 
 export interface AuthUser {
   userId: string;
@@ -36,7 +36,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     }
   }
   try {
-    const auth = jwt.verify(token, process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as AuthUser;
+    const auth = jwt.verify(token, getAdminJwtSecret(), { algorithms: ['HS256'] }) as AuthUser;
     const user = await prisma.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, active: true }, include: { tenant: true } });
     if (!user || user.tenant.status !== 'ACTIVE') {
       res.status(401).json({ error: 'Conta ou empresa suspensa.' });
