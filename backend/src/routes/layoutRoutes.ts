@@ -52,7 +52,7 @@ layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
     data: { name, description, orientation, canvasConfigJson: safeConfig }
   });
   const removed = existing.screens.map((screen) => screen.id).filter((screenId) => !screenIds.includes(screenId));
-  await prisma.screen.updateMany({ where: { tenantId, activeLayoutId: id, id: { notIn: screenIds } }, data: { activeLayoutId: null } });
+  await prisma.screen.updateMany({ where: { tenantId, createdById: req.auth!.userId, activeLayoutId: id, id: { notIn: screenIds } }, data: { activeLayoutId: null } });
   for (const screenId of removed) sendCommandToScreen(screenId, { type: 'CONTENT_UPDATED', activeLayout: null, forceReload: true });
   await publishLayout(tenantId, req.auth!.userId, layout, screenIds);
   return res.json(layout);

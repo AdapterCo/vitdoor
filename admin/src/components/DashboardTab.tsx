@@ -186,11 +186,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               }}>
                 <div>
                   <span style={{ color: '#64748b' }}>CPU</span>
-                  <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{screen.cpuUsagePercent || 15}%</div>
+                  <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{screen.cpuUsagePercent == null ? 'indisponível' : `${screen.cpuUsagePercent}%`}</div>
                 </div>
                 <div>
                   <span style={{ color: '#64748b' }}>RAM</span>
-                  <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{screen.ramUsagePercent || 32}%</div>
+                  <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{screen.ramUsagePercent == null ? 'indisponível' : `${screen.ramUsagePercent}%`}</div>
                 </div>
                 <div>
                   <span style={{ color: '#64748b' }}>Volume</span>

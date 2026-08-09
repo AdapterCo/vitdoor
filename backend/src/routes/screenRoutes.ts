@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { sendCommandToScreen, notifyPairingConfirmed, cleanCode } from '../lib/websocket.js';
+import { sendCommandToScreen, cleanCode } from '../lib/websocket.js';
 import { tenantScope } from '../middleware/auth.js';
 
 export const screenRoutes = Router();
@@ -77,7 +77,7 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
         groupName: groupName || screen.groupName,
         orientation: orientation || screen.orientation,
         paired: true,
-        status: 'ONLINE',
+        status: 'OFFLINE',
         activePlaylistId: screen.activePlaylistId || defaultPlaylist?.id || null
       }
     });
@@ -92,7 +92,7 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
         locationName: locationName || 'Loja Principal',
         groupName: groupName || 'Geral',
         orientation: orientation || 'HORIZONTAL',
-        status: 'ONLINE',
+        status: 'OFFLINE',
         activePlaylistId: defaultPlaylist?.id || null
       }
     });
@@ -102,9 +102,6 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
     where: { id: pairingSession.id },
     data: { screenId: screen.id, claimedAt: new Date() }
   });
-
-  // Notify the active WebSocket connection about pairing success
-  await notifyPairingConfirmed(screen);
 
   return res.json(screen);
 });

@@ -54,6 +54,7 @@ model User {
   createdPlaylists Playlist[] @relation("PlaylistCreator")
   createdMediaFolders MediaFolder[] @relation("MediaFolderCreator")
   createdCampaigns Campaign[] @relation("CampaignCreator")
+  createdEmergencyAlerts EmergencyAlert[] @relation("EmergencyAlertCreator")
 }
 
 model Screen {
@@ -82,10 +83,10 @@ model Screen {
   status             String    @default("OFFLINE") // ONLINE, OFFLINE, WARNING
   lastPing           DateTime?
   volume             Int       @default(80)
-  storageFreeMb      Int?      @default(4096)
-  ramUsagePercent    Int?      @default(30)
-  cpuUsagePercent    Int?      @default(15)
-  appVersion         String?   @default("1.0.0")
+  storageFreeMb      Int?
+  ramUsagePercent    Int?
+  cpuUsagePercent    Int?
+  appVersion         String?
   currentMediaName   String?
   lastScreenshotUrl  String?
   deviceTokenVersion Int       @default(1)
@@ -134,6 +135,8 @@ model Media {
   tags            String?
   validUntil      DateTime?
   checksum        String?
+  mimeType        String?
+  version         Int       @default(1)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -246,6 +249,8 @@ model EmergencyAlert {
   id              String                 @id @default(uuid())
   tenantId        String
   tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdById     String?
+  createdBy       User?                  @relation("EmergencyAlertCreator", fields: [createdById], references: [id], onDelete: SetNull)
   title           String
   message         String
   alertType       String                 @default("WARNING") // INFO, WARNING, EVACUATION, URGENT
@@ -253,6 +258,8 @@ model EmergencyAlert {
   durationSeconds Int                    @default(60)
   createdAt       DateTime               @default(now())
   targets         EmergencyAlertTarget[]
+
+  @@index([tenantId, createdById])
 }
 
 model EmergencyAlertTarget {

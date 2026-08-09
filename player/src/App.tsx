@@ -85,6 +85,8 @@ export function App() {
   useEffect(() => {
     let ws: WebSocket;
     let heartbeatInterval: any;
+    let reconnectTimeout: number | undefined;
+    let disposed = false;
 
     const connectWS = () => {
       ws = new WebSocket(getWebSocketUrl());
@@ -97,7 +99,6 @@ export function App() {
           type: 'REGISTER_PLAYER',
           pairingCode,
           deviceToken: localStorage.getItem('vitdoor_device_token'),
-          ipAddress: '192.168.1.100',
           os: 'Android TV (Simulated)',
           appVersion: '1.0.0'
         }));
@@ -107,10 +108,7 @@ export function App() {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
               type: 'HEARTBEAT',
-              ramUsagePercent: Math.floor(25 + Math.random() * 15),
-              cpuUsagePercent: Math.floor(10 + Math.random() * 20),
-              storageFreeMb: 4096
-              ,currentMediaName: currentMediaNameRef.current
+              currentMediaName: currentMediaNameRef.current
             }));
           }
         }, 10000);
@@ -185,6 +183,13 @@ export function App() {
           } else if (msg.type === 'TENANT_SUSPENDED') {
             setSuspended(true);
             setActiveAlert(null);
+          } else if (msg.type === 'DEVICE_AUTH_FAILED') {
+            localStorage.removeItem('vitdoor_device_token');
+            setPaired(false);
+            setScreenInfo(null);
+            setPairingId('');
+            setPairingSecret('');
+            setPairingCode('--- ---');
           }
         } catch (err) {
           console.error('Error handling websocket message:', err);
@@ -194,50 +199,19 @@ export function App() {
       ws.onclose = () => {
         setIsConnected(false);
         clearInterval(heartbeatInterval);
-        setTimeout(connectWS, 3000); // Reconnect after 3 sec
+        if (!disposed) reconnectTimeout = window.setTimeout(connectWS, 3000);
       };
     };
 
     connectWS();
 
     return () => {
+      disposed = true;
       if (ws) ws.close();
       if (heartbeatInterval) clearInterval(heartbeatInterval);
+      if (reconnectTimeout) window.clearTimeout(reconnectTimeout);
     };
-  }, [pairingCode]);
-
-  // Quick auto pair demo action
-  const handleAutoPair = async () => {
-    try {
-      await fetch(`${API_BASE}/auth/seed`, { method: 'POST' });
-      const tenantsRes = await fetch(`${API_BASE}/tenants`);
-      const tenants = await tenantsRes.json();
-      if (!tenants || tenants.length === 0) return;
-
-      const tenantId = tenants[0].id;
-      const res = await fetch(`${API_BASE}/screens/pair`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId,
-          pairingCode,
-          name: 'TV Principal Conectada',
-          locationName: 'Sede Central - Recepção',
-          groupName: 'Recepção',
-          orientation: 'HORIZONTAL'
-        })
-      });
-
-      if (res.ok) {
-        const screenData = await res.json();
-        setPaired(true);
-        setScreenInfo(screenData);
-        await setCache('screenInfo', screenData);
-      }
-    } catch (err) {
-      console.error('Auto pair failed:', err);
-    }
-  };
+  }, [pairingCode, paired]);
 
   // Log proof-of-play
   const handleMediaChanged = async (mediaName: string) => {

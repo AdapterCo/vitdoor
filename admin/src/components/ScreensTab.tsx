@@ -79,7 +79,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                     <Tv size={20} color="#60a5fa" />
                     <div>
                       <div>{screen.name}</div>
-                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>IP: {screen.ipAddress || '192.168.1.100'}</span>
+                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>IP: {screen.ipAddress || 'não informado'}</span>
                     </div>
                   </div>
                 </td>

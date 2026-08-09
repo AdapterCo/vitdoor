@@ -512,16 +512,16 @@ Estados:
 |---|---|---|
 | Painel web React | CONCLUÍDO | Base funcional para administração |
 | Login de usuários | CONCLUÍDO | Master e cliente |
-| Isolamento por cliente | PARCIAL | Implementado, precisa auditoria completa de todas as rotas |
+| Isolamento por cliente | PARCIAL | Rotas, alertas, programação e notificações WebSocket têm dupla fronteira; falta executar a auditoria cruzada na VPS após o deploy |
 | Limite de dispositivos | CONCLUÍDO | Validado no pareamento |
 | Upload de mídia | PARCIAL | Ainda passa pela memória da VPS |
 | Cloudflare R2 | CONCLUÍDO | Bucket `vitdoor-media`, credencial restrita, domínio próprio, chaves imutáveis por tenant/mídia e fail-fast sem fallback local validados na VPS |
 | Cloudflare CDN | CONCLUÍDO | `media.vitdoor.com.br`, CORS, Range, cache imutável e entrega `CF-Cache-Status: HIT` validados em arquivo MP4 real |
 | TLS Cloudflare → origem | CONCLUÍDO | Origin CA montado fora do Git, TLS 1.2/1.3 e modo Complete (Strict) validados para painel, API e player |
-| Playlists | CONCLUÍDO | Criação, edição, loop, duração e telas |
+| Playlists | CONCLUÍDO | Criação e edição validam conteúdo/telas do proprietário; substituição de itens é transacional e o loop permanece obrigatório |
 | Layouts multizona | CONCLUÍDO | Editor web e simulador funcionando |
 | Reprodução multizona web | SIMULADOR | Referência para implementação Android |
-| WebSocket | PARCIAL | Funcional em uma instância, sem Redis |
+| WebSocket | PARCIAL | Dispositivo exige token revogável, notificações são isoladas por usuário e reconexão não derruba outra sessão; ainda opera em uma instância, sem Redis |
 | MQTT | PENDENTE | Não necessário para primeira versão |
 | SQLite | CONCLUÍDO | Removido do ambiente de produção; Prisma opera com PostgreSQL |
 | PostgreSQL | CONCLUÍDO | Migrações e healthcheck validados no container da VPS |
@@ -529,9 +529,9 @@ Estados:
 | Cache de JSON no navegador | SIMULADOR | Não representa cache offline final |
 | Cache físico de mídias Android | PENDENTE | Requisito crítico |
 | Manifesto versionado | PENDENTE | Requisito crítico |
-| Checksum de download | PENDENTE | Requisito crítico |
+| Checksum de download | PARCIAL | Upload calcula e persiste SHA-256, MIME type e versão; manifesto e validação no dispositivo ainda estão pendentes |
 | Proof-of-play offline web | SIMULADOR | Deve ser refeito com fila SQLite persistente no aplicativo Android |
-| Aplicativo Android TV | PENDENTE | Próxima frente principal |
+| Aplicativo Android TV | PENDENTE | Especificação preservada, mas desenvolvimento adiado enquanto o projeto web é consolidado |
 | Inicialização automática | PENDENTE | Android |
 | Modo quiosque | PENDENTE | Android |
 | ExoPlayer / Media3 | PENDENTE | Android |
@@ -553,6 +553,16 @@ Estados:
 | Loop obrigatório | SIMULADOR | Forçado no backend e no player web; falta portar ao Android |
 | Proof-of-play do dispositivo | PARCIAL | Escrita exige token revogável e impede registrar evento em nome de outra tela; persistência offline final será SQLite no app Android |
 | Auditoria cruzada | PREPARADO | `npm --prefix backend run audit:isolation` valida master e dois clientes reais na VPS e suspende os tenants de auditoria ao terminar |
+
+### Consolidação web de 09/08/2026
+
+- Alertas emergenciais agora só podem ser criados e encerrados pelo proprietário e só atingem suas próprias telas.
+- O WebSocket do player não aceita mais pareamento por código como autenticação após a ativação; exige credencial de dispositivo válida e tenant ativo.
+- Programação inicial, layouts, telemetria, screenshots, status e resultados de comando são entregues somente ao proprietário da tela.
+- Campos de CPU, RAM, armazenamento, IP e versão deixaram de receber números ou textos fictícios.
+- Playlists rejeitam itens ambíguos, duração inválida e telas de outro usuário antes da escrita; a troca dos itens ocorre em transação.
+- Upload convencional recebeu limite de 512 MB, lista de tipos permitidos e cálculo SHA-256. Upload direto/multipart continua sendo a solução definitiva para arquivos grandes.
+- Build de produção do backend, painel e player web aprovado localmente; validação funcional cruzada continua reservada para a VPS.
 
 ### Validação R2/CDN de 09/08/2026
 

@@ -4,10 +4,18 @@ import { prisma } from '../lib/prisma.js';
 import { saveFile } from '../lib/storage.js';
 import { tenantScope } from '../middleware/auth.js';
 import { detectMediaDuration } from '../lib/mediaMetadata.js';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 export const mediaRoutes = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 512 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    const allowed = file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/') || file.mimetype === 'application/pdf';
+    if (!allowed) return callback(new Error('Tipo de arquivo não permitido.'));
+    return callback(null, true);
+  }
+});
 
 // List media items
 mediaRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
@@ -94,6 +102,7 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
   else if (mime.includes('pdf')) type = 'PDF';
 
   const mediaId = randomUUID();
+  const checksum = createHash('sha256').update(req.file.buffer).digest('hex');
   const { url, storagePath } = await saveFile(req.file, tenantId, mediaId);
   const detectedDuration = (type === 'VIDEO' || type === 'AUDIO')
     ? detectMediaDuration(req.file.buffer, mime)
@@ -114,6 +123,9 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
       thumbnailUrl: type === 'IMAGE' ? url : undefined,
       durationSeconds: duration,
       sizeBytes: BigInt(req.file.size),
+      mimeType: mime,
+      checksum,
+      version: 1,
       tags: req.body.tags || 'Geral'
     }
   });
@@ -140,6 +152,7 @@ mediaRoutes.post('/widget', async (req: Request, res: Response): Promise<any> =>
       folderId,
       name,
       type: type || 'WEB_PAGE',
+      mimeType: type === 'RSS' ? 'application/rss+xml' : 'text/html',
       url,
       durationSeconds: duration,
       tags: tags || 'Widget'
