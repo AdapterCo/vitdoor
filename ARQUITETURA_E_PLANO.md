@@ -517,6 +517,7 @@ Estados:
 | Upload de mídia | PARCIAL | Ainda passa pela memória da VPS |
 | Cloudflare R2 | CONCLUÍDO | Bucket `vitdoor-media`, credencial restrita, domínio próprio, chaves imutáveis por tenant/mídia e fail-fast sem fallback local validados na VPS |
 | Cloudflare CDN | CONCLUÍDO | `media.vitdoor.com.br`, CORS, Range, cache imutável e entrega `CF-Cache-Status: HIT` validados em arquivo MP4 real |
+| TLS Cloudflare → origem | PREPARADO | Gateway expõe TLS 1.2/1.3 com Origin CA montado fora do Git; falta instalar o certificado na VPS e validar Full (strict) |
 | Playlists | CONCLUÍDO | Criação, edição, loop, duração e telas |
 | Layouts multizona | CONCLUÍDO | Editor web e simulador funcionando |
 | Reprodução multizona web | SIMULADOR | Referência para implementação Android |

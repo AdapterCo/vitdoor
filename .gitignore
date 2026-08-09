@@ -10,3 +10,4 @@ backend/uploads/*
 backend/prisma/*.db
 backend/prisma/*.db-journal
 .runlogs/
+secrets/

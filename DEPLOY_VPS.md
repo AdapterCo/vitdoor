@@ -6,7 +6,7 @@ Este procedimento disponibiliza o painel web, a API, PostgreSQL, R2/CDN e o play
 
 - VPS Linux com pelo menos 2 vCPU, 4 GB de RAM e disco SSD.
 - Docker Engine e Docker Compose Plugin instalados.
-- Portas TCP 22 e 80 liberadas durante a homologação com Cloudflare Flexible.
+- Portas TCP 22, 80 e 443 liberadas durante a transição para Cloudflare Full (strict).
 - Repositório copiado ou clonado na VPS.
 
 A porta 5432 não deve ser aberta no firewall. O PostgreSQL existe somente na rede interna dos containers.
@@ -72,6 +72,53 @@ Resposta esperada do healthcheck:
 ```json
 {"status":"OK","database":"OK"}
 ```
+
+## TLS entre Cloudflare e a origem
+
+O certificado Cloudflare Origin CA deve cobrir `vitdoor.com.br` e `*.vitdoor.com.br`. Ele é confiável pela Cloudflare, não diretamente pelos navegadores; portanto, os registros devem continuar com proxy laranja ativo.
+
+1. No domínio `vitdoor.com.br`, abra **SSL/TLS > Servidor de origem (Origin Server) > Criar certificado**.
+2. Escolha chave RSA, deixe a Cloudflare gerar a chave e confirme os hostnames `vitdoor.com.br` e `*.vitdoor.com.br`.
+3. Escolha a validade desejada e o formato PEM. Copie o certificado e a chave privada antes de fechar a tela; a chave não será exibida novamente.
+4. Na VPS, prepare os arquivos fora do Git:
+
+```bash
+cd /opt/vitdoor
+mkdir -p secrets/cloudflare-origin
+chmod 700 secrets/cloudflare-origin
+nano secrets/cloudflare-origin/origin.pem
+nano secrets/cloudflare-origin/origin-key.pem
+chmod 644 secrets/cloudflare-origin/origin.pem
+chmod 600 secrets/cloudflare-origin/origin-key.pem
+```
+
+Cole o **Origin Certificate** completo em `origin.pem` e a **Private Key** completa em `origin-key.pem`, incluindo as linhas `BEGIN` e `END`. Nunca envie esses conteúdos por mensagem ou commit.
+
+5. Atualize e valide o gateway antes de mudar o modo SSL da Cloudflare:
+
+```bash
+git pull origin main
+docker compose build gateway
+docker compose run --rm --no-deps gateway nginx -t
+docker compose up -d --force-recreate gateway
+docker compose ps
+curl -skI --resolve app.vitdoor.com.br:443:127.0.0.1 https://app.vitdoor.com.br/
+```
+
+O teste deve retornar `HTTP/2 200` ou `HTTP/1.1 200` e `X-VitDoor-Frontend: admin-panel`.
+
+6. Somente depois, no Cloudflare, abra **SSL/TLS > Visão geral** e altere o modo para **Full (strict)**.
+7. Valide os três fluxos públicos:
+
+```bash
+curl -sI https://app.vitdoor.com.br/
+curl -s https://app.vitdoor.com.br/api/health
+curl -sI https://player.vitdoor.com.br/
+```
+
+Se aparecer erro 526, volte temporariamente para Full/Flexible e confira hostname, validade, conteúdo e montagem dos arquivos. Não revogue o certificado durante o diagnóstico.
+
+Depois de Full (strict) validado, a próxima proteção é restringir 80/443 aos intervalos oficiais da Cloudflare ou habilitar Authenticated Origin Pulls. Faça isso separadamente para não misturar uma alteração de firewall com a troca de TLS.
 
 ## Cloudflare R2 e CDN de mídias
 
@@ -166,7 +213,7 @@ O dump local ainda não atende o requisito de backup externo da arquitetura.
 - O player na porta 8081 é apenas simulador web.
 - Dispositivos usam credencial individual revogável; falta portar e validar o fluxo no aplicativo Android oficial.
 - WebSocket não persiste comandos e funciona em uma única instância.
-- O navegador já usa HTTPS na borda Cloudflare, mas ainda falta TLS entre Cloudflare e a origem para usar o modo Full (strict).
+- O navegador usa HTTPS na borda Cloudflare; o procedimento de certificado de origem e Full (strict) está documentado acima.
 - R2/CDN está operacional; ainda não há Redis, upload direto/multipart, manifesto imutável ou cache Android.
 - Proof-of-play exige autenticação do dispositivo; a fila offline definitiva ainda depende do Android/Room.
 
