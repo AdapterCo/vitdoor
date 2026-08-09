@@ -328,21 +328,21 @@ export function App() {
     loadTenantData(activeTenant.id);
   };
 
-  const handleTriggerEmergency = async (title: string, message: string, alertType: string) => {
+  const handleTriggerEmergency = async (title: string, message: string, alertType: string, screenIds: string[]) => {
     if (!activeTenant) return;
     await apiFetch('/emergency/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantId: activeTenant.id, title, message, alertType })
+      body: JSON.stringify({ tenantId: activeTenant.id, title, message, alertType, screenIds })
     });
   };
 
-  const handleClearEmergency = async () => {
+  const handleClearEmergency = async (screenIds: string[]) => {
     if (!activeTenant) return;
     await apiFetch('/emergency/clear', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantId: activeTenant.id })
+      body: JSON.stringify({ tenantId: activeTenant.id, screenIds })
     });
   };
 
@@ -464,6 +464,7 @@ export function App() {
 
         {activeTab === 'emergency' && (
           <EmergencyTab
+            screens={screens}
             onTriggerEmergency={handleTriggerEmergency}
             onClearEmergency={handleClearEmergency}
           />

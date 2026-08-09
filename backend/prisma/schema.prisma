@@ -89,9 +89,10 @@ model Screen {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  proofOfPlays   ProofOfPlay[]
-  tickets        MaintenanceTicket[]
-  pairingSession PairingSession?
+  proofOfPlays     ProofOfPlay[]
+  tickets          MaintenanceTicket[]
+  pairingSession   PairingSession?
+  emergencyTargets EmergencyAlertTarget[]
 }
 
 model PairingSession {
@@ -207,15 +208,25 @@ model ProofOfPlay {
 }
 
 model EmergencyAlert {
-  id              String   @id @default(uuid())
+  id              String                 @id @default(uuid())
   tenantId        String
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   title           String
   message         String
-  alertType       String   @default("WARNING") // INFO, WARNING, EVACUATION, URGENT
-  active          Boolean  @default(true)
-  durationSeconds Int      @default(60)
-  createdAt       DateTime @default(now())
+  alertType       String                 @default("WARNING") // INFO, WARNING, EVACUATION, URGENT
+  active          Boolean                @default(true)
+  durationSeconds Int                    @default(60)
+  createdAt       DateTime               @default(now())
+  targets         EmergencyAlertTarget[]
+}
+
+model EmergencyAlertTarget {
+  alertId  String
+  screenId String
+  alert    EmergencyAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  screen   Screen         @relation(fields: [screenId], references: [id], onDelete: Cascade)
+
+  @@id([alertId, screenId])
 }
 
 model MaintenanceTicket {

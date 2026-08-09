@@ -108,7 +108,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
             });
 
         const activeAlert = await prisma.emergencyAlert.findFirst({
-          where: { tenantId: screen.tenantId, active: true },
+          where: { tenantId: screen.tenantId, active: true, targets: { some: { screenId: screen.id } } },
           orderBy: { createdAt: 'desc' }
         });
         const activeLayout = screen.activeLayoutId
