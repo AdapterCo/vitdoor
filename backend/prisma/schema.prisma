@@ -108,6 +108,20 @@ model Screen {
   pairingSession   PairingSession?
   emergencyTargets EmergencyAlertTarget[]
   remoteCommands   RemoteCommand[]
+  manifests        ScreenManifest[]
+}
+
+model ScreenManifest {
+  id        String   @id @default(uuid())
+  screenId  String
+  screen    Screen   @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  version   Int
+  checksum  String
+  payload   String
+  createdAt DateTime @default(now())
+
+  @@unique([screenId, version])
+  @@index([screenId, createdAt])
 }
 
 model PairingSession {
@@ -266,6 +280,7 @@ model RemoteCommand {
   success     Boolean?
   message     String?
   createdAt   DateTime @default(now())
+  expiresAt   DateTime
   sentAt      DateTime?
   completedAt DateTime?
 

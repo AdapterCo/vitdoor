@@ -115,6 +115,12 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, createdById: req.auth!.userId } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
   const { name, locationName, groupName, orientation, volume, activePlaylistId, activeLayoutId } = req.body;
+  const playlistProvided = Object.prototype.hasOwnProperty.call(req.body, 'activePlaylistId');
+  const layoutProvided = Object.prototype.hasOwnProperty.call(req.body, 'activeLayoutId');
+
+  if (activePlaylistId && activeLayoutId) {
+    return res.status(400).json({ error: 'A tela deve usar uma playlist ou um layout direto, nunca os dois ao mesmo tempo.' });
+  }
 
   if (activePlaylistId) {
     const playlist = await prisma.playlist.findFirst({ where: { id: activePlaylistId, tenantId: scopedTenantId, createdById: req.auth!.userId } });
@@ -133,8 +139,8 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
       groupName,
       orientation,
       volume: volume !== undefined ? parseInt(volume, 10) : undefined,
-      activePlaylistId,
-      activeLayoutId,
+      activePlaylistId: playlistProvided ? (activePlaylistId || null) : (layoutProvided && activeLayoutId ? null : undefined),
+      activeLayoutId: layoutProvided ? (activeLayoutId || null) : (playlistProvided && activePlaylistId ? null : undefined),
       manifestVersion: { increment: 1 }
     },
     include: {
@@ -159,23 +165,36 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
   const payload = normalizeCommandPayload(action, req.body.payload);
   if (!payload.valid) return res.status(400).json({ error: payload.error });
   const commandId = randomUUID();
-  await prisma.remoteCommand.create({
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60_000);
+  const command = await prisma.remoteCommand.create({
     data: {
       commandId,
       tenantId: scopedTenantId,
       screenId: id,
       createdById: req.auth!.userId,
       action,
-      payloadJson: payload.value ? JSON.stringify(payload.value) : null
+      payloadJson: payload.value ? JSON.stringify(payload.value) : null,
+      expiresAt
     }
   });
 
   let sent = false;
   if (action === 'SYNC') {
     await prisma.screen.update({ where: { id }, data: { manifestVersion: { increment: 1 } } });
-    sent = await sendManifestToScreen(id, true, commandId);
+    sent = await sendManifestToScreen(id, true, {
+      commandId,
+      createdAt: command.createdAt,
+      expiresAt: command.expiresAt
+    });
   } else {
-    sent = sendCommandToScreen(id, { type: action, commandId, ...(payload.value ? { payload: payload.value } : {}) });
+    sent = sendCommandToScreen(id, {
+      type: action,
+      commandId,
+      deviceId: id,
+      createdAt: command.createdAt.toISOString(),
+      expiresAt: command.expiresAt.toISOString(),
+      ...(payload.value ? { payload: payload.value } : {})
+    });
   }
 
   if (action === 'SET_VOLUME') {
@@ -191,15 +210,28 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
     action,
     status: sent ? 'SENT' : 'PENDING',
     delivered: sent,
+    createdAt: command.createdAt,
+    expiresAt: command.expiresAt,
     message: sent ? `Comando ${action} entregue ao dispositivo; aguardando confirmação.` : 'Dispositivo offline; comando persistido para entrega posterior.'
   });
 });
 
 screenRoutes.get('/:id/commands/:commandId', async (req: Request, res: Response): Promise<any> => {
   const scopedTenantId = tenantScope(req, req.query.tenantId as string | undefined);
+  await prisma.remoteCommand.updateMany({
+    where: {
+      commandId: req.params.commandId,
+      screenId: req.params.id,
+      tenantId: scopedTenantId,
+      createdById: req.auth!.userId,
+      status: { in: ['PENDING', 'SENT'] },
+      expiresAt: { lte: new Date() }
+    },
+    data: { status: 'EXPIRED', success: false, message: 'Comando expirado antes da confirmação.', completedAt: new Date() }
+  });
   const command = await prisma.remoteCommand.findFirst({
     where: { commandId: req.params.commandId, screenId: req.params.id, tenantId: scopedTenantId, createdById: req.auth!.userId },
-    select: { commandId: true, action: true, status: true, success: true, message: true, createdAt: true, sentAt: true, completedAt: true }
+    select: { commandId: true, action: true, status: true, success: true, message: true, createdAt: true, expiresAt: true, sentAt: true, completedAt: true }
   });
   if (!command) return res.status(404).json({ error: 'Comando não encontrado.' });
   return res.json(command);

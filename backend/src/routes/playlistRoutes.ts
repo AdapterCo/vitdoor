@@ -67,7 +67,7 @@ playlistRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
   if (targetScreenIds.length > 0) {
     await prisma.screen.updateMany({
       where: { id: { in: targetScreenIds }, tenantId, createdById: req.auth!.userId },
-      data: { activePlaylistId: playlist.id, manifestVersion: { increment: 1 } }
+      data: { activePlaylistId: playlist.id, activeLayoutId: null, manifestVersion: { increment: 1 } }
     });
     for (const screen of selectedScreens) {
       await sendManifestToScreen(screen.id);
@@ -132,7 +132,7 @@ playlistRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => 
     });
     await prisma.screen.updateMany({
       where: { tenantId, createdById: req.auth!.userId, id: { in: targetScreenIds } },
-      data: { activePlaylistId: id }
+      data: { activePlaylistId: id, activeLayoutId: null }
     });
     const affectedIds = [...new Set([...targetScreenIds, ...removedScreenIds])];
     await bumpScreenManifestVersions(affectedIds);

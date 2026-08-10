@@ -4,7 +4,7 @@
 >
 > Repositório sugerido: `vitdoor-player-flutter`. O painel web e o backend permanecem no repositório `vitdoor`.
 
-**Versão:** 1.1
+**Versão:** 1.2
 **Data:** 09/08/2026  
 **Estado:** especificação aprovada; backend de manifesto disponível, projeto Flutter ainda não criado
 
@@ -189,6 +189,8 @@ Para vídeo offline e multizona, preferir um plugin próprio fino sobre Media3 e
 POST /api/device/pairing
 ```
 
+Autenticação: nenhuma. Limites atuais: 30 criações por IP/hora, além do limite global da API de 300 requisições por IP/minuto. Respostas: `201` criado e `429` excesso de solicitações.
+
 Resposta atual:
 
 ```json
@@ -208,6 +210,8 @@ Exibir apenas `pairingCode`. `pairingSecret` nunca aparece na UI ou logs.
 POST /api/device/pairing/{pairingId}/status
 Authorization: Pairing {pairingSecret}
 ```
+
+Limites atuais: 600 consultas por IP a cada 5 minutos, além do limite global. Respostas: `200` para `PENDING`/`PAIRED`, `401` para sessão ou segredo inválido, `410` para expiração e `429` por excesso.
 
 Estados:
 
@@ -290,6 +294,7 @@ Confirmação de comando:
 ```json
 {
   "type": "COMMAND_RESULT",
+  "commandId": "uuid-do-comando",
   "action": "SYNC",
   "success": true,
   "message": "Manifesto 18 validado e ativado."
@@ -309,6 +314,8 @@ GET /api/device/manifest
 Authorization: Bearer {deviceToken}
 If-None-Match: "manifest-18-{checksum}"
 ```
+
+Limite atual: 300 requisições por IP/minuto. Respostas: `200`, `304`, `401`, `404` e `429`. A autenticação deriva `screenId` e `tenantId` exclusivamente do token revogável do dispositivo.
 
 Resposta atual:
 
@@ -343,9 +350,11 @@ Regras:
 
 - versão cresce de forma monotônica por tela;
 - manifesto publicado é imutável;
+- cada combinação `screen.id + version` é persistida pelo backend em `ScreenManifest`; novas leituras da mesma versão devolvem exatamente o JSON e checksum publicados originalmente;
 - todos os assets têm URL imutável, tamanho e SHA-256;
 - resposta usa ETag e retorna HTTP 304 quando `If-None-Match` corresponde;
 - uma tela recebe somente seu manifesto;
+- a publicação falha de forma fechada se tela, playlist, layout ou mídia não pertencerem ao mesmo `tenantId` e proprietário da credencial;
 - o app rejeita manifesto cujo `screen.id` não corresponde à credencial;
 - o checksum do manifesto é calculado sobre `schemaVersion`, `version`, `screen`, `activePlaylist`, `activeLayout` e `assets`, nesta ordem;
 - o app rejeita versão menor que a ativa ou a mesma versão acompanhada por outro checksum;
@@ -392,6 +401,7 @@ Regras:
 Regras:
 
 - `activePlaylist` pode ser `null`;
+- `activePlaylist` e `activeLayout` são mutuamente exclusivos no nível da tela; o backend rejeita atribuição simultânea e escolher um limpa o outro;
 - `isLoop` é sempre `true` no produto atual;
 - cada item possui exatamente um entre `mediaId` e `layoutId`;
 - `orderIndex` começa em zero e define a ordem;
@@ -465,6 +475,7 @@ Regras:
 Contrato de layout v2:
 
 - `activeLayout` pode ser `null`;
+- quando `activeLayout` estiver preenchido, `activePlaylist` será `null`; layouts usados como itens continuam dentro de `activePlaylist.items[].layout`;
 - orientação suportada nesta versão: `HORIZONTAL`;
 - `preset`: `FULL`, `HALF` ou `70_30`;
 - `FULL`: zona `main` com 100%; `HALF`: `main` 50% e `side` 50%; `70_30`: `main` 70% e `side` 30%;
@@ -594,6 +605,8 @@ Content-Type: application/json
 }
 ```
 
+Limite atual: 300 requisições por IP/minuto. Respostas de erro: `400` para lote fora de 1–500, `401` para credencial inválida e `429` por excesso. Eventos inválidos ou destinados a outra tela são contados em `rejected`, nunca gravados.
+
 Resposta `200`:
 
 ```json
@@ -643,6 +656,7 @@ Criação pelo painel:
 ```http
 POST /api/screens/{screenId}/remote-command
 Content-Type: application/json
+Cookie: vitdoor_session={sessão HttpOnly do painel}
 
 {
   "tenantId": "uuid",
@@ -650,6 +664,8 @@ Content-Type: application/json
   "payload": { "volume": 70 }
 }
 ```
+
+Este endpoint pertence ao painel, não ao Flutter. O backend usa o usuário autenticado para fixar `tenantId` e proprietário; tela externa ao workspace retorna `404`. Limite atual: 300 requisições por IP/minuto. Erros previstos: `400` ação/payload inválido, `401` sessão inválida, `404` tela sem acesso e `429` excesso.
 
 Resposta `202`:
 
@@ -659,6 +675,8 @@ Resposta `202`:
   "action": "SET_VOLUME",
   "status": "SENT",
   "delivered": true,
+  "createdAt": "2026-08-09T12:00:00.000Z",
+  "expiresAt": "2026-08-10T12:00:00.000Z",
   "message": "Comando SET_VOLUME entregue ao dispositivo; aguardando confirmação."
 }
 ```
@@ -668,12 +686,15 @@ Se a tela estiver offline, `status` será `PENDING` e `delivered` será `false`.
 Payloads recebidos pelo dispositivo:
 
 ```json
-{ "type": "SET_VOLUME", "commandId": "uuid", "payload": { "volume": 70 } }
-{ "type": "TAKE_SCREENSHOT", "commandId": "uuid" }
-{ "type": "REBOOT", "commandId": "uuid" }
+{ "type": "SET_VOLUME", "commandId": "uuid", "deviceId": "uuid-da-tela", "createdAt": "ISO-8601", "expiresAt": "ISO-8601", "payload": { "volume": 70 } }
+{ "type": "TAKE_SCREENSHOT", "commandId": "uuid", "deviceId": "uuid-da-tela", "createdAt": "ISO-8601", "expiresAt": "ISO-8601" }
+{ "type": "REBOOT", "commandId": "uuid", "deviceId": "uuid-da-tela", "createdAt": "ISO-8601", "expiresAt": "ISO-8601" }
 {
   "type": "MANIFEST_UPDATED",
   "commandId": "uuid-do-comando-sync",
+  "deviceId": "uuid-da-tela",
+  "createdAt": "2026-08-09T12:00:00.000Z",
+  "expiresAt": "2026-08-10T12:00:00.000Z",
   "manifestVersion": 19,
   "manifestChecksum": "sha256-hexadecimal",
   "forceReload": true
@@ -696,6 +717,7 @@ Regras idempotentes:
 
 - persistir `commandId` e o resultado antes de executar uma ação irreversível;
 - ao receber novamente o mesmo ID, não executar outra vez; devolver o resultado persistido;
+- rejeitar sem executar comandos cujo `deviceId` seja diferente da identidade local ou cujo `expiresAt` já tenha passado;
 - confirmar `SYNC` apenas depois de validar e ativar o manifesto;
 - em `REBOOT`, persistir o sucesso antes de reiniciar para impedir ciclo de reboot;
 - `SET_VOLUME` aceita somente inteiro entre 0 e 100;
@@ -963,7 +985,7 @@ O projeto Flutter pode começar pela Fase A agora. Dependências atuais:
 2. ~~`version`, `sizeBytes`, MIME e SHA-256 por asset;~~ concluído;
 3. ~~endpoint autenticado de manifesto com ETag/304;~~ concluído;
 4. ~~publicação atômica e aviso WebSocket contendo a versão;~~ concluído;
-5. ~~confirmação idempotente de comandos;~~ contrato e persistência backend concluídos, execução Flutter pendente;
+5. ~~confirmação idempotente de comandos;~~ contrato, validade explícita e persistência backend concluídos, execução Flutter pendente;
 6. ~~IDs idempotentes em proof-of-play;~~ backend concluído, fila Flutter pendente;
 7. URLs CDN estáveis e política de retenção.
 

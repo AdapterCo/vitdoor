@@ -33,8 +33,22 @@ deviceRoutes.post('/screenshots/:commandId', screenshotRateLimiter, authenticate
     where: { commandId: req.params.commandId, screenId: req.deviceAuth!.screenId, tenantId: req.deviceAuth!.tenantId, action: 'TAKE_SCREENSHOT' }
   });
   if (!command) return res.status(404).json({ error: 'Comando de screenshot não encontrado para este dispositivo.' });
+  if (command.expiresAt <= new Date() && ['PENDING', 'SENT'].includes(command.status)) {
+    await prisma.remoteCommand.update({
+      where: { commandId: command.commandId },
+      data: { status: 'EXPIRED', success: false, message: 'Comando expirado antes do screenshot.', completedAt: new Date() }
+    });
+    return res.status(409).json({ error: 'Este comando expirou.', status: 'EXPIRED' });
+  }
   if (command.status === 'SUCCEEDED') {
-    return res.json({ commandId: command.commandId, status: command.status, capturedAt: command.completedAt, duplicate: true });
+    const screen = await prisma.screen.findUnique({ where: { id: req.deviceAuth!.screenId }, select: { lastScreenshotUrl: true } });
+    return res.json({
+      commandId: command.commandId,
+      status: command.status,
+      capturedAt: command.completedAt,
+      ...screenshotMetadata(screen?.lastScreenshotUrl),
+      duplicate: true
+    });
   }
   if (['FAILED', 'EXPIRED'].includes(command.status)) {
     return res.status(409).json({ error: 'Este comando já foi finalizado.', status: command.status });
@@ -58,6 +72,12 @@ deviceRoutes.post('/screenshots/:commandId', screenshotRateLimiter, authenticate
   }, req.deviceAuth!.tenantId, command.createdById);
   return res.status(201).json({ commandId: command.commandId, status: 'SUCCEEDED', capturedAt, mimeType: detected.mime, sizeBytes: req.file.size, duplicate: false });
 });
+
+function screenshotMetadata(dataUrl?: string | null): { mimeType?: string; sizeBytes?: number } {
+  const match = /^data:(image\/(?:jpeg|png));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl || '');
+  if (!match) return {};
+  return { mimeType: match[1], sizeBytes: Buffer.from(match[2], 'base64').length };
+}
 
 function receiveScreenshot(req: Request, res: Response, next: (error?: any) => void) {
   screenshotUpload.single('file')(req, res, (error: any) => {

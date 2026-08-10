@@ -5,7 +5,7 @@
 > Toda nova funcionalidade, correção ou decisão técnica deve ser comparada com este arquivo.
 > Quando uma entrega for concluída, sua situação deve ser atualizada na matriz de acompanhamento.
 
-**Versão do documento:** 1.3
+**Versão do documento:** 1.4
 **Última atualização:** 09/08/2026  
 **Produto:** Plataforma SaaS de mídia indoor para totens e TV Boxes  
 **Status geral:** MVP em evolução — ainda não pronto para produção comercial
@@ -528,7 +528,7 @@ Estados:
 | Redis | PENDENTE | Necessário antes de escalar |
 | Cache de JSON no navegador | SIMULADOR | Não representa cache offline final |
 | Cache físico de mídias Android | PENDENTE | Requisito crítico |
-| Manifesto versionado | PARCIAL | Backend oferece versão monotônica por tela, manifesto canônico, ETag e SHA-256; consumo e ativação serão implementados exclusivamente no aplicativo Flutter |
+| Manifesto versionado | PARCIAL | Backend persiste snapshot imutável por tela/versão, oferece manifesto canônico, ETag e SHA-256; consumo e ativação serão implementados exclusivamente no aplicativo Flutter |
 | Checksum de download | PARCIAL | Upload persiste SHA-256, tamanho, MIME e versão; manifesto entrega o inventário, restando o aplicativo Flutter validar os bytes baixados no cache físico |
 | Proof-of-play offline web | SIMULADOR | Deve ser refeito com fila SQLite persistente no aplicativo Android |
 | Aplicativo Android TV | PENDENTE | Especificação preservada, mas desenvolvimento adiado enquanto o projeto web é consolidado |
@@ -537,7 +537,7 @@ Estados:
 | ExoPlayer / Media3 | PENDENTE | Android |
 | Atualização remota do app | PENDENTE | Definir estratégia |
 | Assinatura e distribuição APK | PARCIAL | Política definida para Play App Signing, Managed Google Play e EMM; CI, conta organizacional e frota ainda não configurados |
-| Comandos remotos idempotentes | PARCIAL | Backend persiste `commandId`, status, resultado, expiração e reentrega; execução idempotente depende do Flutter |
+| Comandos remotos idempotentes | PARCIAL | Backend persiste `commandId`, status, resultado e `expiresAt`; entrega inclui tela, criação e validade, enquanto a execução idempotente depende do Flutter |
 | Deploy em VPS | CONCLUÍDO | Compose, gateway, migrações, volumes e healthchecks operando na VPS de homologação |
 | Monitoramento e backups | PARCIAL | Healthcheck preparado; faltam métricas, alertas e backup externo automatizado |
 | Proteção HTTP/API | CONCLUÍDO | Rate limits na API e na Cloudflare, headers defensivos, limites de payload, origem restrita às faixas oficiais da Cloudflare e quatro regras WAF personalizadas validados na VPS |
@@ -605,6 +605,11 @@ Estados:
 - Screenshot comercial usa upload HTTPS multipart autenticado, JPEG/PNG validado e limite de 2 MB; Base64 por WebSocket permanece apenas legado do simulador.
 - Assinatura aprovada com Play App Signing e upload key protegida no cofre do CI; distribuição inicial será Managed Google Play via EMM/Dedicated Device.
 - Nenhum hardware foi declarado homologado sem teste físico; a matriz obrigatória e a bateria de 168 horas estão registradas em `PLAYER_ANDROID_FLUTTER.md`.
+- O manifesto publicado agora é armazenado em `ScreenManifest`, impedindo que a mesma versão seja recalculada com conteúdo diferente.
+- Comandos remotos entregam `commandId`, `deviceId`, `createdAt` e `expiresAt`; expiração é persistida e aplicada na reentrega.
+- `PAIRING_SUCCESS` usa o mesmo DTO estruturado de layout entregue pelo manifesto, sem expor `canvasConfigJson` ao player.
+- A programação direta de uma tela é exclusiva: playlist e layout não podem ficar ativos simultaneamente; selecionar um limpa o outro.
+- A geração do manifesto falha de forma fechada diante de qualquer divergência de tenant ou proprietário entre tela, playlist, layout e mídia.
 
 ### Validação R2/CDN de 09/08/2026
 

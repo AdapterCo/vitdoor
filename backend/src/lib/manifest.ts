@@ -20,6 +20,21 @@ export async function buildScreenManifest(screenId: string) {
     }
   });
   if (!screen) return null;
+  if (!screen.createdById) return null;
+  if (screen.activePlaylist && (
+    screen.activePlaylist.tenantId !== screen.tenantId ||
+    screen.activePlaylist.createdById !== screen.createdById
+  )) return null;
+  if (screen.activeLayout && (
+    screen.activeLayout.tenantId !== screen.tenantId ||
+    screen.activeLayout.createdById !== screen.createdById
+  )) return null;
+
+  const published = await prisma.screenManifest.findUnique({
+    where: { screenId_version: { screenId: screen.id, version: screen.manifestVersion } },
+    select: { payload: true }
+  });
+  if (published) return JSON.parse(published.payload);
 
   const mediaIds = new Set<string>();
   const collectLayoutMedia = (layout: any) => {
@@ -67,11 +82,30 @@ export async function buildScreenManifest(screenId: string) {
     assets: medias.map((media) => playerMediaDto(media))
   };
 
-  return {
+  const manifest = {
     ...payload,
     checksumAlgorithm: 'SHA-256',
     checksum: createHash('sha256').update(JSON.stringify(payload)).digest('hex')
   };
+
+  try {
+    await prisma.screenManifest.create({
+      data: {
+        screenId: screen.id,
+        version: screen.manifestVersion,
+        checksum: manifest.checksum,
+        payload: JSON.stringify(manifest)
+      }
+    });
+    return manifest;
+  } catch (error: any) {
+    if (error?.code !== 'P2002') throw error;
+    const concurrent = await prisma.screenManifest.findUnique({
+      where: { screenId_version: { screenId: screen.id, version: screen.manifestVersion } },
+      select: { payload: true }
+    });
+    return concurrent ? JSON.parse(concurrent.payload) : null;
+  }
 }
 
 export async function bumpScreenManifestVersions(screenIds: string[]): Promise<void> {
