@@ -227,8 +227,8 @@ Responsabilidades:
 Exemplo de domínios:
 
 - `app.vitdoor.com.br` — painel.
-- `app.vitdoor.com.br/api` — API atualmente implantada e validada; `api.vitdoor.com.br` permanece evolução futura opcional.
-- `app.vitdoor.com.br/ws` — WebSocket atualmente implantado e validado; subdomínio dedicado permanece evolução futura opcional.
+- `api.vitdoor.com.br/api` — endpoint canônico da API.
+- `api.vitdoor.com.br/ws` — endpoint canônico do WebSocket.
 - `media.vitdoor.com.br` — R2 e CDN.
 
 ### 3.3 Cloudflare R2

@@ -98,8 +98,8 @@ Criar três ambientes:
 Configuração de produção:
 
 ```text
-API_BASE_URL=https://app.vitdoor.com.br/api
-WS_URL=wss://app.vitdoor.com.br/ws
+API_BASE_URL=https://api.vitdoor.com.br/api
+WS_URL=wss://api.vitdoor.com.br/ws
 MEDIA_HOST=https://media.vitdoor.com.br
 ```
 
@@ -230,7 +230,7 @@ O token é diferente do token de usuário, é revogável por versão e atualment
 
 ## 8. WebSocket atual
 
-Ao conectar em `wss://app.vitdoor.com.br/ws`, enviar:
+Ao conectar em `wss://api.vitdoor.com.br/ws`, enviar:
 
 ```json
 {
