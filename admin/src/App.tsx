@@ -25,6 +25,7 @@ export function App() {
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [tenants, setTenants] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+  const [qrStats, setQrStats] = useState<any>(null);
   const [activeTenant, setActiveTenant] = useState<any>(null);
   const [isPairModalOpen, setIsPairModalOpen] = useState(false);
 
@@ -75,16 +76,17 @@ export function App() {
   };
 
   const loadTenantData = async (tenantId: string) => {
-    setScreens([]); setPlaylists([]); setMedias([]); setMediaFolders([]); setLayouts([]); setCampaigns([]); setStats(null);
+    setScreens([]); setPlaylists([]); setMedias([]); setMediaFolders([]); setLayouts([]); setCampaigns([]); setStats(null); setQrStats(null);
     try {
-      const [screensRes, playlistsRes, mediasRes, foldersRes, layoutsRes, campaignsRes, statsRes] = await Promise.all([
+      const [screensRes, playlistsRes, mediasRes, foldersRes, layoutsRes, campaignsRes, statsRes, qrRes] = await Promise.all([
         apiFetch(`/screens?tenantId=${tenantId}`),
         apiFetch(`/playlists?tenantId=${tenantId}`),
         apiFetch(`/media?tenantId=${tenantId}`),
         apiFetch(`/media/folders?tenantId=${tenantId}`),
         apiFetch(`/layouts?tenantId=${tenantId}`),
         apiFetch(`/campaigns?tenantId=${tenantId}`),
-        apiFetch(`/proof-of-play/stats?tenantId=${tenantId}`)
+        apiFetch(`/proof-of-play/stats?tenantId=${tenantId}`),
+        apiFetch(`/qr-scans/stats?tenantId=${tenantId}&days=30`)
       ]);
 
       const responses = [screensRes, playlistsRes, mediasRes, foldersRes, layoutsRes, campaignsRes, statsRes];
@@ -96,6 +98,7 @@ export function App() {
       setLayouts(await layoutsRes.json());
       setCampaigns(await campaignsRes.json());
       setStats(await statsRes.json());
+      if (qrRes.ok) setQrStats(await qrRes.json());
     } catch (err) {
       console.error('Error fetching tenant data:', err);
     }
@@ -413,7 +416,7 @@ export function App() {
     wsRef.current = null;
     setUser(null);
     setActiveTenant(null);
-    setTenants([]); setScreens([]); setPlaylists([]); setMedias([]); setMediaFolders([]); setLayouts([]); setCampaigns([]); setStats(null);
+    setTenants([]); setScreens([]); setPlaylists([]); setMedias([]); setMediaFolders([]); setLayouts([]); setCampaigns([]); setStats(null); setQrStats(null);
     setActiveTab('dashboard');
     setIsPairModalOpen(false);
   };
@@ -510,7 +513,7 @@ export function App() {
           />
         )}
 
-        {activeTab === 'proof-of-play' && <ProofOfPlayTab stats={stats} />}
+        {activeTab === 'proof-of-play' && <ProofOfPlayTab stats={stats} qrStats={qrStats} />}
 
         {activeTab === 'emergency' && (
           <EmergencyTab

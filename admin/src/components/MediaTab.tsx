@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import { UploadCloud, Image, Film, Globe, Rss, Trash2, Save, Plus, Folder, FolderPlus, Pencil } from 'lucide-react';
 
 interface MediaTabProps {
@@ -224,6 +225,7 @@ export const MediaTab: React.FC<MediaTabProps> = ({
                 <Save size={15} />
               </button>
             </div>
+            <MediaCtaEditor media={media} onSave={(cta) => onUpdateMedia(media.id, { cta })} />
           </div>
         ))}
       </div>
@@ -311,6 +313,27 @@ export const MediaTab: React.FC<MediaTabProps> = ({
     </div>
   );
 };
+
+function MediaCtaEditor({ media, onSave }: { media: any; onSave: (cta: any) => void }) {
+  const initial = media.cta || {};
+  const [enabled, setEnabled] = useState(Boolean(initial.enabled));
+  const [type, setType] = useState(initial.type || 'WHATSAPP');
+  const [target, setTarget] = useState(initial.type === 'WHATSAPP' ? String(initial.target || '').replace(/\D/g, '') : (initial.target || ''));
+  const [label, setLabel] = useState(initial.label || '');
+  const [qr, setQr] = useState('');
+  const normalized = type === 'WHATSAPP' ? `https://wa.me/${target.replace(/\D/g, '')}` : target;
+  useEffect(() => { if (enabled && normalized) QRCode.toDataURL(normalized, { width: 120, margin: 1 }).then(setQr).catch(() => setQr('')); else setQr(''); }, [enabled, normalized]);
+  return <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: '10px', display: 'grid', gap: '7px' }}>
+    <label style={{ fontSize: '.82rem', color: '#cbd5e1' }}><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Exibir QR Code nesta mídia</label>
+    {enabled && <>
+      <select className="input-field" value={type} onChange={(e) => { setType(e.target.value); setTarget(''); }}><option value="WHATSAPP">WhatsApp</option><option value="INSTAGRAM">Instagram</option></select>
+      <input className="input-field" value={target} onChange={(e) => setTarget(e.target.value)} placeholder={type === 'WHATSAPP' ? 'Ex.: 5511999999999' : 'https://instagram.com/seu_perfil'} />
+      <input className="input-field" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Texto opcional" maxLength={80} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>{qr && <img src={qr} alt="Prévia do QR Code" width="72" height="72" />}<button className="btn-secondary" onClick={() => onSave({ enabled: true, type, target, position: 'BOTTOM_RIGHT', size: 160, label })}>Salvar QR Code</button></div>
+    </>}
+    {!enabled && media.cta && <button className="btn-secondary" onClick={() => onSave(null)}>Remover QR Code</button>}
+  </div>;
+}
 
 function readMediaDuration(file: File): Promise<number> {
   return new Promise((resolve) => {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Clock, Newspaper } from 'lucide-react';
 import { MultiZoneLayout } from './MultiZoneLayout';
 import { MediaVideo } from './MediaVideo';
+import { MediaQrCta } from './MediaQrCta';
 
 interface LayoutRendererProps {
   activePlaylist?: any;
@@ -9,6 +10,7 @@ interface LayoutRendererProps {
   activeAlert?: any;
   onMediaChanged?: (mediaName: string) => void;
   volume?: number;
+  screenId?: string;
 }
 
 export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
@@ -16,7 +18,8 @@ export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
   activeLayout,
   activeAlert,
   onMediaChanged,
-  volume = 80
+  volume = 80,
+  screenId
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [countdown, setCountdown] = useState(15);
@@ -179,6 +182,7 @@ export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
             📺 Nenhuma mídia na programação atual
           </div>
         )}
+        <MediaQrCta cta={currentMedia?.cta} mediaId={currentMedia?.id} screenId={screenId} />
 
       </div>
 
