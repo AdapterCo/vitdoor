@@ -134,7 +134,7 @@ export function App() {
               prev.map((s) => (s.id === data.screenId ? { ...s, ...data.telemetry, status: 'ONLINE' } : s))
             );
           } else if (data.type === 'COMMAND_RESULT') {
-            alert(data.success ? (data.message || 'Comando confirmado pela tela.') : (data.message || 'O player não conseguiu executar o comando.'));
+            console.info('Comando remoto concluído:', data);
           }
         } catch (e) {
           console.error('Error parsing admin websocket message:', e);
@@ -190,10 +190,10 @@ export function App() {
     });
     const result = await response.json();
     if (!response.ok) {
-      alert(result.message || result.error || 'Não foi possível enviar o comando.');
+      console.warn('Não foi possível enviar o comando remoto:', result.message || result.error);
       return false;
     }
-    alert(`${result.message || 'Comando registrado.'}\nID: ${result.commandId}`);
+    await loadTenantData(activeTenant.id);
     return true;
   };
 

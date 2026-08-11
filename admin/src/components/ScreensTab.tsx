@@ -29,6 +29,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
   const [locationName, setLocationName] = useState('');
   const [groupName, setGroupName] = useState('Recepção');
   const [orientation, setOrientation] = useState('HORIZONTAL');
+  const [volumeDrafts, setVolumeDrafts] = useState<Record<string, string>>({});
 
   const handlePairSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,6 +40,20 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
     setName('');
     setLocationName('');
     setIsPairModalOpen(false);
+  };
+
+  const getVolumeDraft = (screen: any) => volumeDrafts[screen.id] ?? String(screen.volume ?? 80);
+
+  const applyVolume = (screen: any) => {
+    const value = Number(volumeDrafts[screen.id] ?? screen.volume ?? 80);
+    if (!Number.isInteger(value) || value < 0 || value > 100) {
+      setVolumeDrafts((current) => ({ ...current, [screen.id]: String(screen.volume ?? 80) }));
+      return;
+    }
+    setVolumeDrafts((current) => ({ ...current, [screen.id]: String(value) }));
+    if (value !== Number(screen.volume ?? 80)) {
+      onRemoteCommand(screen.id, 'SET_VOLUME', { volume: value });
+    }
   };
 
   return (
@@ -117,18 +132,22 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Volume2 size={16} color="#60a5fa" />
                     <input
-                      type="range"
+                      type="number"
                       min="0"
                       max="100"
-                      value={screen.volume || 80}
-                      onChange={(e) => {
-                        const vol = parseInt(e.target.value, 10);
-                        onUpdateScreen(screen.id, { volume: vol });
-                        onRemoteCommand(screen.id, 'SET_VOLUME', { volume: vol });
+                      step="1"
+                      inputMode="numeric"
+                      className="input-field"
+                      aria-label={`Volume da tela ${screen.name}`}
+                      value={getVolumeDraft(screen)}
+                      onChange={(e) => setVolumeDrafts((current) => ({ ...current, [screen.id]: e.target.value }))}
+                      onBlur={() => applyVolume(screen)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.currentTarget.blur();
                       }}
-                      style={{ width: '80px', accentColor: '#3b82f6' }}
+                      style={{ width: '72px', padding: '6px 8px', textAlign: 'center' }}
                     />
-                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{screen.volume}%</span>
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>%</span>
                   </div>
                 </td>
 
