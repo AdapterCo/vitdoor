@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { UploadCloud, Image, Film, Globe, Rss, Trash2, Save, Plus, Folder, FolderPlus, Pencil } from 'lucide-react';
+import { UploadCloud, Image, Film, Globe, Rss, Trash2, Save, Plus, Folder, FolderPlus, Pencil, QrCode, X } from 'lucide-react';
 
 interface MediaTabProps {
   medias: any[];
@@ -31,6 +31,7 @@ export const MediaTab: React.FC<MediaTabProps> = ({
   const [widgetUrl, setWidgetUrl] = useState('');
   const [duration, setDuration] = useState(15);
   const [durationDrafts, setDurationDrafts] = useState<Record<string, number>>({});
+  const [qrModal, setQrModal] = useState<any | null>(null); // media object whose QR is being edited
   const [uploading, setUploading] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<string>('ALL');
   const [newFolderName, setNewFolderName] = useState('');
@@ -225,10 +226,40 @@ export const MediaTab: React.FC<MediaTabProps> = ({
                 <Save size={15} />
               </button>
             </div>
-            <MediaCtaEditor media={media} onSave={(cta) => onUpdateMedia(media.id, { cta })} />
+            {/* QR Code button — shown on card, opens modal */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid rgba(255,255,255,.06)', paddingTop: '10px' }}>
+              <button
+                className={media.cta?.enabled ? 'btn-secondary' : 'btn-secondary'}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '7px',
+                  padding: '9px',
+                  fontSize: '0.83rem',
+                  background: media.cta?.enabled ? 'rgba(245,158,11,0.18)' : undefined,
+                  borderColor: media.cta?.enabled ? '#f59e0b' : undefined,
+                  color: media.cta?.enabled ? '#fbbf24' : undefined
+                }}
+                onClick={() => setQrModal(media)}
+              >
+                <QrCode size={15} />
+                {media.cta?.enabled ? '✓ QR Code configurado' : 'Configurar QR Code'}
+              </button>
+            </div>
           </div>
         ))}
       </div>
+
+      {/* QR Code Modal */}
+      {qrModal && (
+        <QrCodeModal
+          media={qrModal}
+          onClose={() => setQrModal(null)}
+          onSave={(cta) => { onUpdateMedia(qrModal.id, { cta }); setQrModal(null); }}
+        />
+      )}
 
       {/* Widget Creator Modal */}
       {isWidgetModalOpen && (
@@ -314,26 +345,159 @@ export const MediaTab: React.FC<MediaTabProps> = ({
   );
 };
 
-function MediaCtaEditor({ media, onSave }: { media: any; onSave: (cta: any) => void }) {
+function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => void; onSave: (cta: any) => void }) {
   const initial = media.cta || {};
-  const [enabled, setEnabled] = useState(Boolean(initial.enabled));
-  const [type, setType] = useState(initial.type || 'WHATSAPP');
-  const [target, setTarget] = useState(initial.type === 'WHATSAPP' ? String(initial.target || '').replace(/\D/g, '') : (initial.target || ''));
+  const [type, setType] = useState<'WHATSAPP' | 'INSTAGRAM'>(initial.type === 'INSTAGRAM' ? 'INSTAGRAM' : 'WHATSAPP');
+  const [target, setTarget] = useState(
+    initial.type === 'WHATSAPP' ? String(initial.target || '').replace(/\D/g, '') : (initial.target || '')
+  );
   const [label, setLabel] = useState(initial.label || '');
+  const [position, setPosition] = useState(initial.position || 'BOTTOM_RIGHT');
   const [qr, setQr] = useState('');
+
   const normalized = type === 'WHATSAPP' ? `https://wa.me/${target.replace(/\D/g, '')}` : target;
-  useEffect(() => { if (enabled && normalized) QRCode.toDataURL(normalized, { width: 120, margin: 1 }).then(setQr).catch(() => setQr('')); else setQr(''); }, [enabled, normalized]);
-  return <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: '10px', display: 'grid', gap: '7px' }}>
-    <label style={{ fontSize: '.82rem', color: '#cbd5e1' }}><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Exibir QR Code nesta mídia</label>
-    {enabled && <>
-      <select className="input-field" value={type} onChange={(e) => { setType(e.target.value); setTarget(''); }}><option value="WHATSAPP">WhatsApp</option><option value="INSTAGRAM">Instagram</option></select>
-      <input className="input-field" value={target} onChange={(e) => setTarget(e.target.value)} placeholder={type === 'WHATSAPP' ? 'Ex.: 5511999999999' : 'https://instagram.com/seu_perfil'} />
-      <input className="input-field" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Texto opcional" maxLength={80} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>{qr && <img src={qr} alt="Prévia do QR Code" width="72" height="72" />}<button className="btn-secondary" onClick={() => onSave({ enabled: true, type, target, position: 'BOTTOM_RIGHT', size: 160, label })}>Salvar QR Code</button></div>
-    </>}
-    {!enabled && media.cta && <button className="btn-secondary" onClick={() => onSave(null)}>Remover QR Code</button>}
-  </div>;
+
+  useEffect(() => {
+    if (normalized && (type === 'INSTAGRAM' ? normalized.startsWith('https://') : target.replace(/\D/g, '').length >= 12)) {
+      QRCode.toDataURL(normalized, { width: 180, margin: 1 }).then(setQr).catch(() => setQr(''));
+    } else {
+      setQr('');
+    }
+  }, [normalized, type, target]);
+
+  const positionLabels: Record<string, string> = {
+    TOP_LEFT: 'Superior esquerdo', TOP_RIGHT: 'Superior direito',
+    BOTTOM_LEFT: 'Inferior esquerdo', BOTTOM_RIGHT: 'Inferior direito'
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0,
+      background: 'rgba(0,0,0,0.8)',
+      backdropFilter: 'blur(10px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      zIndex: 2000
+    }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="glass-panel" style={{ width: 500, padding: 32, display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <QrCode size={20} color="#f59e0b" /> QR Code — {media.name}
+            </h3>
+            <p style={{ fontSize: '0.82rem', color: '#64748b', marginTop: 3 }}>
+              O QR Code aparece sobreposto na mídia enquanto ela é exibida na TV.
+            </p>
+          </div>
+          <button className="btn-secondary" style={{ padding: '6px' }} onClick={onClose}><X size={16} /></button>
+        </div>
+
+        {/* Canal */}
+        <div>
+          <p style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: 10, fontWeight: 600 }}>CANAL DE DESTINO</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {(['WHATSAPP', 'INSTAGRAM'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => { setType(t); setTarget(''); setQr(''); }}
+                style={{
+                  padding: '14px',
+                  borderRadius: 12,
+                  border: `2px solid ${type === t ? (t === 'WHATSAPP' ? '#25d366' : '#e1306c') : 'rgba(255,255,255,0.1)'}`,
+                  background: type === t ? (t === 'WHATSAPP' ? 'rgba(37,211,102,0.12)' : 'rgba(225,48,108,0.12)') : 'rgba(255,255,255,0.03)',
+                  color: type === t ? '#fff' : '#64748b',
+                  fontWeight: 700,
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  transition: 'all .18s'
+                }}
+              >
+                {t === 'WHATSAPP' ? '💬' : '📷'} {t === 'WHATSAPP' ? 'WhatsApp' : 'Instagram'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Input */}
+        <div>
+          <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+            {type === 'WHATSAPP' ? 'NÚMERO COM DDD (somente números)' : 'LINK DO PERFIL DO INSTAGRAM'}
+          </label>
+          <input
+            className="input-field"
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            placeholder={type === 'WHATSAPP' ? 'Ex.: 5511999999999' : 'https://instagram.com/seu_perfil'}
+            style={{ fontSize: '1rem' }}
+          />
+        </div>
+
+        {/* Label opcional */}
+        <div>
+          <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+            TEXTO ABAIXO DO QR CODE (opcional)
+          </label>
+          <input
+            className="input-field"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder={type === 'WHATSAPP' ? 'Ex.: Fale conosco!' : 'Ex.: Siga-nos no Instagram'}
+            maxLength={80}
+          />
+        </div>
+
+        {/* Posição */}
+        <div>
+          <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+            POSIÇÃO NA TELA
+          </label>
+          <select className="input-field" value={position} onChange={(e) => setPosition(e.target.value)}>
+            {Object.entries(positionLabels).map(([val, lbl]) => (
+              <option key={val} value={val}>{lbl}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Prévia do QR Code */}
+        {qr && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '16px 20px' }}>
+            <img src={qr} alt="Prévia do QR Code" width={100} height={100} style={{ borderRadius: 8 }} />
+            <div>
+              <p style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>Prévia do QR Code</p>
+              <p style={{ color: '#64748b', fontSize: '0.78rem', marginTop: 4 }}>
+                Ao escanear, o sistema registra o scan e redireciona para o {type === 'WHATSAPP' ? 'WhatsApp' : 'Instagram'}.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Ações */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            className="btn-primary"
+            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px' }}
+            onClick={() => onSave({ enabled: true, type, target, position, size: 160, label })}
+          >
+            <QrCode size={16} /> Salvar QR Code
+          </button>
+          {media.cta?.enabled && (
+            <button
+              className="btn-danger"
+              style={{ padding: '12px 18px' }}
+              onClick={() => onSave(null)}
+              title="Remover QR Code desta mídia"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
+
 
 function readMediaDuration(file: File): Promise<number> {
   return new Promise((resolve) => {
