@@ -97,6 +97,17 @@ export async function buildScreenManifest(screenId: string) {
         payload: JSON.stringify(manifest)
       }
     });
+    // Mantém histórico suficiente para rollback/diagnóstico sem crescimento
+    // infinito do banco. A versão mais recente nunca é removida.
+    const obsolete = await prisma.screenManifest.findMany({
+      where: { screenId: screen.id },
+      orderBy: { version: 'desc' },
+      skip: 30,
+      select: { id: true }
+    });
+    if (obsolete.length) {
+      await prisma.screenManifest.deleteMany({ where: { id: { in: obsolete.map((item) => item.id) } } });
+    }
     return manifest;
   } catch (error: any) {
     if (error?.code !== 'P2002') throw error;

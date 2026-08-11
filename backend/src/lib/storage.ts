@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import crypto from 'crypto';
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 const uploadDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadDir)) {
@@ -71,4 +72,53 @@ export async function saveFile(file: Express.Multer.File, tenantId: string, medi
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 4000}`).replace(/\/$/, '');
   const url = `${publicBaseUrl}/uploads/${encodeURIComponent(filename)}`;
   return { url, storagePath: filename };
+}
+
+export async function saveScreenshot(buffer: Buffer, mimeType: 'image/jpeg' | 'image/png', tenantId: string, screenId: string): Promise<{ url: string; storagePath: string }> {
+  const extension = mimeType === 'image/png' ? 'png' : 'jpg';
+  const filename = `${Date.now()}-${crypto.randomUUID()}.${extension}`;
+  const objectKey = `tenants/${tenantId}/screenshots/${screenId}/${filename}`;
+  if (s3Client && process.env.R2_BUCKET_NAME) {
+    await s3Client.send(new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: objectKey,
+      Body: buffer,
+      ContentType: mimeType,
+      CacheControl: 'private, no-store',
+      ContentDisposition: 'inline'
+    }));
+    return { url: `${process.env.R2_PUBLIC_URL!.replace(/\/$/, '')}/${objectKey.split('/').map(encodeURIComponent).join('/')}`, storagePath: objectKey };
+  }
+  if (process.env.STORAGE_DRIVER === 'r2') throw new Error('R2 foi selecionado, mas suas credenciais não estão configuradas.');
+  const localPath = path.join(uploadDir, filename);
+  await fs.promises.writeFile(localPath, buffer);
+  const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 4000}`).replace(/\/$/, '');
+  return { url: `${publicBaseUrl}/uploads/${encodeURIComponent(filename)}`, storagePath: filename };
+}
+
+/** Remove o objeto de mídia do storage. Nunca silencie esta falha: manter o
+ * registro apagado e o objeto público no CDN é uma falha de retenção de dados. */
+export async function deleteStoredFile(storagePath?: string | null): Promise<void> {
+  if (!storagePath) return;
+  if (s3Client && process.env.R2_BUCKET_NAME) {
+    await s3Client.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: storagePath }));
+    return;
+  }
+  if (process.env.STORAGE_DRIVER === 'r2') throw new Error('R2 foi selecionado, mas suas credenciais não estão configuradas.');
+  const localPath = path.join(uploadDir, path.basename(storagePath));
+  if (fs.existsSync(localPath)) await fs.promises.unlink(localPath);
+}
+
+/** Purga a URL pública se as credenciais opcionais da zona estiverem presentes.
+ * Sem purge, uma cópia já cacheada pela CDN pode sobreviver ao DeleteObject. */
+export async function purgePublicUrl(publicUrl?: string | null): Promise<void> {
+  const zoneId = process.env.CLOUDFLARE_ZONE_ID?.trim();
+  const token = process.env.CLOUDFLARE_PURGE_TOKEN?.trim();
+  if (!publicUrl || !zoneId || !token) return;
+  const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/purge_cache`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: [publicUrl] })
+  });
+  if (!response.ok) throw new Error(`Falha ao purgar mídia da Cloudflare (${response.status}).`);
 }

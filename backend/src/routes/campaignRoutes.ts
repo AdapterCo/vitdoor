@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { tenantScope } from '../middleware/auth.js';
+import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
 import { campaignDto } from '../lib/dto.js';
 
 export const campaignRoutes = Router();
+campaignRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'DESIGNER'));
 
 campaignRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);

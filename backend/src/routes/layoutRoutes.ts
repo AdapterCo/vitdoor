@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { tenantScope } from '../middleware/auth.js';
+import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
 import { sendManifestToScreen } from '../lib/websocket.js';
 import { layoutDto } from '../lib/dto.js';
 import { bumpOwnerManifestVersions, bumpScreenManifestVersions } from '../lib/manifest.js';
 
 export const layoutRoutes = Router();
+layoutRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'DESIGNER'));
 
 layoutRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);

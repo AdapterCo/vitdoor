@@ -57,6 +57,25 @@ export function requireSuperAdmin(req: Request, res: Response, next: NextFunctio
   next();
 }
 
+export function requireRoles(...roles: string[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.auth || !roles.includes(req.auth.role)) {
+      res.status(403).json({ error: 'Seu perfil não tem permissão para executar esta ação.' });
+      return;
+    }
+    next();
+  };
+}
+
+/** GET/HEAD permanecem consultivos; toda mutação exige um papel explicitamente autorizado. */
+export function requireMutationRoles(...roles: string[]) {
+  const authorize = requireRoles(...roles);
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+    authorize(req, res, next);
+  };
+}
+
 export function tenantScope(req: Request, requestedTenantId?: string): string {
   if (!req.auth) throw new Error('UNAUTHENTICATED');
   if (requestedTenantId && requestedTenantId !== req.auth.tenantId) throw new Error('FORBIDDEN_TENANT');

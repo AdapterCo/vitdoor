@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { prisma } from '../lib/prisma.js';
-import { saveFile } from '../lib/storage.js';
-import { tenantScope } from '../middleware/auth.js';
+import { deleteStoredFile, purgePublicUrl, saveFile } from '../lib/storage.js';
+import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
 import { detectMediaDuration } from '../lib/mediaMetadata.js';
 import { createHash, randomUUID } from 'crypto';
 import { fileTypeFromBuffer } from 'file-type';
@@ -11,6 +11,7 @@ import { bumpOwnerManifestVersions } from '../lib/manifest.js';
 import { sendManifestToScreen } from '../lib/websocket.js';
 
 export const mediaRoutes = Router();
+mediaRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'DESIGNER'));
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 256 * 1024 * 1024, files: 1 },
@@ -218,6 +219,10 @@ mediaRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => 
   if (layoutUsingMedia) {
     return res.status(409).json({ error: `Remova esta mídia do layout "${layoutUsingMedia.name}" antes de excluí-la.` });
   }
+  // Remova primeiro o objeto externo. Se isso falhar, o registro continua no
+  // painel e o operador pode tentar novamente, sem deixar conteúdo órfão.
+  await deleteStoredFile(media.storagePath);
+  await purgePublicUrl(media.url);
   await prisma.media.delete({ where: { id } });
   const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
   for (const screenId of affectedIds) await sendManifestToScreen(screenId, true);

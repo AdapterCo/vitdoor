@@ -1,10 +1,11 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { sendCommandToScreen } from '../lib/websocket.js';
-import { tenantScope } from '../middleware/auth.js';
+import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
 import { alertDto } from '../lib/dto.js';
 
 export const emergencyRoutes = Router();
+emergencyRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'OPERATOR'));
 
 emergencyRoutes.post('/trigger', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.body.tenantId);

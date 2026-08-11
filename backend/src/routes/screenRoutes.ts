@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { sendCommandToScreen, sendManifestToScreen, cleanCode } from '../lib/websocket.js';
-import { tenantScope } from '../middleware/auth.js';
+import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
 import { layoutDto, playlistDto, screenDto } from '../lib/dto.js';
 import { randomUUID } from 'crypto';
 
 export const screenRoutes = Router();
+screenRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'OPERATOR'));
 
 function generatePairingCode(): string {
   const num1 = Math.floor(100 + Math.random() * 900);

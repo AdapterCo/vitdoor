@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { sendManifestToScreen } from '../lib/websocket.js';
-import { tenantScope } from '../middleware/auth.js';
+import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
 import { playlistDto } from '../lib/dto.js';
 import { bumpScreenManifestVersions } from '../lib/manifest.js';
 
 export const playlistRoutes = Router();
+playlistRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'DESIGNER'));
 
 playlistRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);

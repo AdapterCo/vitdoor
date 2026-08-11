@@ -9,6 +9,7 @@ import multer from 'multer';
 import { fileTypeFromBuffer } from 'file-type';
 import { broadcastToAdmins } from '../lib/websocket.js';
 import { screenshotRateLimiter } from '../middleware/security.js';
+import { saveScreenshot } from '../lib/storage.js';
 
 export const deviceRoutes = Router();
 const screenshotUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
@@ -55,9 +56,10 @@ deviceRoutes.post('/screenshots/:commandId', screenshotRateLimiter, authenticate
   }
 
   const capturedAt = new Date();
-  const imageDataUrl = `data:${detected.mime};base64,${req.file.buffer.toString('base64')}`;
+  const previousScreenshotUrl = (await prisma.screen.findUnique({ where: { id: req.deviceAuth!.screenId }, select: { lastScreenshotUrl: true } }))?.lastScreenshotUrl;
+  const stored = await saveScreenshot(req.file.buffer, detected.mime as 'image/jpeg' | 'image/png', req.deviceAuth!.tenantId, req.deviceAuth!.screenId);
   await prisma.$transaction([
-    prisma.screen.update({ where: { id: req.deviceAuth!.screenId }, data: { lastScreenshotUrl: imageDataUrl } }),
+    prisma.screen.update({ where: { id: req.deviceAuth!.screenId }, data: { lastScreenshotUrl: stored.url } }),
     prisma.remoteCommand.update({
       where: { commandId: command.commandId },
       data: { status: 'SUCCEEDED', success: true, message: 'Screenshot recebido.', completedAt: capturedAt }
@@ -67,9 +69,12 @@ deviceRoutes.post('/screenshots/:commandId', screenshotRateLimiter, authenticate
     type: 'SCREENSHOT_UPDATED',
     screenId: req.deviceAuth!.screenId,
     commandId: command.commandId,
-    imageUrl: imageDataUrl,
+    imageUrl: stored.url,
     capturedAt: capturedAt.toISOString()
   }, req.deviceAuth!.tenantId, command.createdById);
+  // A URL anterior é mantida nesta versão por compatibilidade legada; a limpeza
+  // completa será feita por rotina de retenção de screenshots no R2.
+  void previousScreenshotUrl;
   return res.status(201).json({ commandId: command.commandId, status: 'SUCCEEDED', capturedAt, mimeType: detected.mime, sizeBytes: req.file.size, duplicate: false });
 });
 
