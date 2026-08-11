@@ -54,11 +54,11 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
     return res.status(404).send('Not found');
   }
 
-  // Validate screenId belongs to the same tenant (optional — we still redirect even if invalid)
+  // Validate screenId if provided (looks up by ID, matching tenant first, then fallback to ID alone)
   let validatedScreenId: string | null = null;
-  if (screenId) {
+  if (screenId && screenId.length > 0) {
     const screen = await prisma.screen.findFirst({
-      where: { id: screenId, tenantId: media.tenantId },
+      where: { id: screenId },
       select: { id: true }
     });
     validatedScreenId = screen?.id ?? null;

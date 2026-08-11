@@ -36,11 +36,12 @@ export function MediaQrCta({
       return;
     }
 
-    // Build the tracking redirect URL
-    // Falls back to the direct target if mediaId is not available (should never happen in production)
-    const backendOrigin = API_BASE.replace(/\/api$/, '');
+    // Build the tracking redirect URL with full absolute domain so phone cameras can open it
+    const origin = API_BASE.startsWith('http')
+      ? API_BASE.replace(/\/api$/, '')
+      : window.location.origin;
     const params = screenId ? `?s=${encodeURIComponent(screenId)}` : '';
-    const trackingUrl = `${backendOrigin}/r/${mediaId}${params}`;
+    const trackingUrl = `${origin}/r/${mediaId}${params}`;
 
     QRCode.toDataURL(trackingUrl, {
       width: cta.size || 160,
