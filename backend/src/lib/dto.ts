@@ -4,7 +4,8 @@ export function tenantDto(tenant: any) {
 
 export function mediaDto(media: any) {
   if (!media) return null;
-  const result = pick(media, ['id', 'folderId', 'name', 'type', 'url', 'thumbnailUrl', 'durationSeconds', 'sizeBytes', 'tags', 'validUntil', 'mimeType', 'version', 'createdAt', 'updatedAt']);
+  const result = pick(media, ['id', 'folderId', 'name', 'type', 'url', 'thumbnailUrl', 'durationSeconds', 'sizeBytes', 'tags', 'validUntil', 'mimeType', 'version', 'ctaJson', 'createdAt', 'updatedAt']);
+  if (typeof result.ctaJson === 'string') { try { result.cta = JSON.parse(result.ctaJson); } catch { result.cta = null; } delete result.ctaJson; }
   if (typeof result.sizeBytes === 'bigint') result.sizeBytes = Number(result.sizeBytes);
   return result;
 }
@@ -18,7 +19,8 @@ export function mediaFolderDto(folder: any) {
 
 export function playerMediaDto(media: any) {
   if (!media) return null;
-  const result = pick(media, ['id', 'name', 'type', 'url', 'thumbnailUrl', 'durationSeconds', 'sizeBytes', 'checksum', 'mimeType', 'version']);
+  const result = pick(media, ['id', 'name', 'type', 'url', 'thumbnailUrl', 'durationSeconds', 'sizeBytes', 'checksum', 'mimeType', 'version', 'ctaJson']);
+  if (typeof result.ctaJson === 'string') { try { result.cta = JSON.parse(result.ctaJson); } catch { result.cta = null; } delete result.ctaJson; }
   if (typeof result.sizeBytes === 'bigint') result.sizeBytes = Number(result.sizeBytes);
   return result;
 }

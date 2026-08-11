@@ -177,6 +177,8 @@ mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   if (!existing) return res.status(404).json({ error: 'Mídia não encontrada.' });
 
   const durationSeconds = Math.max(1, Math.round(Number(req.body.durationSeconds) || existing.durationSeconds));
+  const ctaJson = normalizeCta(req.body.cta);
+  if (req.body.cta !== undefined && ctaJson === undefined) return res.status(400).json({ error: 'CTA inválido. Informe WhatsApp com DDD ou URL válida do Instagram.' });
   const folderId = req.body.folderId === undefined ? existing.folderId : await validateFolder(tenantId, req.auth!.userId, req.body.folderId);
   if (req.body.folderId && !folderId) return res.status(400).json({ error: 'Pasta inválida.' });
   const media = await prisma.$transaction(async (tx) => {
@@ -187,6 +189,7 @@ mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
         durationSeconds,
         tags: req.body.tags ?? existing.tags,
         folderId,
+        ctaJson: req.body.cta === undefined ? existing.ctaJson : ctaJson,
         version: { increment: 1 }
       }
     });
@@ -203,6 +206,26 @@ async function validateFolder(tenantId: string, userId: string, value: unknown):
   if (typeof value !== 'string') return null;
   const folder = await prisma.mediaFolder.findFirst({ where: { id: value, tenantId, createdById: userId }, select: { id: true } });
   return folder?.id || null;
+}
+
+function normalizeCta(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === false || (typeof value === 'object' && !(value as any).enabled)) return null;
+  if (!value || typeof value !== 'object') return undefined;
+  const input = value as Record<string, unknown>;
+  const type = input.type === 'WHATSAPP' || input.type === 'INSTAGRAM' ? input.type : '';
+  const position = ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_LEFT', 'BOTTOM_RIGHT'].includes(String(input.position)) ? String(input.position) : 'BOTTOM_RIGHT';
+  const size = Math.max(96, Math.min(320, Math.round(Number(input.size) || 160)));
+  const label = typeof input.label === 'string' ? input.label.trim().slice(0, 80) : '';
+  let target = typeof input.target === 'string' ? input.target.trim() : '';
+  if (type === 'WHATSAPP') {
+    const digits = target.replace(/\D/g, '');
+    if (digits.length < 12 || digits.length > 13 || !digits.startsWith('55')) return undefined;
+    target = `https://wa.me/${digits}`;
+  } else if (type === 'INSTAGRAM') {
+    try { const url = new URL(target); if (url.protocol !== 'https:' || !/(^|\.)instagram\.com$/i.test(url.hostname)) return undefined; target = url.toString(); } catch { return undefined; }
+  } else return undefined;
+  return JSON.stringify({ enabled: true, type, target, position, size, label: label || (type === 'WHATSAPP' ? 'Fale conosco' : 'Siga-nos no Instagram') });
 }
 
 // Delete media

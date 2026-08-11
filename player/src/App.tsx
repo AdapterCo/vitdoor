@@ -266,6 +266,7 @@ export function App() {
           activeLayout={activeLayout}
           activeAlert={activeAlert}
           volume={volume}
+          screenId={screenInfo?.id}
           onMediaChanged={handleMediaChanged}
         />
       )}

@@ -22,6 +22,8 @@ import { tenantRoutes } from './routes/tenantRoutes.js';
 import { deviceRoutes } from './routes/deviceRoutes.js';
 import { authenticate } from './middleware/auth.js';
 import { assertStorageConfiguration } from './lib/storage.js';
+import { qrRoutes } from './routes/qrRoutes.js';
+import { qrStatsRoutes } from './routes/qrStatsRoutes.js';
 import {
   apiRateLimiter,
   loginRateLimiter,
@@ -80,6 +82,8 @@ app.use('/api/campaigns', authenticate, campaignRoutes);
 app.use('/api/proof-of-play', proofOfPlayRoutes);
 app.use('/api/emergency', authenticate, emergencyRoutes);
 app.use('/api/tenants', authenticate, tenantRoutes);
+app.use('/api/qr-scans', authenticate, qrStatsRoutes);
+app.use('/r', qrRoutes); // public QR redirect — no auth
 
 app.get('/api/health', async (_req, res) => {
   try {

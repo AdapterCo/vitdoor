@@ -1,30 +1,175 @@
-import React from 'react';
-import { BarChart3, Download, ShieldCheck, PlayCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { BarChart3, Download, ShieldCheck, QrCode, Smartphone, TrendingUp, Wifi } from 'lucide-react';
 
 interface ProofOfPlayTabProps {
   stats: any;
+  qrStats: any;
 }
 
-export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats }) => {
+export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }) => {
   const recentLogs = stats?.recentLogs || [];
+  const [qrPeriod] = useState(30);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Header */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+
+      {/* ── Header ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h2 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>Proof of Play & Relatórios</h2>
+          <h2 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>Proof of Play &amp; Conversões</h2>
           <p style={{ color: '#94a3b8', fontSize: '0.95rem' }}>
-            Registro auditado de cada mídia veiculada nas telas para comprovação junto aos anunciantes.
+            Reproduções auditadas e rastreamento de scans de QR Code por tela e mídia.
           </p>
         </div>
-
         <button className="btn-secondary">
           <Download size={18} /> Exportar Relatório (PDF / Excel)
         </button>
       </div>
 
-      {/* Audit Logs Table */}
+      {/* ── QR Code Conversion Dashboard ── */}
+      {qrStats && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <QrCode size={20} color="#f59e0b" /> Rastreamento de Conversão via QR Code
+            <span style={{ fontSize: '0.78rem', fontWeight: 400, color: '#64748b' }}>— últimos {qrPeriod} dias</span>
+          </h3>
+
+          {/* KPI Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
+            {[
+              { label: 'Total de Scans', value: qrStats.totalScans, icon: <QrCode size={22} />, color: '#f59e0b' },
+              { label: 'WhatsApp', value: qrStats.whatsappScans, icon: <Smartphone size={22} />, color: '#25d366' },
+              { label: 'Instagram', value: qrStats.instagramScans, icon: <TrendingUp size={22} />, color: '#e1306c' },
+              {
+                label: 'Taxa de Conversão',
+                value: stats?.totalPlays ? `${((qrStats.totalScans / stats.totalPlays) * 100).toFixed(2)}%` : '—',
+                icon: <BarChart3 size={22} />,
+                color: '#60a5fa'
+              }
+            ].map((kpi) => (
+              <div key={kpi.label} className="glass-panel" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ color: kpi.color }}>{kpi.icon}</div>
+                <div style={{ fontSize: '1.9rem', fontWeight: 800, color: '#fff' }}>{kpi.value}</div>
+                <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600 }}>{kpi.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Top Mídias × Top Telas */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+
+            {/* Top Mídias */}
+            <div className="glass-panel" style={{ padding: '20px' }}>
+              <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                <BarChart3 size={16} color="#60a5fa" /> Top Mídias por Scans
+              </h4>
+              {qrStats.topMedias?.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {qrStats.topMedias.map((item: any, idx: number) => {
+                    const pct = qrStats.totalScans > 0 ? Math.round((item.scans / qrStats.totalScans) * 100) : 0;
+                    return (
+                      <div key={item.mediaId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#cbd5e1' }}>
+                          <span>{idx + 1}. {item.mediaName}</span>
+                          <span style={{ color: '#f59e0b', fontWeight: 700 }}>{item.scans} scan{item.scans !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 4 }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: '#f59e0b', borderRadius: 4, minWidth: pct > 0 ? 8 : 0 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p style={{ color: '#475569', fontSize: '0.85rem' }}>Nenhum scan registrado neste período.</p>
+              )}
+            </div>
+
+            {/* Top Telas */}
+            <div className="glass-panel" style={{ padding: '20px' }}>
+              <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                <Wifi size={16} color="#4ade80" /> Top Telas por Scans
+              </h4>
+              {qrStats.topScreens?.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {qrStats.topScreens.map((item: any, idx: number) => {
+                    const pct = qrStats.totalScans > 0 ? Math.round((item.scans / qrStats.totalScans) * 100) : 0;
+                    return (
+                      <div key={item.screenId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#cbd5e1' }}>
+                          <span>{idx + 1}. {item.screenName}{item.locationName ? ` — ${item.locationName}` : ''}</span>
+                          <span style={{ color: '#4ade80', fontWeight: 700 }}>{item.scans} scan{item.scans !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 4 }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: '#4ade80', borderRadius: 4, minWidth: pct > 0 ? 8 : 0 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p style={{ color: '#475569', fontSize: '0.85rem' }}>Nenhum scan registrado neste período.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Recent QR Scans */}
+          <div className="glass-panel" style={{ padding: '20px', overflowX: 'auto' }}>
+            <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '7px' }}>
+              <QrCode size={16} color="#f59e0b" /> Scans Recentes
+            </h4>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: '0.82rem' }}>
+                  <th style={{ padding: '10px' }}>DATA / HORA</th>
+                  <th style={{ padding: '10px' }}>TELA</th>
+                  <th style={{ padding: '10px' }}>MÍDIA</th>
+                  <th style={{ padding: '10px' }}>CANAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {qrStats.recentScans?.length > 0 ? (
+                  qrStats.recentScans.map((scan: any) => (
+                    <tr key={scan.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '0.87rem' }}>
+                      <td style={{ padding: '11px 10px', color: '#94a3b8', fontSize: '0.82rem' }}>
+                        {new Date(scan.scannedAt).toLocaleString('pt-BR')}
+                      </td>
+                      <td style={{ padding: '11px 10px', fontWeight: 600, color: '#fff' }}>
+                        {scan.screen?.name ?? <span style={{ color: '#475569' }}>Tela não identificada</span>}
+                        {scan.screen?.locationName && (
+                          <span style={{ color: '#64748b', fontSize: '0.77rem', display: 'block' }}>{scan.screen.locationName}</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '11px 10px', color: '#60a5fa' }}>
+                        {scan.media?.name ?? <span style={{ color: '#475569' }}>Mídia removida</span>}
+                      </td>
+                      <td style={{ padding: '11px 10px' }}>
+                        {scan.ctaType === 'WHATSAPP' ? (
+                          <span style={{ background: 'rgba(37,211,102,0.15)', color: '#25d366', padding: '3px 10px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700 }}>
+                            💬 WhatsApp
+                          </span>
+                        ) : (
+                          <span style={{ background: 'rgba(225,48,108,0.15)', color: '#e1306c', padding: '3px 10px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700 }}>
+                            📷 Instagram
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: '#475569' }}>
+                      Nenhum scan de QR Code registrado nos últimos {qrPeriod} dias.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Proof of Play Logs ── */}
       <div className="glass-panel" style={{ padding: '24px', overflowX: 'auto' }}>
         <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <ShieldCheck size={20} color="#4ade80" /> Histórico de Exibição em Tempo Real
