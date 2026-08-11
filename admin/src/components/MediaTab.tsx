@@ -32,6 +32,7 @@ export const MediaTab: React.FC<MediaTabProps> = ({
   const [durationDrafts, setDurationDrafts] = useState<Record<string, number>>({});
   const [uploading, setUploading] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<string>('ALL');
+  const [newFolderName, setNewFolderName] = useState('');
   const visibleMedias = medias.filter((media) => selectedFolder === 'ALL' ? true : selectedFolder === 'ROOT' ? !media.folderId : media.folderId === selectedFolder);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -62,6 +63,13 @@ export const MediaTab: React.FC<MediaTabProps> = ({
     setWidgetName('');
     setWidgetUrl('');
     setIsWidgetModalOpen(false);
+  };
+
+  const handleCreateFolder = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const name = newFolderName.trim();
+    if (!name) return;
+    if (await onCreateFolder(name)) setNewFolderName('');
   };
 
   return (
@@ -96,7 +104,18 @@ export const MediaTab: React.FC<MediaTabProps> = ({
           <button className="btn-secondary" style={{ padding: '7px' }} title="Renomear pasta" onClick={async () => { const name = prompt('Novo nome da pasta:', folder.name)?.trim(); if (name) await onRenameFolder(folder.id, name); }}><Pencil size={14} /></button>
           <button className="btn-danger" style={{ padding: '7px' }} title="Excluir pasta (as mídias serão mantidas)" onClick={async () => { if (confirm(`Excluir a pasta ${folder.name}? As mídias serão mantidas sem pasta.`) && await onDeleteFolder(folder.id)) setSelectedFolder('ALL'); }}><Trash2 size={14} /></button>
         </div>)}
-        <button className="btn-secondary" onClick={async () => { const name = prompt('Nome da nova pasta:')?.trim(); if (name) await onCreateFolder(name); }}><FolderPlus size={16} /> Nova pasta</button>
+        <form onSubmit={handleCreateFolder} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <input
+            type="text"
+            className="input-field"
+            value={newFolderName}
+            onChange={(event) => setNewFolderName(event.target.value)}
+            placeholder="Nome da nova pasta"
+            maxLength={80}
+            style={{ width: '180px', padding: '7px 10px' }}
+          />
+          <button className="btn-secondary" type="submit" disabled={!newFolderName.trim()}><FolderPlus size={16} /> Nova pasta</button>
+        </form>
       </div>
 
       {/* Media Grid */}
