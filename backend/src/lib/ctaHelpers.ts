@@ -48,6 +48,31 @@ export function isValidPhone(digits: string): boolean {
 }
 
 /**
+ * Garante que o número possua o código do país.
+ * Se o número tiver 10–11 dígitos (formato brasileiro com DDD, sem +55),
+ * o prefixo "55" é adicionado automaticamente.
+ *
+ * Exemplos:
+ *   "21985080634"   → "5521985080634"  (celular BR com DDD, sem +55)
+ *   "2134567890"    → "552134567890"   (fixo BR com DDD, sem +55)
+ *   "5521985080634" → "5521985080634"  (já tem código do país)
+ *   "12025551234"   → "12025551234"    (EUA, 11 dígitos – mantém como está)
+ *
+ * Nota: números de 11 dígitos de outros países (ex.: +1 800 5551234)
+ * tecnicamente precisariam do código do país. Mas como o VitDoor serve
+ * clientes majoritariamente brasileiros, o padrão é adicionar 55.
+ */
+export function ensureBrazilCountryCode(digits: string): string {
+  if (!digits) return digits;
+  // Já tem código de país se tiver 12+ dígitos
+  if (digits.length >= 12) return digits;
+  // 10–11 dígitos → número brasileiro sem +55
+  if (digits.length >= 10) return '55' + digits;
+  // Número muito curto — retorna como está (será rejeitado por isValidPhone)
+  return digits;
+}
+
+/**
  * Extrai phone e text de qualquer formato de entrada:
  *   - Dígitos puros:                    "5521985080634"
  *   - Número com máscara:               "+55 (21) 98508-0634"
@@ -85,6 +110,7 @@ export function parseWhatsAppTarget(cta: Pick<CtaObject, 'target' | 'text'>): Wh
         return null;
       }
 
+      phone = ensureBrazilCountryCode(phone);
       if (!isValidPhone(phone)) return null;
 
       // O campo text separado (novo modelo) tem precedência sobre o ?text= da URL
@@ -96,7 +122,7 @@ export function parseWhatsAppTarget(cta: Pick<CtaObject, 'target' | 'text'>): Wh
   }
 
   // --- Caso 2: Número puro ou com máscara (+55 21 98508-0634) ---
-  const digits = raw.replace(/\D/g, '');
+  const digits = ensureBrazilCountryCode(raw.replace(/\D/g, ''));
   if (!isValidPhone(digits)) return null;
 
   const finalText = cta.text?.trim() || undefined;
