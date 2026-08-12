@@ -94,12 +94,12 @@ async function prepareCanvasConfig(tenantId: string, userId: string, value: any)
   const zones = [];
   for (let index = 0; index < config.zones.length; index += 1) {
     const zone = config.zones[index];
-    if (!Array.isArray(zone.items) || zone.items.length === 0) return null;
+    const rawItems = Array.isArray(zone.items) ? zone.items : [];
     const audioEnabled = zone.audioEnabled === true;
     if (audioEnabled) audioZoneCount += 1;
     const fit = ['CONTAIN', 'COVER', 'FILL'].includes(zone.fit) ? zone.fit : 'CONTAIN';
-    const items = zone.items.map((item: any) => {
-      const media = byId.get(item.mediaId);
+    const items = rawItems.map((item: any) => {
+      const media = byId.get(item?.mediaId);
       return media ? { mediaId: media.id, name: media.name, type: media.type, url: media.url, durationSeconds: media.durationSeconds } : null;
     });
     if (items.some((item: any) => !item)) return null;

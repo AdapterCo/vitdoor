@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Clock, ListVideo, Pencil, Plus, Save, Trash2 } from 'lucide-react';
+import { Clock, Folder, ListVideo, Pencil, Plus, Save, Trash2 } from 'lucide-react';
 
 interface Props {
   playlists: any[];
   medias: any[];
+  folders?: any[];
   layouts: any[];
   screens: any[];
   onCreatePlaylist: (data: any) => Promise<boolean>;
@@ -11,17 +12,18 @@ interface Props {
   onDeletePlaylist: (id: string) => void;
 }
 
-export const PlaylistsTab: React.FC<Props> = ({ playlists, medias, screens, onCreatePlaylist, onUpdatePlaylist, onDeletePlaylist }) => {
+export const PlaylistsTab: React.FC<Props> = ({ playlists, medias, folders = [], screens, onCreatePlaylist, onUpdatePlaylist, onDeletePlaylist }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [screenIds, setScreenIds] = useState<string[]>([]);
   const [items, setItems] = useState<any[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string>('ALL');
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
-    setEditingId(null); setName(''); setDescription(''); setScreenIds([]); setItems([]);
+    setEditingId(null); setName(''); setDescription(''); setScreenIds([]); setItems([]); setSelectedFolderId('ALL');
   };
   const create = () => { reset(); setOpen(true); };
   const edit = (playlist: any) => {
@@ -34,6 +36,7 @@ export const PlaylistsTab: React.FC<Props> = ({ playlists, medias, screens, onCr
       layoutId: item.layoutId,
       durationSeconds: item.durationSeconds || item.media?.durationSeconds || 10
     })));
+    setSelectedFolderId('ALL');
     setOpen(true);
   };
   const toggleMedia = (media: any) => {
@@ -48,6 +51,18 @@ export const PlaylistsTab: React.FC<Props> = ({ playlists, medias, screens, onCr
     const success = editingId ? await onUpdatePlaylist(editingId, data) : await onCreatePlaylist(data);
     setSaving(false);
     if (success) { setOpen(false); reset(); }
+  };
+
+  const filteredMedias = medias.filter((m) => {
+    if (selectedFolderId === 'ALL') return true;
+    if (selectedFolderId === 'UNGROUPED') return !m.folderId;
+    return m.folderId === selectedFolderId;
+  });
+
+  const getFolderCount = (folderId: string) => {
+    if (folderId === 'ALL') return medias.length;
+    if (folderId === 'UNGROUPED') return medias.filter((m) => !m.folderId).length;
+    return medias.filter((m) => m.folderId === folderId).length;
   };
 
   return (
@@ -87,17 +102,90 @@ export const PlaylistsTab: React.FC<Props> = ({ playlists, medias, screens, onCr
 
       {open && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.78)', zIndex: 1000, display: 'grid', placeItems: 'center', padding: '20px' }}>
-          <form className="glass-panel" onSubmit={submit} style={{ width: 'min(720px,100%)', maxHeight: '92vh', overflowY: 'auto', padding: '28px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          <form className="glass-panel" onSubmit={submit} style={{ width: 'min(760px,100%)', maxHeight: '92vh', overflowY: 'auto', padding: '28px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
             <div><h3>{editingId ? 'Editar playlist' : 'Criar playlist'}</h3><p style={{ color: '#94a3b8', fontSize: '.84rem' }}>As alterações são enviadas imediatamente às telas selecionadas.</p></div>
             <input className="input-field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome da playlist" required />
             <input className="input-field" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descrição" />
             <div><strong>Telas de destino</strong><div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '9px' }}>
               {screens.map((screen) => <button type="button" key={screen.id} className={screenIds.includes(screen.id) ? 'btn-primary' : 'btn-secondary'} onClick={() => setScreenIds((ids) => ids.includes(screen.id) ? ids.filter((id) => id !== screen.id) : [...ids, screen.id])}>{screen.name}</button>)}
             </div></div>
-            <div><strong>Biblioteca</strong><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))', gap: '8px', marginTop: '9px' }}>
-              {medias.map((media) => <button type="button" key={media.id} className={items.some((item) => item.mediaId === media.id) ? 'btn-primary' : 'btn-secondary'} onClick={() => toggleMedia(media)}>{media.name} · {media.durationSeconds}s</button>)}
-            </div></div>
-            {items.length > 0 && <div><strong>Duração por item</strong>{items.map((item, index) => {
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong>Biblioteca de Mídias</strong>
+                <span style={{ color: '#60a5fa', fontSize: '.82rem', fontWeight: 600 }}>{items.length} selecionada(s)</span>
+              </div>
+
+              {/* Filtro por Pastas */}
+              {folders.length > 0 && (
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px', marginBottom: '10px' }}>
+                  <button
+                    type="button"
+                    style={{
+                      padding: '5px 12px', borderRadius: '16px', fontSize: '.78rem', fontWeight: 600, border: 'none', cursor: 'pointer',
+                      background: selectedFolderId === 'ALL' ? '#3b82f6' : 'rgba(255,255,255,.07)',
+                      color: selectedFolderId === 'ALL' ? '#fff' : '#cbd5e1'
+                    }}
+                    onClick={() => setSelectedFolderId('ALL')}
+                  >
+                    Todas ({getFolderCount('ALL')})
+                  </button>
+                  <button
+                    type="button"
+                    style={{
+                      padding: '5px 12px', borderRadius: '16px', fontSize: '.78rem', fontWeight: 600, border: 'none', cursor: 'pointer',
+                      background: selectedFolderId === 'UNGROUPED' ? '#3b82f6' : 'rgba(255,255,255,.07)',
+                      color: selectedFolderId === 'UNGROUPED' ? '#fff' : '#cbd5e1'
+                    }}
+                    onClick={() => setSelectedFolderId('UNGROUPED')}
+                  >
+                    Sem pasta ({getFolderCount('UNGROUPED')})
+                  </button>
+                  {folders.map((folder) => (
+                    <button
+                      type="button"
+                      key={folder.id}
+                      style={{
+                        padding: '5px 12px', borderRadius: '16px', fontSize: '.78rem', fontWeight: 600, border: 'none', cursor: 'pointer',
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        background: selectedFolderId === folder.id ? '#3b82f6' : 'rgba(255,255,255,.07)',
+                        color: selectedFolderId === folder.id ? '#fff' : '#cbd5e1'
+                      }}
+                      onClick={() => setSelectedFolderId(folder.id)}
+                    >
+                      <Folder size={12} /> {folder.name} ({getFolderCount(folder.id)})
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Grid de Mídias filtradas */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: '8px', marginTop: '9px' }}>
+                {filteredMedias.length > 0 ? (
+                  filteredMedias.map((media) => {
+                    const isSelected = items.some((item) => item.mediaId === media.id);
+                    return (
+                      <button
+                        type="button"
+                        key={media.id}
+                        className={isSelected ? 'btn-primary' : 'btn-secondary'}
+                        style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '2px', padding: '10px 12px' }}
+                        onClick={() => toggleMedia(media)}
+                      >
+                        <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{media.name}</span>
+                        <span style={{ fontSize: '.75rem', opacity: 0.8 }}>{media.durationSeconds}s</span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div style={{ gridColumn: '1 / -1', color: '#64748b', fontSize: '.84rem', textAlign: 'center', padding: '16px 0' }}>
+                    Nenhuma mídia nesta pasta.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {items.length > 0 && <div><strong>Duração por item na playlist</strong>{items.map((item, index) => {
               const media = medias.find((candidate) => candidate.id === item.mediaId);
               return <div key={item.mediaId || index} style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '10px', alignItems: 'center', marginTop: '8px' }}>
                 <span style={{ color: '#cbd5e1' }}>{index + 1}. {media?.name}</span>

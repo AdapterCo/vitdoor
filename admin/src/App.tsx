@@ -504,6 +504,7 @@ export function App() {
           <PlaylistsTab
             playlists={playlists}
             medias={medias}
+            folders={mediaFolders}
             layouts={layouts}
             screens={screens}
             onCreatePlaylist={handleCreatePlaylist}
