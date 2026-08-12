@@ -4,8 +4,9 @@ import { API_BASE } from '../config';
 
 interface CtaProps {
   enabled: boolean;
-  type: 'WHATSAPP' | 'INSTAGRAM';
-  target: string;
+  mode?: 'DIRECT' | 'PROFILE';
+  type?: 'WHATSAPP' | 'INSTAGRAM' | 'URL' | string;
+  target?: string;
   position?: string;
   size?: number;
   label?: string;
@@ -17,7 +18,7 @@ interface CtaProps {
  * URL rastreada: /r/:mediaId?s=:screenId
  *
  * O backend registra o scan (tela, horário, tipo) e redireciona para
- * WhatsApp ou Instagram — transparente para o consumidor.
+ * WhatsApp, Instagram, URL ou Cartão Digital — transparente para o consumidor.
  */
 export function MediaQrCta({
   cta,
@@ -31,7 +32,7 @@ export function MediaQrCta({
   const [src, setSrc] = useState('');
 
   useEffect(() => {
-    if (!cta?.enabled || !cta.target || !mediaId) {
+    if (!cta?.enabled || !mediaId) {
       setSrc('');
       return;
     }
@@ -61,7 +62,13 @@ export function MediaQrCta({
     BOTTOM_RIGHT: { bottom: 28, right: 28 }
   };
 
-  const typeIcon = cta.type === 'WHATSAPP' ? '💬' : '📷';
+  const typeIcon = cta.mode === 'PROFILE'
+    ? '🎴'
+    : cta.type === 'WHATSAPP'
+    ? '💬'
+    : cta.type === 'INSTAGRAM'
+    ? '📷'
+    : '🌐';
 
   return (
     <div
