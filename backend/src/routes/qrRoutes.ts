@@ -268,12 +268,7 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
       background: #f0fdf4;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
     }
-    body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-    }
+    body { display: flex; align-items: center; justify-content: center; text-align: center; }
     .card {
       background: #ffffff;
       border-radius: 20px;
@@ -282,24 +277,11 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
       max-width: 340px;
       width: 90%;
     }
-    .icon {
-      font-size: 52px;
-      margin-bottom: 12px;
-    }
-    .title {
-      font-size: 19px;
-      font-weight: 700;
-      color: #1a1a1a;
-      margin-bottom: 6px;
-    }
-    .subtitle {
-      font-size: 13px;
-      color: #6b7280;
-      margin-bottom: 24px;
-      line-height: 1.5;
-    }
+    .icon { font-size: 52px; margin-bottom: 12px; }
+    .title { font-size: 19px; font-weight: 700; color: #1a1a1a; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #6b7280; margin-bottom: 24px; line-height: 1.5; }
     .btn {
-      display: inline-flex;
+      display: none;
       align-items: center;
       justify-content: center;
       gap: 8px;
@@ -314,8 +296,8 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
       box-sizing: border-box;
       transition: background 0.15s;
     }
+    .btn.visible { display: inline-flex; }
     .btn:hover { background: #1ebe5d; }
-    .btn[style*="none"] { display: none !important; }
   </style>
 </head>
 <body>
@@ -323,38 +305,35 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
     <div class="icon">💬</div>
     <div class="title">Abrindo o WhatsApp…</div>
     <div class="subtitle">Aguarde um instante.<br>Se não abrir automaticamente, toque no botão abaixo.</div>
-    <a class="btn" href="${safeWebUrlAttr}" id="fallback-btn" style="display:none;">
+    <a class="btn" href="${safeWebUrlAttr}" id="fallback-btn">
       Abrir WhatsApp
     </a>
   </div>
   <script>
-    (function () {
-      var appUrl     = ${safeAppUrl};
-      var fallbackUrl = ${safeWebUrl};
-      var appOpened  = false;
+    var appUrl      = ${safeAppUrl};
+    var fallbackUrl = ${safeWebUrl};
+    var redirected  = false;
 
-      document.addEventListener('visibilitychange', function () {
-        if (document.hidden) appOpened = true;
-      });
+    // Detect if the user left the page (app opened successfully)
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) redirected = true;
+    });
 
-      // Tenta abrir o aplicativo via esquema nativo
-      window.location.href = appUrl;
+    // Trigger the native WhatsApp scheme immediately
+    window.location.href = appUrl;
 
-      // Se o app não abrir em 1.2 s, redireciona para wa.me
-      setTimeout(function () {
-        if (!appOpened && !document.hidden) {
-          window.location.href = fallbackUrl;
-        }
-      }, 1200);
+    // Always show the button after 1 second — regardless of whether the app opened
+    setTimeout(function () {
+      var btn = document.getElementById('fallback-btn');
+      if (btn) btn.classList.add('visible');
+    }, 1000);
 
-      // Exibe botão de contingência em 1.8 s caso o redirect automático falhe
-      setTimeout(function () {
-        if (!appOpened && !document.hidden) {
-          var btn = document.getElementById('fallback-btn');
-          if (btn) btn.style.display = 'inline-flex';
-        }
-      }, 1800);
-    })();
+    // Redirect to wa.me after 2.5 seconds ONLY if the user is still on this page
+    setTimeout(function () {
+      if (!redirected && !document.hidden) {
+        window.location.href = fallbackUrl;
+      }
+    }, 2500);
   </script>
 </body>
 </html>`);

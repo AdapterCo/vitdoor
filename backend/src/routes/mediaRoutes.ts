@@ -7,7 +7,7 @@ import { detectMediaDuration } from '../lib/mediaMetadata.js';
 import { createHash, randomUUID } from 'crypto';
 import { fileTypeFromBuffer } from 'file-type';
 import { mediaDto, mediaFolderDto } from '../lib/dto.js';
-import { parseWhatsAppTarget, normalizeInstagramTarget, normalizeGenericUrl, isValidPhone } from '../lib/ctaHelpers.js';
+import { parseWhatsAppTarget, normalizeInstagramTarget, normalizeGenericUrl, isValidPhone, buildWhatsAppWebUrl } from '../lib/ctaHelpers.js';
 import { bumpOwnerManifestVersions } from '../lib/manifest.js';
 import { sendManifestToScreen } from '../lib/websocket.js';
 
@@ -244,16 +244,18 @@ function normalizeCta(value: unknown): string | null | undefined {
     const parsed = parseWhatsAppTarget({ target: rawTarget, text: rawText });
     if (!parsed || !isValidPhone(parsed.phone)) return undefined;
 
-    const defaultLabel = 'Fale conosco';
-    // Store as canonical digits + optional text field (new model)
+    // Always store target as a valid URL (https://wa.me/phone) so the Flutter player
+    // can use it directly for QR Code display. The optional message is stored in
+    // the separate `text` field.
+    const waUrl = buildWhatsAppWebUrl(parsed.phone);
     return JSON.stringify({
       enabled: true,
       type,
-      target: parsed.phone,
+      target: waUrl,
       ...(parsed.text ? { text: parsed.text } : {}),
       position,
       size,
-      label: label || defaultLabel
+      label: label || 'Fale conosco'
     });
   }
 
