@@ -213,19 +213,58 @@ function normalizeCta(value: unknown): string | null | undefined {
   if (value === null || value === false || (typeof value === 'object' && !(value as any).enabled)) return null;
   if (!value || typeof value !== 'object') return undefined;
   const input = value as Record<string, unknown>;
-  const type = input.type === 'WHATSAPP' || input.type === 'INSTAGRAM' ? input.type : '';
+  const rawType = String(input.type || '').toUpperCase();
+  const type = ['WHATSAPP', 'INSTAGRAM', 'URL', 'CUSTOM_URL', 'WEBSITE'].includes(rawType) ? 'URL' : (rawType === 'WHATSAPP' || rawType === 'INSTAGRAM' ? rawType : '');
+  if (!type) return undefined;
+
   const position = ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_LEFT', 'BOTTOM_RIGHT'].includes(String(input.position)) ? String(input.position) : 'BOTTOM_RIGHT';
   const size = Math.max(96, Math.min(320, Math.round(Number(input.size) || 160)));
   const label = typeof input.label === 'string' ? input.label.trim().slice(0, 80) : '';
   let target = typeof input.target === 'string' ? input.target.trim() : '';
+
+  if (!target) return undefined;
+
   if (type === 'WHATSAPP') {
-    const digits = target.replace(/\D/g, '');
-    if (digits.length < 12 || digits.length > 13 || !digits.startsWith('55')) return undefined;
-    target = `https://wa.me/${digits}`;
+    if (target.startsWith('http://') || target.startsWith('https://')) {
+      try {
+        const url = new URL(target);
+        target = url.toString();
+      } catch {
+        return undefined;
+      }
+    } else {
+      const digits = target.replace(/\D/g, '');
+      if (digits.length < 10) return undefined;
+      target = `https://wa.me/${digits}`;
+    }
   } else if (type === 'INSTAGRAM') {
-    try { const url = new URL(target); if (url.protocol !== 'https:' || !/(^|\.)instagram\.com$/i.test(url.hostname)) return undefined; target = url.toString(); } catch { return undefined; }
-  } else return undefined;
-  return JSON.stringify({ enabled: true, type, target, position, size, label: label || (type === 'WHATSAPP' ? 'Fale conosco' : 'Siga-nos no Instagram') });
+    if (target.startsWith('http://') || target.startsWith('https://')) {
+      try {
+        const url = new URL(target);
+        target = url.toString();
+      } catch {
+        return undefined;
+      }
+    } else {
+      const clean = target.replace(/^@/, '');
+      if (!clean) return undefined;
+      target = `https://instagram.com/${clean}`;
+    }
+  } else {
+    // Type URL
+    if (!/^(https?:\/\/)/i.test(target)) {
+      target = `https://${target}`;
+    }
+    try {
+      const url = new URL(target);
+      target = url.toString();
+    } catch {
+      return undefined;
+    }
+  }
+
+  const defaultLabel = type === 'WHATSAPP' ? 'Fale conosco' : type === 'INSTAGRAM' ? 'Siga-nos no Instagram' : 'Acesse o link';
+  return JSON.stringify({ enabled: true, type, target, position, size, label: label || defaultLabel });
 }
 
 // Delete media
