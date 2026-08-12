@@ -197,6 +197,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
         if (Number.isFinite(msg.cpuUsagePercent)) telemetry.cpuUsagePercent = clampInteger(msg.cpuUsagePercent, 0, 100);
         if (Number.isFinite(msg.storageFreeMb)) telemetry.storageFreeMb = Math.max(0, Math.round(msg.storageFreeMb));
         if (typeof msg.currentMediaName === 'string' && msg.currentMediaName.trim()) telemetry.currentMediaName = msg.currentMediaName.trim().slice(0, 255);
+        if (typeof msg.currentMediaId === 'string' && msg.currentMediaId.trim()) telemetry.currentMediaId = msg.currentMediaId.trim();
         await prisma.screen.update({
           where: { id: client.screenId },
           data: telemetry

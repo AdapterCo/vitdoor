@@ -92,6 +92,7 @@ model Screen {
   cpuUsagePercent    Int?
   appVersion         String?
   currentMediaName   String?
+  currentMediaId     String?
   lastScreenshotUrl  String?
   deviceTokenVersion Int       @default(1)
   manifestVersion    Int       @default(1)
@@ -345,6 +346,7 @@ model QrScan {
   screenId   String?
   screen     Screen?  @relation(fields: [screenId], references: [id], onDelete: SetNull)
   ctaType    String   // WHATSAPP, INSTAGRAM
+  scanSource String   @default("QR_CODE") // QR_CODE, NFC_TAP
   scannedAt  DateTime @default(now())
   userAgent  String?
 

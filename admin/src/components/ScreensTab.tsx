@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tv, Volume2, Camera, RefreshCw, Power, Trash2, Plus, Sliders, CheckCircle2 } from 'lucide-react';
+import { Tv, Volume2, Camera, RefreshCw, Power, Trash2, Plus, Sliders, CheckCircle2, Radio, Copy, Check, X } from 'lucide-react';
 
 interface ScreensTabProps {
   screens: any[];
@@ -30,6 +30,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
   const [groupName, setGroupName] = useState('Recepção');
   const [orientation, setOrientation] = useState('HORIZONTAL');
   const [volumeDrafts, setVolumeDrafts] = useState<Record<string, string>>({});
+  const [nfcModalScreen, setNfcModalScreen] = useState<any | null>(null);
 
   const handlePairSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,6 +157,14 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                     <button
                       className="btn-secondary"
                       style={{ padding: '6px 10px' }}
+                      title="Link da Tag NFC para o Totem"
+                      onClick={() => setNfcModalScreen(screen)}
+                    >
+                      <Radio size={14} color="#38bdf8" />
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      style={{ padding: '6px 10px' }}
                       title="Capturar Foto Atual"
                       onClick={() => onRemoteCommand(screen.id, 'TAKE_SCREENSHOT')}
                     >
@@ -269,6 +278,73 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* NFC Tag Link Modal */}
+      {nfcModalScreen && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '20px'
+        }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '480px', padding: '28px', position: 'relative' }}>
+            <button
+              onClick={() => setNfcModalScreen(null)}
+              style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+            >
+              <X size={20} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ padding: '10px', background: 'rgba(56, 189, 248, 0.15)', borderRadius: '12px', color: '#38bdf8' }}>
+                <Radio size={24} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                  Tag NFC — {nfcModalScreen.name}
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                  Aproximação inteligente por Totem
+                </span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.88rem', color: '#cbd5e1', lineHeight: '1.5', marginBottom: '16px' }}>
+              Grave o link abaixo no adesivo NFC fixado no Totem. Quando o cliente aproximar o celular, ele abrirá automaticamente o link/cupom da mídia que estiver passando na TV <strong>naquele exato segundo</strong>!
+            </p>
+
+            <div style={{
+              background: 'rgba(15, 23, 42, 0.9)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '12px',
+              padding: '14px',
+              fontFamily: 'monospace',
+              fontSize: '0.88rem',
+              color: '#38bdf8',
+              wordBreak: 'break-all',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px'
+            }}>
+              <span>{`${window.location.origin}/r/nfc/${nfcModalScreen.id}`}</span>
+              <button
+                className="btn-primary"
+                style={{ padding: '8px 12px', fontSize: '0.8rem', flexShrink: 0 }}
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/r/nfc/${nfcModalScreen.id}`);
+                  alert('Link NFC copiado com sucesso! Agora basta gravar no adesivo NFC usando o aplicativo NFC Tools.');
+                }}
+              >
+                <Copy size={14} /> Copiar
+              </button>
+            </div>
+
+            <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '12px 16px', borderRadius: '12px', fontSize: '0.8rem', color: '#94a3b8' }}>
+              💡 <strong>Dica de Gravação:</strong> No seu celular, instale o aplicativo gratuito <em>NFC Tools</em>, escolha "Escrever" &gt; "Adicionar registro" &gt; "URL" e cole o link acima. Em seguida, encoste no adesivo NFC!
+            </div>
           </div>
         </div>
       )}

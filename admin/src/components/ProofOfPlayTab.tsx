@@ -35,17 +35,13 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
           </h3>
 
           {/* KPI Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px' }}>
             {[
-              { label: 'Total de Scans', value: qrStats.totalScans, icon: <QrCode size={22} />, color: '#f59e0b' },
+              { label: 'Total de Interações', value: qrStats.totalScans, icon: <QrCode size={22} />, color: '#f59e0b' },
+              { label: 'QR Code (Câmera)', value: qrStats.qrCodeScans || 0, icon: <QrCode size={22} />, color: '#38bdf8' },
+              { label: 'NFC (Aproximação)', value: qrStats.nfcTapScans || 0, icon: <Wifi size={22} />, color: '#a855f7' },
               { label: 'WhatsApp', value: qrStats.whatsappScans, icon: <Smartphone size={22} />, color: '#25d366' },
-              { label: 'Instagram', value: qrStats.instagramScans, icon: <TrendingUp size={22} />, color: '#e1306c' },
-              {
-                label: 'Taxa de Conversão',
-                value: stats?.totalPlays ? `${((qrStats.totalScans / stats.totalPlays) * 100).toFixed(2)}%` : '—',
-                icon: <BarChart3 size={22} />,
-                color: '#60a5fa'
-              }
+              { label: 'Instagram', value: qrStats.instagramScans, icon: <TrendingUp size={22} />, color: '#e1306c' }
             ].map((kpi) => (
               <div key={kpi.label} className="glass-panel" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ color: kpi.color }}>{kpi.icon}</div>
@@ -61,24 +57,18 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
             {/* Top Mídias */}
             <div className="glass-panel" style={{ padding: '20px' }}>
               <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '7px' }}>
-                <BarChart3 size={16} color="#60a5fa" /> Top Mídias por Scans
+                <TrendingUp size={16} color="#f59e0b" /> Top Mídias por Scans
               </h4>
               {qrStats.topMedias?.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {qrStats.topMedias.map((item: any, idx: number) => {
-                    const pct = qrStats.totalScans > 0 ? Math.round((item.scans / qrStats.totalScans) * 100) : 0;
-                    return (
-                      <div key={item.mediaId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#cbd5e1' }}>
-                          <span>{idx + 1}. {item.mediaName}</span>
-                          <span style={{ color: '#f59e0b', fontWeight: 700 }}>{item.scans} scan{item.scans !== 1 ? 's' : ''}</span>
-                        </div>
-                        <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 4 }}>
-                          <div style={{ height: '100%', width: `${pct}%`, background: '#f59e0b', borderRadius: 4, minWidth: pct > 0 ? 8 : 0 }} />
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {qrStats.topMedias.map((m: any, i: number) => (
+                    <div key={m.mediaId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+                      <span style={{ color: '#cbd5e1', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                        {i + 1}. {m.mediaName}
+                      </span>
+                      <span className="badge badge-warning">{m.scans} scan{m.scans > 1 ? 's' : ''}</span>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <p style={{ color: '#475569', fontSize: '0.85rem' }}>Nenhum scan registrado neste período.</p>
@@ -88,24 +78,19 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
             {/* Top Telas */}
             <div className="glass-panel" style={{ padding: '20px' }}>
               <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '7px' }}>
-                <Wifi size={16} color="#4ade80" /> Top Telas por Scans
+                <Wifi size={16} color="#22c55e" /> Top Telas por Scans
               </h4>
               {qrStats.topScreens?.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {qrStats.topScreens.map((item: any, idx: number) => {
-                    const pct = qrStats.totalScans > 0 ? Math.round((item.scans / qrStats.totalScans) * 100) : 0;
-                    return (
-                      <div key={item.screenId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#cbd5e1' }}>
-                          <span>{idx + 1}. {item.screenName}{item.locationName ? ` — ${item.locationName}` : ''}</span>
-                          <span style={{ color: '#4ade80', fontWeight: 700 }}>{item.scans} scan{item.scans !== 1 ? 's' : ''}</span>
-                        </div>
-                        <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 4 }}>
-                          <div style={{ height: '100%', width: `${pct}%`, background: '#4ade80', borderRadius: 4, minWidth: pct > 0 ? 8 : 0 }} />
-                        </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {qrStats.topScreens.map((s: any, i: number) => (
+                    <div key={s.screenId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.88rem' }}>
+                      <div>
+                        <span style={{ color: '#cbd5e1', fontWeight: 500 }}>{i + 1}. {s.screenName}</span>
+                        {s.locationName && <span style={{ color: '#64748b', fontSize: '0.76rem', display: 'block' }}>{s.locationName}</span>}
                       </div>
-                    );
-                  })}
+                      <span className="badge badge-success">{s.scans} scan{s.scans > 1 ? 's' : ''}</span>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <p style={{ color: '#475569', fontSize: '0.85rem' }}>Nenhum scan registrado neste período.</p>
@@ -113,18 +98,19 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
             </div>
           </div>
 
-          {/* Recent QR Scans */}
+          {/* Recent QR & NFC Scans */}
           <div className="glass-panel" style={{ padding: '20px', overflowX: 'auto' }}>
             <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '7px' }}>
-              <QrCode size={16} color="#f59e0b" /> Scans Recentes
+              <QrCode size={16} color="#f59e0b" /> Scans &amp; Aproximações NFC Recentes
             </h4>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: '0.82rem' }}>
                   <th style={{ padding: '10px' }}>DATA / HORA</th>
+                  <th style={{ padding: '10px' }}>ORIGEM</th>
                   <th style={{ padding: '10px' }}>TELA</th>
                   <th style={{ padding: '10px' }}>MÍDIA</th>
-                  <th style={{ padding: '10px' }}>CANAL</th>
+                  <th style={{ padding: '10px' }}>DESTINO</th>
                 </tr>
               </thead>
               <tbody>
@@ -133,6 +119,17 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
                     <tr key={scan.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '0.87rem' }}>
                       <td style={{ padding: '11px 10px', color: '#94a3b8', fontSize: '0.82rem' }}>
                         {new Date(scan.scannedAt).toLocaleString('pt-BR')}
+                      </td>
+                      <td style={{ padding: '11px 10px' }}>
+                        {scan.scanSource === 'NFC_TAP' ? (
+                          <span style={{ background: 'rgba(168,85,247,0.15)', color: '#c084fc', padding: '3px 10px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700 }}>
+                            🛜 NFC Totem
+                          </span>
+                        ) : (
+                          <span style={{ background: 'rgba(56,189,248,0.15)', color: '#38bdf8', padding: '3px 10px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700 }}>
+                            📱 QR Code
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '11px 10px', fontWeight: 600, color: '#fff' }}>
                         {scan.screen?.name ?? <span style={{ color: '#475569' }}>Tela não identificada</span>}
@@ -158,7 +155,7 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: '#475569' }}>
+                    <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: '#475569' }}>
                       Nenhum scan de QR Code registrado nos últimos {qrPeriod} dias.
                     </td>
                   </tr>

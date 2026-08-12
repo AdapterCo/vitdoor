@@ -24,6 +24,8 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
     totalScans,
     whatsappScans,
     instagramScans,
+    qrCodeScans,
+    nfcTapScans,
     recentScans,
     topMedias,
     topScreens
@@ -31,6 +33,8 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
     prisma.qrScan.count({ where: { tenantId, scannedAt: { gte: since } } }),
     prisma.qrScan.count({ where: { tenantId, ctaType: 'WHATSAPP', scannedAt: { gte: since } } }),
     prisma.qrScan.count({ where: { tenantId, ctaType: 'INSTAGRAM', scannedAt: { gte: since } } }),
+    prisma.qrScan.count({ where: { tenantId, scanSource: 'QR_CODE', scannedAt: { gte: since } } }),
+    prisma.qrScan.count({ where: { tenantId, scanSource: 'NFC_TAP', scannedAt: { gte: since } } }),
     // Recent 50 events
     prisma.qrScan.findMany({
       where: { tenantId, scannedAt: { gte: since } },
@@ -80,6 +84,8 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
     totalScans,
     whatsappScans,
     instagramScans,
+    qrCodeScans,
+    nfcTapScans,
     topMedias: topMedias.map((row) => ({
       mediaId: row.mediaId,
       mediaName: mediaNameMap.get(row.mediaId) ?? 'Mídia removida',
@@ -94,6 +100,7 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
     recentScans: recentScans.map((scan) => ({
       id: scan.id,
       ctaType: scan.ctaType,
+      scanSource: scan.scanSource || 'QR_CODE',
       scannedAt: scan.scannedAt,
       media: scan.media,
       screen: scan.screen

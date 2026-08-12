@@ -4,9 +4,9 @@
 >
 > Repositório sugerido: `vitdoor-player-flutter`. O painel web e o backend permanecem no repositório `vitdoor`.
 
-**Versão:** 1.6
-**Data:** 11/08/2026  
-**Estado:** especificação oficial; o aplicativo Flutter Android é o ÚNICO player comercial de produção e ambiente oficial de testes e homologação. O simulador web foi descontinuado.
+**Versão:** 1.7
+**Data:** 12/08/2026  
+**Estado:** especificação oficial; módulo de NFC Dinâmico por tela, Chamador de Senhas e Alertas Emergenciais concluídos no web/backend, integração Flutter pendente
 
 ## 1. Objetivo
 
@@ -1211,3 +1211,49 @@ O player Flutter deve selecionar a cor de fundo do modal de sobreposição em te
 - [ ] Player Flutter implementa overlay de alerta com as 3 cores conforme tabela acima;
 - [ ] Player Flutter escuta mensagens `EMERGENCY_ALERT_TRIGGERED` e `EMERGENCY_ALERT_CLEARED`;
 - [ ] Teste de integração: disparo de alerta no admin muda a cor da TV instantaneamente.
+
+---
+
+## 29. Suporte ao Módulo de NFC Dinâmico (Envio de `currentMediaId` no Heartbeat)
+
+**Estado:** `BACKEND_PRONTO` — integração Flutter recomendada.
+
+### 29.1 Objetivo
+
+Permitir que o backend saiba **em tempo real** qual mídia exata está sendo reproduzida na TV a cada segundo, alimentando o endpoint de toque por aproximação NFC (`/r/nfc/:screenId`).
+
+Quando um cliente encosta o celular na etiqueta NFC colada na moldura do Totem, o celular do cliente chama o backend. O backend consulta qual mídia está no ar naquela tela e redireciona o cliente instantaneamente para o WhatsApp/Instagram daquela promoção.
+
+---
+
+### 29.2 Atualização do Payload `HEARTBEAT` no Flutter
+
+Ao enviar a mensagem periódica de `HEARTBEAT` via WebSocket (a cada 10 a 30 segundos) ou **sempre que uma mídia trocar de exibição**, o Player Flutter deve incluir o campo `currentMediaId`:
+
+```json
+{
+  "type": "HEARTBEAT",
+  "ramUsagePercent": 32,
+  "cpuUsagePercent": 18,
+  "storageFreeMb": 4500,
+  "currentMediaName": "Promoção Hambúrguer Duplo.mp4",
+  "currentMediaId": "32e8e550-d9dc-4459-a51c-2b70f3d36169"
+}
+```
+
+Campos adicionados:
+
+| Campo | Tipo | Exemplo | Descrição |
+|---|---|---|---|
+| `currentMediaId` | string | `32e8e550-d9dc-4459-a51c-2b70f3d36169` | ID único (UUID) da mídia em exibição no momento |
+| `currentMediaName` | string | `Promoção Hambúrguer Duplo.mp4` | Nome amigável do arquivo para a telemetria |
+
+---
+
+### 29.3 Checklist de Entrega — NFC Dinâmico no Flutter
+
+- [x] Backend responde ao endpoint `/r/nfc/:screenId` com redirect dinâmico 302;
+- [x] Painel admin gera link do adesivo NFC para cada tela (`/r/nfc/<screenId>`);
+- [x] Painel admin contabiliza scans por QR Code vs Aproximações NFC separadamente;
+- [ ] Player Flutter envia `currentMediaId` e `currentMediaName` ao trocar de mídia e no `HEARTBEAT`.
+
