@@ -4,9 +4,9 @@
 >
 > Repositório sugerido: `vitdoor-player-flutter`. O painel web e o backend permanecem no repositório `vitdoor`.
 
-**Versão:** 1.3
+**Versão:** 1.4
 **Data:** 11/08/2026  
-**Estado:** especificação atualizada; backend de QR Code com rastreamento disponível, integração Flutter pendente
+**Estado:** especificação atualizada; backend do Chamador de Senhas (TICKET_CALLED + TTS) e QR Code com rastreamento concluídos, integração Flutter pendente
 
 ## 1. Objetivo
 
@@ -270,6 +270,7 @@ Aviso atual de programação:
 - `SET_VOLUME`: aplicar volume indicado;
 - `REBOOT`: reiniciar o aplicativo de forma controlada;
 - `TAKE_SCREENSHOT`: capturar e responder, quando suportado;
+- `TICKET_CALLED`: chamada de senha em tempo real; exibir overlay, tocar chime e pronunciar síntese de voz (TTS) — ver seção 27;
 - `EMERGENCY_ALERT_TRIGGERED`: sobrepor alerta destinado à tela;
 - `EMERGENCY_ALERT_CLEARED`: remover alerta;
 - `TENANT_SUSPENDED`: parar a programação comercial e exibir estado bloqueado.
@@ -1032,8 +1033,97 @@ O projeto Flutter pode começar pela Fase A agora. Dependências atuais:
 3. ~~endpoint autenticado de manifesto com ETag/304;~~ concluído;
 4. ~~publicação atômica e aviso WebSocket contendo a versão;~~ concluído;
 5. ~~confirmação idempotente de comandos;~~ contrato, validade explícita e persistência backend concluídos, execução Flutter pendente;
-- Android Media3 offline downloads: https://developer.android.com/media/media3/exoplayer/downloading-media
-- Android `DownloadService`: https://developer.android.com/reference/androidx/media3/exoplayer/offline/DownloadService
-- Android app signing e Play App Signing: https://developer.android.com/studio/publish/app-signing
-- Android Management API para Dedicated Devices: https://developers.google.com/android/management/policies/dedicated-devices
 - Publicação de aplicativos privados no Managed Google Play: https://support.google.com/googleplay/android-developer/answer/9874937
+
+---
+
+## 27. Módulo Chamador de Senhas (Ticket Queue Overlay & TTS)
+
+**Estado:** `BACKEND_PRONTO` — integração Flutter pendente.
+
+### 27.1 Objetivo
+
+Permitir que a TV exiba avisos de senhas chamadas em tempo real (ex.: por médicos em consultórios, recepcionistas ou atendentes de balcão). Quando o operador clica em **"Chamar Próximo"** no aplicativo do chamador (`/chamar`), o backend envia uma mensagem WebSocket `TICKET_CALLED` para a TV correspondente.
+
+O player Flutter deve:
+1. Exibir uma sobreposição visual (*overlay*) em destaque com animação de entrada.
+2. Tocar um sinal sonoro de alerta (*Chime* / *Ding-Dong*).
+3. Pronunciar a frase sintetizada via Text-to-Speech (TTS) em português.
+4. Manter o aviso visível por 12 segundos (ou até uma nova senha ser chamada) e retornar suavemente à reprodução.
+
+---
+
+### 27.2 Mensagem WebSocket Recebida (`TICKET_CALLED`)
+
+```json
+{
+  "type": "TICKET_CALLED",
+  "ticketNumber": "A043",
+  "deskName": "Consultório 03",
+  "audioText": "Senha A 0 4 3, Consultório 0 3",
+  "calledAt": "2026-08-11T21:04:00.000Z"
+}
+```
+
+Campos da mensagem:
+
+| Campo | Tipo | Exemplo | Descrição |
+|---|---|---|---|
+| `type` | string | `TICKET_CALLED` | Identificador do evento |
+| `ticketNumber` | string | `A043` ou `043` | Número da senha formatado com prefixo |
+| `deskName` | string | `Consultório 03` | Nome do local/guichê destinatário |
+| `audioText` | string | `Senha A 0 4 3, Consultório 0 3` | Frase espaçada pronta para o leitor de voz |
+| `calledAt` | string | `2026-08-11T21:04:00.000Z` | Data e hora em formato ISO-8601 |
+
+---
+
+### 27.3 Comportamento Visual no Flutter
+
+- **Camada Visual**: Renderizar o `QueueTicketOverlay` como camada `Stack` de alta prioridade (zIndex superior ao player de vídeo/imagem, porém inferior aos alertas de emergência).
+- **Animação**: Aplicar efeito de escala e opacidade (*zoom-in/fade-in*) na entrada (duração de 350-400 ms).
+- **Design do Card**:
+  - Fundo escuro semi-transparente com efeito desfoque de vidro (*backdrop blur*).
+  - Badge superior indicando **"SENHA CHAMADA"** com ícone de alto-falante.
+  - **Número da Senha em Destaque Gigante**: fonte monoespaçada, tamanho de fonte de pelo menos 80–120 sp, cor branca brilhante.
+  - **Local/Consultório**: texto abaixo da senha em tom azul/destaque.
+- **Duração**: Permanecer visível por **12 segundos** após o término da síntese de voz, esmaecendo suavemente (*fade-out*).
+- **Substituição**: Se uma nova senha for chamada enquanto a anterior estiver na tela, cancelar o temporizador antigo, atualizar imediatamente o número e reiniciar o som/áudio.
+
+---
+
+### 27.4 Sinal Sonoro (*Chime* / *Ding-Dong*)
+
+- Tocar um efeito sonoro de 2 tons (ex.: tom 1: ~659 Hz por 300 ms; tom 2: ~523 Hz por 500 ms) antes do início da voz.
+- O som pode ser gerado nativamente (via sintetizador de frequência ou `AudioPlayer`/`just_audio` reproduzindo um arquivo MP3 local de chime).
+- Aguardar um pequeno intervalo (~500-700 ms) entre o chime e a entrada do áudio TTS para evitar sobreposição sonora.
+
+---
+
+### 27.5 Síntese de Voz (Text-to-Speech / TTS)
+
+- Utilizar o plugin `flutter_tts` ou a API nativa do Android `TextToSpeech`.
+- Configurações obrigatórias:
+  - **Idioma**: `pt-BR` (Português do Brasil).
+  - **Velocidade de Fala (*speech rate*)**: `0.85` a `0.90` (fala pausada e bem articulada para ambientes comerciais/hospitalares).
+  - **Tom (*pitch*)**: `1.0`.
+- Texto a pronunciar: passar exatamente a string recebida em `msg.audioText` (o backend já envia o número espaçado "A 0 4 3" para que o sintetizador leia dígito por dígito em vez de ler como valor numérico corrido).
+
+---
+
+### 27.6 Hierarquia e Prioridades de Sobreposição
+
+1. **Alerta Emergencial (`EMERGENCY_ALERT_TRIGGERED`)**: Prioridade máxima. Se houver um alerta ativo na tela, a chamada de senha deve ter seu áudio/visual **suprimido**.
+2. **Chamada de Senha (`TICKET_CALLED`)**: Prioridade média. Sobrepõe a reprodução comercial (vídeo/imagem/layout).
+3. **Mídias e Playlists**: Continuam rodando no fundo ou pausadas conforme o tipo de mídia.
+
+---
+
+### 27.7 Checklist de Entrega — Chamador de Senhas no Flutter
+
+- [x] Backend gerencia filas, guichês, PINs e evento WebSocket `TICKET_CALLED`;
+- [x] Aplicação web do chamador (`/chamar`) operacional para o operador;
+- [ ] Player Flutter registra callback para a mensagem `TICKET_CALLED` no WebSocket;
+- [ ] Player Flutter inclui o plugin `flutter_tts` configurado em `pt-BR`;
+- [ ] Player Flutter inclui áudio/sintetizador de *Chime*;
+- [ ] Widget `QueueTicketOverlay` implementado com animação e card de senha gigante;
+- [ ] Teste de integração: clique em "Chamar Próximo" no celular toca a TV instantaneamente.
