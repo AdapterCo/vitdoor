@@ -95,7 +95,7 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
       tenantId: media.tenantId,
       mediaId: media.id,
       screenId: validatedScreenId,
-      ctaType: cta.type,
+      ctaType: cta.mode === 'PROFILE' ? 'PROFILE' : cta.type,
       scanSource: 'QR_CODE',
       userAgent: userAgent || null
     }
@@ -226,7 +226,7 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
       tenantId: screen.tenantId,
       mediaId: media.id,
       screenId: screen.id,
-      ctaType: cta.type,
+      ctaType: cta.mode === 'PROFILE' ? 'PROFILE' : cta.type,
       scanSource: 'NFC_TAP',
       userAgent: userAgent || null
     }

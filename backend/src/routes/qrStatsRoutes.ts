@@ -24,6 +24,8 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
     totalScans,
     whatsappScans,
     instagramScans,
+    urlScans,
+    profileScans,
     qrCodeScans,
     nfcTapScans,
     recentScans,
@@ -33,6 +35,8 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
     prisma.qrScan.count({ where: { tenantId, scannedAt: { gte: since } } }),
     prisma.qrScan.count({ where: { tenantId, ctaType: 'WHATSAPP', scannedAt: { gte: since } } }),
     prisma.qrScan.count({ where: { tenantId, ctaType: 'INSTAGRAM', scannedAt: { gte: since } } }),
+    prisma.qrScan.count({ where: { tenantId, ctaType: { in: ['URL', 'CUSTOM_URL', 'WEBSITE'] }, scannedAt: { gte: since } } }),
+    prisma.qrScan.count({ where: { tenantId, ctaType: 'PROFILE', scannedAt: { gte: since } } }),
     prisma.qrScan.count({ where: { tenantId, scanSource: 'QR_CODE', scannedAt: { gte: since } } }),
     prisma.qrScan.count({ where: { tenantId, scanSource: 'NFC_TAP', scannedAt: { gte: since } } }),
     // Recent 50 events
@@ -84,6 +88,8 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
     totalScans,
     whatsappScans,
     instagramScans,
+    urlScans,
+    profileScans,
     qrCodeScans,
     nfcTapScans,
     topMedias: topMedias.map((row) => ({

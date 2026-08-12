@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BarChart3, Download, ShieldCheck, QrCode, Smartphone, TrendingUp, Wifi } from 'lucide-react';
+import { BarChart3, Download, ShieldCheck, QrCode, Smartphone, TrendingUp, Wifi, Globe } from 'lucide-react';
 
 interface ProofOfPlayTabProps {
   stats: any;
@@ -35,18 +35,20 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
           </h3>
 
           {/* KPI Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
             {[
-              { label: 'Total de Interações', value: qrStats.totalScans, icon: <QrCode size={22} />, color: '#f59e0b' },
-              { label: 'QR Code (Câmera)', value: qrStats.qrCodeScans || 0, icon: <QrCode size={22} />, color: '#38bdf8' },
-              { label: 'NFC (Aproximação)', value: qrStats.nfcTapScans || 0, icon: <Wifi size={22} />, color: '#a855f7' },
-              { label: 'WhatsApp', value: qrStats.whatsappScans, icon: <Smartphone size={22} />, color: '#25d366' },
-              { label: 'Instagram', value: qrStats.instagramScans, icon: <TrendingUp size={22} />, color: '#e1306c' }
+              { label: 'Total de Interações', value: qrStats.totalScans || 0, icon: <QrCode size={20} />, color: '#f59e0b' },
+              { label: 'QR Code (Câmera)', value: qrStats.qrCodeScans || 0, icon: <QrCode size={20} />, color: '#38bdf8' },
+              { label: 'NFC (Aproximação)', value: qrStats.nfcTapScans || 0, icon: <Wifi size={20} />, color: '#a855f7' },
+              { label: 'WhatsApp', value: qrStats.whatsappScans || 0, icon: <Smartphone size={20} />, color: '#25d366' },
+              { label: 'Instagram', value: qrStats.instagramScans || 0, icon: <TrendingUp size={20} />, color: '#e1306c' },
+              { label: 'Link / Site', value: qrStats.urlScans || 0, icon: <Globe size={20} />, color: '#38bdf8' },
+              { label: 'Cartão Digital', value: qrStats.profileScans || 0, icon: <QrCode size={20} />, color: '#fbbf24' }
             ].map((kpi) => (
-              <div key={kpi.label} className="glass-panel" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div key={kpi.label} className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ color: kpi.color }}>{kpi.icon}</div>
-                <div style={{ fontSize: '1.9rem', fontWeight: 800, color: '#fff' }}>{kpi.value}</div>
-                <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600 }}>{kpi.label}</div>
+                <div style={{ fontSize: '1.7rem', fontWeight: 800, color: '#fff' }}>{kpi.value}</div>
+                <div style={{ fontSize: '0.76rem', color: '#94a3b8', fontWeight: 600 }}>{kpi.label}</div>
               </div>
             ))}
           </div>
@@ -86,7 +88,7 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
                     <div key={s.screenId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.88rem' }}>
                       <div>
                         <span style={{ color: '#cbd5e1', fontWeight: 500 }}>{i + 1}. {s.screenName}</span>
-                        {s.locationName && <span style={{ color: '#64748b', fontSize: '0.76rem', display: 'block' }}>{s.locationName}</span>}
+                        {s.locationName && <span style={{ color: '#64748b', fontSize: '.76rem', display: 'block' }}>{s.locationName}</span>}
                       </div>
                       <span className="badge badge-success">{s.scans} scan{s.scans > 1 ? 's' : ''}</span>
                     </div>
@@ -148,6 +150,10 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
                         ) : scan.ctaType === 'INSTAGRAM' ? (
                           <span style={{ background: 'rgba(225,48,108,0.15)', color: '#e1306c', padding: '3px 10px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700 }}>
                             📷 Instagram
+                          </span>
+                        ) : scan.ctaType === 'PROFILE' ? (
+                          <span style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24', padding: '3px 10px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700 }}>
+                            🎴 Cartão Digital
                           </span>
                         ) : (
                           <span style={{ background: 'rgba(56,189,248,0.15)', color: '#38bdf8', padding: '3px 10px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700 }}>
