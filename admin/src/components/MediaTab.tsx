@@ -347,23 +347,45 @@ export const MediaTab: React.FC<MediaTabProps> = ({
 
 function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => void; onSave: (cta: any) => void }) {
   const initial = media.cta || {};
-  const [type, setType] = useState<'WHATSAPP' | 'INSTAGRAM'>(initial.type === 'INSTAGRAM' ? 'INSTAGRAM' : 'WHATSAPP');
+  const [type, setType] = useState<'WHATSAPP' | 'INSTAGRAM' | 'URL'>(
+    initial.type === 'INSTAGRAM' ? 'INSTAGRAM' : initial.type === 'URL' ? 'URL' : 'WHATSAPP'
+  );
   const [target, setTarget] = useState(
-    initial.type === 'WHATSAPP' ? String(initial.target || '').replace(/\D/g, '') : (initial.target || '')
+    initial.type === 'WHATSAPP'
+      ? String(initial.target || '').replace(/\D/g, '') || String(initial.target || '')
+      : String(initial.target || '')
   );
   const [label, setLabel] = useState(initial.label || '');
   const [position, setPosition] = useState(initial.position || 'BOTTOM_RIGHT');
   const [qr, setQr] = useState('');
 
-  const normalized = type === 'WHATSAPP' ? `https://wa.me/${target.replace(/\D/g, '')}` : target;
+  const getNormalized = () => {
+    const raw = target.trim();
+    if (!raw) return '';
+    if (type === 'WHATSAPP') {
+      if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+      const digits = raw.replace(/\D/g, '');
+      return digits.length >= 10 ? `https://wa.me/${digits}` : '';
+    }
+    if (type === 'INSTAGRAM') {
+      if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+      const clean = raw.replace(/^@/, '');
+      return clean ? `https://instagram.com/${clean}` : '';
+    }
+    // Type URL: ensure http:// or https:// prefix
+    if (/^(https?:\/\/)/i.test(raw)) return raw;
+    return `https://${raw}`;
+  };
+
+  const normalized = getNormalized();
 
   useEffect(() => {
-    if (normalized && (type === 'INSTAGRAM' ? normalized.startsWith('https://') : target.replace(/\D/g, '').length >= 12)) {
+    if (normalized) {
       QRCode.toDataURL(normalized, { width: 180, margin: 1 }).then(setQr).catch(() => setQr(''));
     } else {
       setQr('');
     }
-  }, [normalized, type, target]);
+  }, [normalized]);
 
   const positionLabels: Record<string, string> = {
     TOP_LEFT: 'Superior esquerdo', TOP_RIGHT: 'Superior direito',
@@ -378,16 +400,16 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: 2000
     }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="glass-panel" style={{ width: 500, padding: 32, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div className="glass-panel" style={{ width: 520, padding: 32, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <QrCode size={20} color="#f59e0b" /> QR Code — {media.name}
+              <QrCode size={20} color="#f59e0b" /> QR Code &amp; NFC — {media.name}
             </h3>
             <p style={{ fontSize: '0.82rem', color: '#64748b', marginTop: 3 }}>
-              O QR Code aparece sobreposto na mídia enquanto ela é exibida na TV.
+              Configure o destino para onde o cliente será redirecionado via QR Code ou Toque NFC.
             </p>
           </div>
           <button className="btn-secondary" style={{ padding: '6px' }} onClick={onClose}><X size={16} /></button>
@@ -396,25 +418,30 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
         {/* Canal */}
         <div>
           <p style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: 10, fontWeight: 600 }}>CANAL DE DESTINO</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            {(['WHATSAPP', 'INSTAGRAM'] as const).map((t) => (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            {[
+              { id: 'WHATSAPP', label: 'WhatsApp', icon: '💬', color: '#25d366' },
+              { id: 'INSTAGRAM', label: 'Instagram', icon: '📷', color: '#e1306c' },
+              { id: 'URL', label: 'Link / Site', icon: '🌐', color: '#38bdf8' }
+            ].map((item) => (
               <button
-                key={t}
-                onClick={() => { setType(t); setTarget(''); setQr(''); }}
+                key={item.id}
+                type="button"
+                onClick={() => { setType(item.id as any); setTarget(''); setQr(''); }}
                 style={{
-                  padding: '14px',
+                  padding: '12px 8px',
                   borderRadius: 12,
-                  border: `2px solid ${type === t ? (t === 'WHATSAPP' ? '#25d366' : '#e1306c') : 'rgba(255,255,255,0.1)'}`,
-                  background: type === t ? (t === 'WHATSAPP' ? 'rgba(37,211,102,0.12)' : 'rgba(225,48,108,0.12)') : 'rgba(255,255,255,0.03)',
-                  color: type === t ? '#fff' : '#64748b',
+                  border: `2px solid ${type === item.id ? item.color : 'rgba(255,255,255,0.1)'}`,
+                  background: type === item.id ? `${item.color}20` : 'rgba(255,255,255,0.03)',
+                  color: type === item.id ? '#fff' : '#64748b',
                   fontWeight: 700,
-                  fontSize: '0.95rem',
+                  fontSize: '0.86rem',
                   cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   transition: 'all .18s'
                 }}
               >
-                {t === 'WHATSAPP' ? '💬' : '📷'} {t === 'WHATSAPP' ? 'WhatsApp' : 'Instagram'}
+                {item.icon} {item.label}
               </button>
             ))}
           </div>
@@ -423,14 +450,24 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
         {/* Input */}
         <div>
           <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-            {type === 'WHATSAPP' ? 'NÚMERO COM DDD (somente números)' : 'LINK DO PERFIL DO INSTAGRAM'}
+            {type === 'WHATSAPP'
+              ? 'NÚMERO COM DDD (OU LINK COMPLETO HA.ME)'
+              : type === 'INSTAGRAM'
+              ? 'LINK DO PERFIL OU @USUARIO'
+              : 'URL DO SITE / LINK PERSONALIZADO COMPLETO'}
           </label>
           <input
             className="input-field"
             value={target}
             onChange={(e) => setTarget(e.target.value)}
-            placeholder={type === 'WHATSAPP' ? 'Ex.: 5511999999999' : 'https://instagram.com/seu_perfil'}
-            style={{ fontSize: '1rem' }}
+            placeholder={
+              type === 'WHATSAPP'
+                ? 'Ex.: 5521985080634 ou https://wa.me/5521985080634'
+                : type === 'INSTAGRAM'
+                ? 'Ex.: @sualoja ou https://instagram.com/sualoja'
+                : 'Ex.: https://cardapio.com ou https://g.page/review'
+            }
+            style={{ fontSize: '0.95rem' }}
           />
         </div>
 
@@ -443,7 +480,13 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
             className="input-field"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder={type === 'WHATSAPP' ? 'Ex.: Fale conosco!' : 'Ex.: Siga-nos no Instagram'}
+            placeholder={
+              type === 'WHATSAPP'
+                ? 'Ex.: Fale conosco no WhatsApp!'
+                : type === 'INSTAGRAM'
+                ? 'Ex.: Siga-nos no Instagram'
+                : 'Ex.: Acesse nosso cardápio'
+            }
             maxLength={80}
           />
         </div>

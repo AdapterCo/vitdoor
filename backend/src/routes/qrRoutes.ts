@@ -17,14 +17,31 @@ const scanRateLimit = rateLimit({
 });
 
 function getNormalizedTargetUrl(cta: any): string {
+  const rawTarget = String(cta?.target || '').trim();
+  if (!rawTarget) return '';
+
   if (cta?.type === 'WHATSAPP') {
-    const rawTarget = String(cta.target || '');
+    if (rawTarget.startsWith('http://') || rawTarget.startsWith('https://')) {
+      return rawTarget;
+    }
     const phoneDigits = rawTarget.replace(/\D/g, '');
     if (phoneDigits.length >= 10) {
       return `https://wa.me/${phoneDigits}`;
     }
   }
-  return String(cta?.target || '');
+
+  if (cta?.type === 'INSTAGRAM') {
+    if (rawTarget.startsWith('http://') || rawTarget.startsWith('https://')) {
+      return rawTarget;
+    }
+    const clean = rawTarget.replace(/^@/, '');
+    return `https://instagram.com/${clean}`;
+  }
+
+  if (/^(https?:\/\/)/i.test(rawTarget)) {
+    return rawTarget;
+  }
+  return `https://${rawTarget}`;
 }
 
 /**
@@ -61,7 +78,7 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
     return res.status(404).send('Not found');
   }
 
-  if (!cta?.enabled || !cta?.target || !['WHATSAPP', 'INSTAGRAM'].includes(cta.type)) {
+  if (!cta?.enabled || !cta?.target || !['WHATSAPP', 'INSTAGRAM', 'URL', 'CUSTOM_URL', 'WEBSITE'].includes(cta.type)) {
     return res.status(404).send('Not found');
   }
 
@@ -209,7 +226,7 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
     return res.status(404).send('CTA inválido.');
   }
 
-  if (!cta?.enabled || !cta?.target || !['WHATSAPP', 'INSTAGRAM'].includes(cta.type)) {
+  if (!cta?.enabled || !cta?.target || !['WHATSAPP', 'INSTAGRAM', 'URL', 'CUSTOM_URL', 'WEBSITE'].includes(cta.type)) {
     return res.status(404).send('CTA desativado para a mídia atual.');
   }
 

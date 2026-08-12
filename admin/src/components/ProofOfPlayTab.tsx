@@ -145,9 +145,13 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
                           <span style={{ background: 'rgba(37,211,102,0.15)', color: '#25d366', padding: '3px 10px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700 }}>
                             💬 WhatsApp
                           </span>
-                        ) : (
+                        ) : scan.ctaType === 'INSTAGRAM' ? (
                           <span style={{ background: 'rgba(225,48,108,0.15)', color: '#e1306c', padding: '3px 10px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700 }}>
                             📷 Instagram
+                          </span>
+                        ) : (
+                          <span style={{ background: 'rgba(56,189,248,0.15)', color: '#38bdf8', padding: '3px 10px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700 }}>
+                            🌐 Link / Site
                           </span>
                         )}
                       </td>
