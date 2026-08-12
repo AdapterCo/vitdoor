@@ -302,7 +302,7 @@ function normalizeCta(value: unknown): string | null | undefined {
       },
       position,
       size,
-      label: label || 'Escaneie para ver mais'
+      label
     });
   }
 
@@ -339,7 +339,7 @@ function normalizeCta(value: unknown): string | null | undefined {
       ...(parsed.text ? { text: parsed.text } : {}),
       position,
       size,
-      label: label || 'Fale conosco'
+      label
     });
   }
 
@@ -353,7 +353,7 @@ function normalizeCta(value: unknown): string | null | undefined {
       target: normalized,
       position,
       size,
-      label: label || 'Siga-nos no Instagram'
+      label
     });
   }
 
@@ -367,7 +367,7 @@ function normalizeCta(value: unknown): string | null | undefined {
     target: normalized,
     position,
     size,
-    label: label || 'Acesse o link'
+    label
   });
 }
 

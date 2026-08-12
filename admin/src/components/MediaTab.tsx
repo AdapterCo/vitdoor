@@ -469,7 +469,7 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
         },
         position,
         size: 160,
-        label: label.trim() || 'Escaneie para ver mais'
+        label: label.trim()
       };
     }
 
