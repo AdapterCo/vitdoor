@@ -121,11 +121,7 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
   }).catch(() => { /* Non-blocking: do not fail redirect if DB write fails */ });
 
   const redirectUrl = getNormalizedTargetUrl(cta);
-
-  // Cache-busting: redirect must not be cached by proxies
-  res.setHeader('Cache-Control', 'no-store, no-cache');
-  res.setHeader('Pragma', 'no-cache');
-  return res.redirect(302, redirectUrl);
+  return sendWhatsAppOrRedirect(res, cta, redirectUrl);
 });
 
 /**
@@ -244,10 +240,160 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
   }).catch(() => { /* Non-blocking */ });
 
   const redirectUrl = getNormalizedTargetUrl(cta);
+  return sendWhatsAppOrRedirect(res, cta, redirectUrl);
+});
 
-  // Redirect to WhatsApp / Instagram
+function sendWhatsAppOrRedirect(res: Response, cta: any, redirectUrl: string) {
   res.setHeader('Cache-Control', 'no-store, no-cache');
   res.setHeader('Pragma', 'no-cache');
+
+  /**
+   * WhatsApp:
+   * Não fazemos 302 direto para wa.me porque alguns navegadores
+   * resolvem o link como navegação web antes de entregar ao aplicativo.
+   *
+   * Primeiro tentamos abrir o aplicativo através do esquema
+   * whatsapp:// e, caso não seja possível, fazemos fallback
+   * para o wa.me normal.
+   */
+  if (cta.type === 'WHATSAPP') {
+    let whatsappUrl = redirectUrl;
+    let whatsappAppUrl = '';
+
+    try {
+      const parsed = new URL(redirectUrl);
+
+      // Extrai o telefone do /wa.me/5521985080634
+      const phone = parsed.pathname
+        .replace(/^\/+/, '')
+        .replace(/\D/g, '');
+
+      if (!phone || phone.length < 10) {
+        return res.redirect(302, redirectUrl);
+      }
+
+      // Preserva ?text=...
+      const text = parsed.searchParams.get('text');
+
+      whatsappAppUrl =
+        `whatsapp://send?phone=${phone}` +
+        (text ? `&text=${encodeURIComponent(text)}` : '');
+
+      whatsappUrl =
+        `https://wa.me/${phone}` +
+        (text ? `?text=${encodeURIComponent(text)}` : '');
+    } catch {
+      return res.redirect(302, redirectUrl);
+    }
+
+    return res.status(200).send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+  <meta name="robots" content="noindex,nofollow">
+  <title>Abrindo WhatsApp...</title>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #ffffff;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    .container {
+      padding: 24px;
+    }
+
+    .title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #666;
+    }
+
+    a {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 12px 20px;
+      text-decoration: none;
+      border-radius: 8px;
+      background: #25D366;
+      color: white;
+      font-weight: 600;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="title">
+      Abrindo o WhatsApp...
+    </div>
+
+    <div class="subtitle">
+      Aguarde um instante.
+    </div>
+
+    <a
+      href="${whatsappUrl}"
+      id="fallback"
+      style="display:none;"
+    >
+      Abrir WhatsApp
+    </a>
+  </div>
+
+  <script>
+    const appUrl = ${JSON.stringify(whatsappAppUrl)};
+    const fallbackUrl = ${JSON.stringify(whatsappUrl)};
+
+    let appOpened = false;
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        appOpened = true;
+      }
+    });
+
+    window.location.href = appUrl;
+
+    setTimeout(() => {
+      if (!appOpened && !document.hidden) {
+        window.location.href = fallbackUrl;
+      }
+    }, 1200);
+
+    setTimeout(() => {
+      const fallback = document.getElementById('fallback');
+
+      if (!appOpened && !document.hidden && fallback) {
+        fallback.style.display = 'inline-block';
+      }
+    }, 1800);
+  </script>
+</body>
+</html>`);
+  }
+
+  // Todos os outros tipos continuam usando 302
   return res.redirect(302, redirectUrl);
-});
+}
 
