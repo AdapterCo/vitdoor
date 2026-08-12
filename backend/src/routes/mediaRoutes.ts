@@ -7,6 +7,7 @@ import { detectMediaDuration } from '../lib/mediaMetadata.js';
 import { createHash, randomUUID } from 'crypto';
 import { fileTypeFromBuffer } from 'file-type';
 import { mediaDto, mediaFolderDto } from '../lib/dto.js';
+import { parseWhatsAppTarget, normalizeInstagramTarget, normalizeGenericUrl, isValidPhone } from '../lib/ctaHelpers.js';
 import { bumpOwnerManifestVersions } from '../lib/manifest.js';
 import { sendManifestToScreen } from '../lib/websocket.js';
 
@@ -212,59 +213,74 @@ function normalizeCta(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
   if (value === null || value === false || (typeof value === 'object' && !(value as any).enabled)) return null;
   if (!value || typeof value !== 'object') return undefined;
+
   const input = value as Record<string, unknown>;
   const rawType = String(input.type || '').toUpperCase();
-  const type = ['WHATSAPP', 'INSTAGRAM', 'URL', 'CUSTOM_URL', 'WEBSITE'].includes(rawType) ? 'URL' : (rawType === 'WHATSAPP' || rawType === 'INSTAGRAM' ? rawType : '');
-  if (!type) return undefined;
 
-  const position = ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_LEFT', 'BOTTOM_RIGHT'].includes(String(input.position)) ? String(input.position) : 'BOTTOM_RIGHT';
-  const size = Math.max(96, Math.min(320, Math.round(Number(input.size) || 160)));
-  const label = typeof input.label === 'string' ? input.label.trim().slice(0, 80) : '';
-  let target = typeof input.target === 'string' ? input.target.trim() : '';
-
-  if (!target) return undefined;
-
-  if (type === 'WHATSAPP') {
-    if (target.startsWith('http://') || target.startsWith('https://')) {
-      try {
-        const url = new URL(target);
-        target = url.toString();
-      } catch {
-        return undefined;
-      }
-    } else {
-      const digits = target.replace(/\D/g, '');
-      if (digits.length < 10) return undefined;
-      target = `https://wa.me/${digits}`;
-    }
-  } else if (type === 'INSTAGRAM') {
-    if (target.startsWith('http://') || target.startsWith('https://')) {
-      try {
-        const url = new URL(target);
-        target = url.toString();
-      } catch {
-        return undefined;
-      }
-    } else {
-      const clean = target.replace(/^@/, '');
-      if (!clean) return undefined;
-      target = `https://instagram.com/${clean}`;
-    }
+  // Fix: map known aliases to canonical types
+  let type: string;
+  if (rawType === 'WHATSAPP') {
+    type = 'WHATSAPP';
+  } else if (rawType === 'INSTAGRAM') {
+    type = 'INSTAGRAM';
+  } else if (['URL', 'CUSTOM_URL', 'WEBSITE'].includes(rawType)) {
+    type = 'URL';
   } else {
-    // Type URL
-    if (!/^(https?:\/\/)/i.test(target)) {
-      target = `https://${target}`;
-    }
-    try {
-      const url = new URL(target);
-      target = url.toString();
-    } catch {
-      return undefined;
-    }
+    return undefined;
   }
 
-  const defaultLabel = type === 'WHATSAPP' ? 'Fale conosco' : type === 'INSTAGRAM' ? 'Siga-nos no Instagram' : 'Acesse o link';
-  return JSON.stringify({ enabled: true, type, target, position, size, label: label || defaultLabel });
+  const position = ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_LEFT', 'BOTTOM_RIGHT'].includes(String(input.position))
+    ? String(input.position)
+    : 'BOTTOM_RIGHT';
+  const size = Math.max(96, Math.min(320, Math.round(Number(input.size) || 160)));
+  const label = typeof input.label === 'string' ? input.label.trim().slice(0, 80) : '';
+  const rawTarget = typeof input.target === 'string' ? input.target.trim() : '';
+  const rawText = typeof input.text === 'string' ? input.text.trim().slice(0, 512) : undefined;
+
+  if (!rawTarget) return undefined;
+
+  if (type === 'WHATSAPP') {
+    // Delegate full parsing to the central helper to handle all input formats
+    const parsed = parseWhatsAppTarget({ target: rawTarget, text: rawText });
+    if (!parsed || !isValidPhone(parsed.phone)) return undefined;
+
+    const defaultLabel = 'Fale conosco';
+    // Store as canonical digits + optional text field (new model)
+    return JSON.stringify({
+      enabled: true,
+      type,
+      target: parsed.phone,
+      ...(parsed.text ? { text: parsed.text } : {}),
+      position,
+      size,
+      label: label || defaultLabel
+    });
+  }
+
+  if (type === 'INSTAGRAM') {
+    const normalized = normalizeInstagramTarget(rawTarget);
+    if (!normalized) return undefined;
+    return JSON.stringify({
+      enabled: true,
+      type,
+      target: normalized,
+      position,
+      size,
+      label: label || 'Siga-nos no Instagram'
+    });
+  }
+
+  // URL / CUSTOM_URL / WEBSITE
+  const normalized = normalizeGenericUrl(rawTarget);
+  if (!normalized) return undefined;
+  return JSON.stringify({
+    enabled: true,
+    type,
+    target: normalized,
+    position,
+    size,
+    label: label || 'Acesse o link'
+  });
 }
 
 // Delete media

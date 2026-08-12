@@ -1,6 +1,12 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { rateLimit } from 'express-rate-limit';
+import {
+  getNormalizedTargetUrl,
+  parseWhatsAppTarget,
+  buildWhatsAppWebUrl,
+  buildWhatsAppAppUrl
+} from '../lib/ctaHelpers.js';
 
 export const qrRoutes = Router();
 
@@ -16,33 +22,8 @@ const scanRateLimit = rateLimit({
   }
 });
 
-function getNormalizedTargetUrl(cta: any): string {
-  const rawTarget = String(cta?.target || '').trim();
-  if (!rawTarget) return '';
-
-  if (cta?.type === 'WHATSAPP') {
-    if (rawTarget.startsWith('http://') || rawTarget.startsWith('https://')) {
-      return rawTarget;
-    }
-    const phoneDigits = rawTarget.replace(/\D/g, '');
-    if (phoneDigits.length >= 10) {
-      return `https://wa.me/${phoneDigits}`;
-    }
-  }
-
-  if (cta?.type === 'INSTAGRAM') {
-    if (rawTarget.startsWith('http://') || rawTarget.startsWith('https://')) {
-      return rawTarget;
-    }
-    const clean = rawTarget.replace(/^@/, '');
-    return `https://instagram.com/${clean}`;
-  }
-
-  if (/^(https?:\/\/)/i.test(rawTarget)) {
-    return rawTarget;
-  }
-  return `https://${rawTarget}`;
-}
+/** Valid CTA types accepted by both routes. */
+const VALID_CTA_TYPES = ['WHATSAPP', 'INSTAGRAM', 'URL', 'CUSTOM_URL', 'WEBSITE'];
 
 /**
  * GET /r/:mediaId?s=:screenId
@@ -50,9 +31,12 @@ function getNormalizedTargetUrl(cta: any): string {
  * Endpoint público sem autenticação.
  * - Valida que a mídia pertence a um tenant ativo e tem CTA configurado.
  * - Registra o scan (tenantId, mediaId, screenId, ctaType, userAgent).
- * - Faz redirect 302 para a URL real (WhatsApp https://wa.me/ / Instagram).
+ * - Faz redirect 302 para a URL real (WhatsApp https://wa.me/ / Instagram / URL).
  *
  * URL gerada pelo player: /r/<mediaId>?s=<screenId>
+ *
+ * O QR Code aponta para wa.me e funciona corretamente em qualquer câmera.
+ * O tratamento especial do aplicativo (whatsapp://) é exclusivo do fluxo NFC.
  */
 qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Promise<any> => {
   const { mediaId } = req.params;
@@ -78,7 +62,7 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
     return res.status(404).send('Not found');
   }
 
-  if (!cta?.enabled || !cta?.target || !['WHATSAPP', 'INSTAGRAM', 'URL', 'CUSTOM_URL', 'WEBSITE'].includes(cta.type)) {
+  if (!cta?.enabled || !cta?.target || !VALID_CTA_TYPES.includes(cta.type)) {
     return res.status(404).send('Not found');
   }
 
@@ -133,9 +117,10 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
  *
  * Endpoint público para Toque NFC Dinâmico no Totem.
  * - Recebe a aproximação do celular no adesivo NFC fixado na moldura do Totem.
- * - Identifica qual mídia está rodando NAQUELE EXATO SEGUNDO na tela.
+ * - Identifica qual mídia está rodando NAQUELE EXATO SEGUNDO na tela (5 camadas).
  * - Registra a conversão com scanSource = 'NFC_TAP'.
- * - Redireciona 302 para a URL de destino da mídia atual.
+ * - Para WHATSAPP: entrega página HTML que tenta abrir o aplicativo via whatsapp://.
+ * - Para outros tipos: redirect 302 direto.
  */
 qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response): Promise<any> => {
   const { screenId } = req.params;
@@ -154,7 +139,9 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
     return res.status(404).send('Tela ou estabelecimento inativo.');
   }
 
-  // 1. Try screen.currentMediaId (reported by player in real-time)
+  // --- 5-layer media resolution ---
+
+  // 1. Try screen.currentMediaId (reported by player in real-time via heartbeat)
   let targetMediaId = screen.currentMediaId;
 
   // 2. Try matching screen.currentMediaName if reported
@@ -226,11 +213,11 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
     return res.status(404).send('CTA inválido.');
   }
 
-  if (!cta?.enabled || !cta?.target || !['WHATSAPP', 'INSTAGRAM', 'URL', 'CUSTOM_URL', 'WEBSITE'].includes(cta.type)) {
+  if (!cta?.enabled || !cta?.target || !VALID_CTA_TYPES.includes(cta.type)) {
     return res.status(404).send('CTA desativado para a mídia atual.');
   }
 
-  // Record NFC Tap conversion
+  // Record NFC Tap conversion (before response, non-blocking)
   const userAgent = String(req.headers['user-agent'] || '').slice(0, 512);
   prisma.qrScan.create({
     data: {
@@ -243,158 +230,139 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
     }
   }).catch(() => { /* Non-blocking */ });
 
-  const redirectUrl = getNormalizedTargetUrl(cta);
-
   res.setHeader('Cache-Control', 'no-store, no-cache');
   res.setHeader('Pragma', 'no-cache');
 
-  /**
-   * WhatsApp:
-   * Não fazemos 302 direto para wa.me porque alguns navegadores
-   * resolvem o link como navegação web antes de entregar ao aplicativo.
-   *
-   * Primeiro tentamos abrir o aplicativo através do esquema
-   * whatsapp:// e, caso não seja possível, fazemos fallback
-   * para o wa.me normal.
-   */
+  // -------------------------------------------------------------------------
+  // WhatsApp: entregar página HTML intermediária que tenta abrir o app nativo
+  // via whatsapp:// e só faz fallback para wa.me se o app não abrir em 1.2s.
+  // -------------------------------------------------------------------------
   if (cta.type === 'WHATSAPP') {
-    let whatsappUrl = redirectUrl;
-    let whatsappAppUrl = '';
+    const parsed = parseWhatsAppTarget(cta);
 
-    try {
-      const parsed = new URL(redirectUrl);
-
-      // Extrai o telefone do /wa.me/5521985080634
-      const phone = parsed.pathname
-        .replace(/^\/+/, '')
-        .replace(/\D/g, '');
-
-      if (!phone || phone.length < 10) {
-        return res.redirect(302, redirectUrl);
-      }
-
-      // Preserva ?text=...
-      const text = parsed.searchParams.get('text');
-
-      whatsappAppUrl =
-        `whatsapp://send?phone=${phone}` +
-        (text ? `&text=${encodeURIComponent(text)}` : '');
-
-      whatsappUrl =
-        `https://wa.me/${phone}` +
-        (text ? `?text=${encodeURIComponent(text)}` : '');
-    } catch {
-      return res.redirect(302, redirectUrl);
+    if (!parsed) {
+      // Dados inválidos — fallback seguro para wa.me via redirect simples
+      const fallback = getNormalizedTargetUrl(cta);
+      return res.redirect(302, fallback || '/');
     }
+
+    const whatsappWebUrl = buildWhatsAppWebUrl(parsed.phone, parsed.text);
+    const whatsappAppUrl = buildWhatsAppAppUrl(parsed.phone, parsed.text);
+
+    // JSON.stringify garante escape seguro das strings no contexto JS (evita XSS)
+    const safeAppUrl     = JSON.stringify(whatsappAppUrl);
+    const safeWebUrl     = JSON.stringify(whatsappWebUrl);
+    const safeWebUrlAttr = whatsappWebUrl.replace(/"/g, '&quot;');
 
     return res.status(200).send(`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex,nofollow">
   <title>Abrindo WhatsApp...</title>
-
   <style>
     html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      background: #ffffff;
-      font-family: Arial, sans-serif;
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      background: #f0fdf4;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
     }
-
     body {
       display: flex;
       align-items: center;
       justify-content: center;
       text-align: center;
     }
-
-    .container {
-      padding: 24px;
+    .card {
+      background: #ffffff;
+      border-radius: 20px;
+      padding: 36px 28px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.10);
+      max-width: 340px;
+      width: 90%;
     }
-
+    .icon {
+      font-size: 52px;
+      margin-bottom: 12px;
+    }
     .title {
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 8px;
+      font-size: 19px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 6px;
     }
-
     .subtitle {
-      font-size: 14px;
-      color: #666;
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 24px;
+      line-height: 1.5;
     }
-
-    a {
-      display: inline-block;
-      margin-top: 20px;
-      padding: 12px 20px;
-      text-decoration: none;
-      border-radius: 8px;
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 24px;
       background: #25D366;
-      color: white;
-      font-weight: 600;
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 700;
+      border-radius: 12px;
+      text-decoration: none;
+      width: 100%;
+      box-sizing: border-box;
+      transition: background 0.15s;
     }
+    .btn:hover { background: #1ebe5d; }
+    .btn[style*="none"] { display: none !important; }
   </style>
 </head>
-
 <body>
-  <div class="container">
-    <div class="title">
-      Abrindo o WhatsApp...
-    </div>
-
-    <div class="subtitle">
-      Aguarde um instante.
-    </div>
-
-    <a
-      href="${whatsappUrl}"
-      id="fallback"
-      style="display:none;"
-    >
+  <div class="card">
+    <div class="icon">💬</div>
+    <div class="title">Abrindo o WhatsApp…</div>
+    <div class="subtitle">Aguarde um instante.<br>Se não abrir automaticamente, toque no botão abaixo.</div>
+    <a class="btn" href="${safeWebUrlAttr}" id="fallback-btn" style="display:none;">
       Abrir WhatsApp
     </a>
   </div>
-
   <script>
-    const appUrl = ${JSON.stringify(whatsappAppUrl)};
-    const fallbackUrl = ${JSON.stringify(whatsappUrl)};
+    (function () {
+      var appUrl     = ${safeAppUrl};
+      var fallbackUrl = ${safeWebUrl};
+      var appOpened  = false;
 
-    let appOpened = false;
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) appOpened = true;
+      });
 
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        appOpened = true;
-      }
-    });
+      // Tenta abrir o aplicativo via esquema nativo
+      window.location.href = appUrl;
 
-    window.location.href = appUrl;
+      // Se o app não abrir em 1.2 s, redireciona para wa.me
+      setTimeout(function () {
+        if (!appOpened && !document.hidden) {
+          window.location.href = fallbackUrl;
+        }
+      }, 1200);
 
-    setTimeout(() => {
-      if (!appOpened && !document.hidden) {
-        window.location.href = fallbackUrl;
-      }
-    }, 1200);
-
-    setTimeout(() => {
-      const fallback = document.getElementById('fallback');
-
-      if (!appOpened && !document.hidden && fallback) {
-        fallback.style.display = 'inline-block';
-      }
-    }, 1800);
+      // Exibe botão de contingência em 1.8 s caso o redirect automático falhe
+      setTimeout(function () {
+        if (!appOpened && !document.hidden) {
+          var btn = document.getElementById('fallback-btn');
+          if (btn) btn.style.display = 'inline-flex';
+        }
+      }, 1800);
+    })();
   </script>
 </body>
 </html>`);
   }
 
-  // Todos os outros tipos continuam usando 302
+  // -------------------------------------------------------------------------
+  // Outros tipos (INSTAGRAM, URL, CUSTOM_URL, WEBSITE): redirect 302 simples
+  // -------------------------------------------------------------------------
+  const redirectUrl = getNormalizedTargetUrl(cta);
   return res.redirect(302, redirectUrl);
 });
-

@@ -347,49 +347,108 @@ export const MediaTab: React.FC<MediaTabProps> = ({
 
 function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => void; onSave: (cta: any) => void }) {
   const initial = media.cta || {};
-  const [type, setType] = useState<'WHATSAPP' | 'INSTAGRAM' | 'URL'>(
-    initial.type === 'INSTAGRAM' ? 'INSTAGRAM' : initial.type === 'URL' ? 'URL' : 'WHATSAPP'
-  );
-  const [target, setTarget] = useState(
-    initial.type === 'WHATSAPP'
-      ? String(initial.target || '').replace(/\D/g, '') || String(initial.target || '')
-      : String(initial.target || '')
-  );
+
+  // Resolve initial type
+  const initialType: 'WHATSAPP' | 'INSTAGRAM' | 'URL' =
+    initial.type === 'INSTAGRAM' ? 'INSTAGRAM'
+    : initial.type === 'URL' || initial.type === 'CUSTOM_URL' || initial.type === 'WEBSITE' ? 'URL'
+    : 'WHATSAPP';
+
+  // Resolve initial phone for WhatsApp
+  // Supports legacy format: target = "https://wa.me/5521985080634?text=..."
+  // Supports new canonical format: target = "5521985080634"
+  const resolveInitialPhone = (): string => {
+    if (initialType !== 'WHATSAPP') return '';
+    const raw = String(initial.target || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      try {
+        const url = new URL(raw);
+        return url.pathname.replace(/^\/+/, '').replace(/\D/g, '');
+      } catch {
+        return raw.replace(/\D/g, '');
+      }
+    }
+    return raw.replace(/\D/g, '');
+  };
+
+  // Resolve initial text for WhatsApp
+  // Prefers the new model's `text` field; falls back to ?text= from legacy wa.me URL
+  const resolveInitialText = (): string => {
+    if (initialType !== 'WHATSAPP') return '';
+    if (typeof initial.text === 'string' && initial.text) return initial.text;
+    const raw = String(initial.target || '').trim();
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      try { return new URL(raw).searchParams.get('text') ?? ''; } catch { return ''; }
+    }
+    return '';
+  };
+
+  const [type, setType] = useState<'WHATSAPP' | 'INSTAGRAM' | 'URL'>(initialType);
+  const [phone, setPhone] = useState(resolveInitialPhone());
+  const [text, setText] = useState(resolveInitialText());
+  const [target, setTarget] = useState(initialType !== 'WHATSAPP' ? String(initial.target || '') : '');
   const [label, setLabel] = useState(initial.label || '');
   const [position, setPosition] = useState(initial.position || 'BOTTOM_RIGHT');
   const [qr, setQr] = useState('');
 
-  const getNormalized = () => {
-    const raw = target.trim();
-    if (!raw) return '';
+  const getQrPreviewUrl = (): string => {
     if (type === 'WHATSAPP') {
-      if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-      const digits = raw.replace(/\D/g, '');
-      return digits.length >= 10 ? `https://wa.me/${digits}` : '';
+      const digits = phone.replace(/\D/g, '');
+      if (digits.length < 10) return '';
+      const base = `https://wa.me/${digits}`;
+      return text.trim() ? `${base}?text=${encodeURIComponent(text.trim())}` : base;
     }
     if (type === 'INSTAGRAM') {
+      const raw = target.trim();
+      if (!raw) return '';
       if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-      const clean = raw.replace(/^@/, '');
-      return clean ? `https://instagram.com/${clean}` : '';
+      const handle = raw.replace(/^@/, '');
+      return handle ? `https://instagram.com/${handle}` : '';
     }
-    // Type URL: ensure http:// or https:// prefix
+    const raw = target.trim();
+    if (!raw) return '';
     if (/^(https?:\/\/)/i.test(raw)) return raw;
     return `https://${raw}`;
   };
 
-  const normalized = getNormalized();
+  const qrPreviewUrl = getQrPreviewUrl();
 
   useEffect(() => {
-    if (normalized) {
-      QRCode.toDataURL(normalized, { width: 180, margin: 1 }).then(setQr).catch(() => setQr(''));
+    if (qrPreviewUrl) {
+      QRCode.toDataURL(qrPreviewUrl, { width: 180, margin: 1 }).then(setQr).catch(() => setQr(''));
     } else {
       setQr('');
     }
-  }, [normalized]);
+  }, [qrPreviewUrl]);
+
+  const isValid = (): boolean => {
+    if (type === 'WHATSAPP') return phone.replace(/\D/g, '').length >= 10;
+    return target.trim().length > 0;
+  };
+
+  const buildCtaPayload = () => {
+    if (type === 'WHATSAPP') {
+      return {
+        enabled: true,
+        type: 'WHATSAPP',
+        target: phone.replace(/\D/g, ''),
+        ...(text.trim() ? { text: text.trim() } : {}),
+        position,
+        size: 160,
+        label
+      };
+    }
+    return { enabled: true, type, target: qrPreviewUrl, position, size: 160, label };
+  };
 
   const positionLabels: Record<string, string> = {
     TOP_LEFT: 'Superior esquerdo', TOP_RIGHT: 'Superior direito',
     BOTTOM_LEFT: 'Inferior esquerdo', BOTTOM_RIGHT: 'Inferior direito'
+  };
+
+  const handleTypeChange = (newType: 'WHATSAPP' | 'INSTAGRAM' | 'URL') => {
+    setType(newType); setPhone(''); setText(''); setTarget(''); setQr('');
   };
 
   return (
@@ -415,28 +474,25 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
           <button className="btn-secondary" style={{ padding: '6px' }} onClick={onClose}><X size={16} /></button>
         </div>
 
-        {/* Canal */}
+        {/* Canal de destino */}
         <div>
           <p style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: 10, fontWeight: 600 }}>CANAL DE DESTINO</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
             {[
               { id: 'WHATSAPP', label: 'WhatsApp', icon: '💬', color: '#25d366' },
               { id: 'INSTAGRAM', label: 'Instagram', icon: '📷', color: '#e1306c' },
-              { id: 'URL', label: 'Link / Site', icon: '🌐', color: '#38bdf8' }
+              { id: 'URL',       label: 'Link / Site', icon: '🌐', color: '#38bdf8' }
             ].map((item) => (
               <button
                 key={item.id}
                 type="button"
-                onClick={() => { setType(item.id as any); setTarget(''); setQr(''); }}
+                onClick={() => handleTypeChange(item.id as any)}
                 style={{
-                  padding: '12px 8px',
-                  borderRadius: 12,
+                  padding: '12px 8px', borderRadius: 12,
                   border: `2px solid ${type === item.id ? item.color : 'rgba(255,255,255,0.1)'}`,
                   background: type === item.id ? `${item.color}20` : 'rgba(255,255,255,0.03)',
                   color: type === item.id ? '#fff' : '#64748b',
-                  fontWeight: 700,
-                  fontSize: '0.86rem',
-                  cursor: 'pointer',
+                  fontWeight: 700, fontSize: '0.86rem', cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   transition: 'all .18s'
                 }}
@@ -447,45 +503,82 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
           </div>
         </div>
 
-        {/* Input */}
-        <div>
-          <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-            {type === 'WHATSAPP'
-              ? 'NÚMERO COM DDD (OU LINK COMPLETO HA.ME)'
-              : type === 'INSTAGRAM'
-              ? 'LINK DO PERFIL OU @USUARIO'
-              : 'URL DO SITE / LINK PERSONALIZADO COMPLETO'}
-          </label>
-          <input
-            className="input-field"
-            value={target}
-            onChange={(e) => setTarget(e.target.value)}
-            placeholder={
-              type === 'WHATSAPP'
-                ? 'Ex.: 5521985080634 ou https://wa.me/5521985080634'
-                : type === 'INSTAGRAM'
-                ? 'Ex.: @sualoja ou https://instagram.com/sualoja'
-                : 'Ex.: https://cardapio.com ou https://g.page/review'
-            }
-            style={{ fontSize: '0.95rem' }}
-          />
-        </div>
+        {/* Campos por tipo */}
+        {type === 'WHATSAPP' ? (
+          <>
+            <div>
+              <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                NÚMERO DO WHATSAPP <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <input
+                className="input-field"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="Ex.: 5521985080634 ou +55 (21) 98508-0634"
+                style={{ fontSize: '0.95rem' }}
+              />
+              {phone.trim() !== '' && phone.replace(/\D/g, '').length < 10 && (
+                <p style={{ color: '#f87171', fontSize: '0.75rem', marginTop: 4 }}>
+                  Informe o número com DDD e código do país (mín. 10 dígitos).
+                </p>
+              )}
+            </div>
+            <div>
+              <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                MENSAGEM PRÉ-PREENCHIDA <span style={{ color: '#64748b', fontWeight: 400 }}>(opcional)</span>
+              </label>
+              <textarea
+                className="input-field"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Ex.: Olá! Vi sua empresa no VitDoor e gostaria de mais informações."
+                rows={3}
+                maxLength={512}
+                style={{ fontSize: '0.9rem', resize: 'vertical', lineHeight: 1.5 }}
+              />
+            </div>
+          </>
+        ) : type === 'INSTAGRAM' ? (
+          <div>
+            <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+              PERFIL DO INSTAGRAM
+            </label>
+            <input
+              className="input-field"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder="Ex.: @sualoja ou https://instagram.com/sualoja"
+              style={{ fontSize: '0.95rem' }}
+            />
+          </div>
+        ) : (
+          <div>
+            <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+              URL DO SITE / LINK PERSONALIZADO
+            </label>
+            <input
+              className="input-field"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder="Ex.: https://cardapio.com ou https://g.page/review"
+              style={{ fontSize: '0.95rem' }}
+            />
+          </div>
+        )}
 
-        {/* Label opcional */}
+        {/* Texto abaixo do QR Code */}
         <div>
           <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-            TEXTO ABAIXO DO QR CODE (opcional)
+            TEXTO ABAIXO DO QR CODE <span style={{ color: '#64748b', fontWeight: 400 }}>(opcional)</span>
           </label>
           <input
             className="input-field"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder={
-              type === 'WHATSAPP'
-                ? 'Ex.: Fale conosco no WhatsApp!'
-                : type === 'INSTAGRAM'
-                ? 'Ex.: Siga-nos no Instagram'
-                : 'Ex.: Acesse nosso cardápio'
+              type === 'WHATSAPP' ? 'Ex.: Fale conosco no WhatsApp!'
+              : type === 'INSTAGRAM' ? 'Ex.: Siga-nos no Instagram'
+              : 'Ex.: Acesse nosso cardápio'
             }
             maxLength={80}
           />
@@ -509,8 +602,9 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
             <img src={qr} alt="Prévia do QR Code" width={100} height={100} style={{ borderRadius: 8 }} />
             <div>
               <p style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>Prévia do QR Code</p>
-              <p style={{ color: '#64748b', fontSize: '0.78rem', marginTop: 4 }}>
-                Ao escanear, o sistema registra o scan e redireciona para o {type === 'WHATSAPP' ? 'WhatsApp' : 'Instagram'}.
+              <p style={{ color: '#64748b', fontSize: '0.78rem', marginTop: 4, lineHeight: 1.5 }}>
+                Ao escanear, o sistema registra o acesso e redireciona para o destino configurado.
+                {type === 'WHATSAPP' && ' Via NFC, o aplicativo do WhatsApp é aberto diretamente.'}
               </p>
             </div>
           </div>
@@ -520,8 +614,12 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
         <div style={{ display: 'flex', gap: 10 }}>
           <button
             className="btn-primary"
-            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px' }}
-            onClick={() => onSave({ enabled: true, type, target: normalized, position, size: 160, label })}
+            disabled={!isValid()}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px',
+              opacity: isValid() ? 1 : 0.4, cursor: isValid() ? 'pointer' : 'not-allowed'
+            }}
+            onClick={() => isValid() && onSave(buildCtaPayload())}
           >
             <QrCode size={16} /> Salvar QR Code
           </button>
@@ -540,6 +638,7 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
     </div>
   );
 }
+
 
 
 function readMediaDuration(file: File): Promise<number> {
