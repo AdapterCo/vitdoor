@@ -4,9 +4,9 @@
 >
 > Repositório sugerido: `vitdoor-player-flutter`. O painel web e o backend permanecem no repositório `vitdoor`.
 
-**Versão:** 1.7
+**Versão:** 1.8  
 **Data:** 12/08/2026  
-**Estado:** especificação oficial; módulo de NFC Dinâmico por tela, Chamador de Senhas e Alertas Emergenciais concluídos no web/backend, integração Flutter pendente
+**Estado:** especificação oficial; módulo de NFC Dinâmico por tela, Chamador de Senhas, Alertas Emergenciais e Módulo de CTA/QR Code (Direct & Profile) concluídos no web/backend, integração Flutter pendente
 
 ## 1. Objetivo
 
@@ -1256,4 +1256,254 @@ Campos adicionados:
 - [x] Painel admin gera link do adesivo NFC para cada tela (`/r/nfc/<screenId>`);
 - [x] Painel admin contabiliza scans por QR Code vs Aproximações NFC separadamente;
 - [ ] Player Flutter envia `currentMediaId` e `currentMediaName` ao trocar de mídia e no `HEARTBEAT`.
+
+---
+
+## 30. Especificação do Módulo de CTA e QR Code (WhatsApp, Instagram, Link e Cartão Digital)
+
+**Estado:** `WEB_E_BACKEND_PRONTOS` — integração Flutter documentada abaixo.
+
+### 30.1 Estrutura do objeto `cta` no Manifesto JSON
+
+Cada mídia dentro do manifesto JSON pode carregar um objeto `cta` configurado pelo anunciante no painel admin:
+
+```json
+{
+  "id": "32e8e550-d9dc-4459-a51c-2b70f3d36169",
+  "name": "Promoção Hambúrguer Duplo.mp4",
+  "durationSeconds": 15,
+  "cta": {
+    "enabled": true,
+    "mode": "DIRECT",
+    "type": "WHATSAPP",
+    "target": "https://wa.me/5521985080634",
+    "text": "Olá! Vi a promoção no Totem",
+    "position": "BOTTOM_RIGHT",
+    "size": 160,
+    "label": "Fale conosco no WhatsApp"
+  }
+}
+```
+
+Ou no **Modo Cartão Digital / Perfil Multi-links** (`mode: "PROFILE"`):
+
+```json
+{
+  "id": "32e8e550-d9dc-4459-a51c-2b70f3d36169",
+  "name": "Campanha Institucional.mp4",
+  "durationSeconds": 15,
+  "cta": {
+    "enabled": true,
+    "mode": "PROFILE",
+    "type": "URL",
+    "target": "https://wa.me/5521985080634",
+    "profile": {
+      "title": "Restaurante Sabor & Arte",
+      "subtitle": "Confira nossas ofertas e redes sociais",
+      "links": [
+        { "id": "1", "type": "WHATSAPP", "target": "https://wa.me/5521985080634", "label": "Fale no WhatsApp" },
+        { "id": "2", "type": "INSTAGRAM", "target": "https://instagram.com/sabor", "label": "Siga no Instagram" }
+      ]
+    },
+    "position": "BOTTOM_RIGHT",
+    "size": 160,
+    "label": "Escaneie para ver mais"
+  }
+}
+```
+
+### 30.2 Especificação dos Campos
+
+| Campo | Tipo | Valores Válidos | Descrição |
+|---|---|---|---|
+| `enabled` | `bool` | `true` / `false` | Se `false` ou nulo, **não renderizar** o QR Code na tela. |
+| `mode` | `String?` | `"DIRECT"` / `"PROFILE"` | Modo do CTA. Se omitido, assume `"DIRECT"`. |
+| `type` | `String?` | `"WHATSAPP"` / `"INSTAGRAM"` / `"URL"` | Tipo principal do canal de destino. |
+| `position` | `String?` | `"BOTTOM_RIGHT"`, `"BOTTOM_LEFT"`, `"TOP_RIGHT"`, `"TOP_LEFT"` | Canto da tela onde o QR Code deve ser fixado. Padrão: `"BOTTOM_RIGHT"`. |
+| `size` | `int?` | `96` a `320` | Largura/altura em pixels do QR Code. Padrão: `160`. |
+| `label` | `String?` | `String` ou `""` | Texto exibido abaixo do QR Code. **Se vazio ou nulo, omitir a caixa de texto**. |
+
+---
+
+### 30.3 Construção da URL do QR Code no Flutter
+
+O QR Code renderizado na tela **NUNCA deve apontar direto para a URL final do anunciante**. Ele **SEMPRE** deve apontar para o endpoint de rastreamento do VitDoor:
+
+```text
+https://<DOMAIN_SERVER>/r/<mediaId>?s=<screenId>
+```
+
+Exemplo:
+```text
+https://api.vitdoor.com.br/r/32e8e550-d9dc-4459-a51c-2b70f3d36169?s=98f12a34-1122-3344-5566-778899aabbcc
+```
+
+Dessa forma, o backend contabiliza as estatísticas de scan (data, hora, tela, tipo de dispositivo) e redireciona o cliente para o WhatsApp, Instagram, URL ou exibe o **Cartão Digital**.
+
+---
+
+### 30.4 Ícone Exibido no Rodapé do QR Code
+
+| Condição | Ícone Renderizado |
+|---|---|
+| `mode == "PROFILE"` | 🎴 (Cartão Digital) |
+| `type == "WHATSAPP"` | 💬 (WhatsApp) |
+| `type == "INSTAGRAM"` | 📷 (Instagram) |
+| `type == "URL"` ou default | 🌐 (Link / Site) |
+
+---
+
+### 30.5 Código Exemplo em Flutter (Dart)
+
+O widget a seguir pode ser utilizado diretamente no projeto Flutter para sobrepor o QR Code na mídia em exibição:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+
+class CtaModel {
+  final bool enabled;
+  final String mode; // 'DIRECT' | 'PROFILE'
+  final String type; // 'WHATSAPP' | 'INSTAGRAM' | 'URL'
+  final String? position;
+  final int size;
+  final String? label;
+
+  CtaModel({
+    required this.enabled,
+    this.mode = 'DIRECT',
+    this.type = 'URL',
+    this.position,
+    this.size = 160,
+    this.label,
+  });
+
+  factory CtaModel.fromJson(Map<String, dynamic> json) {
+    return CtaModel(
+      enabled: json['enabled'] == true,
+      mode: json['mode'] as String? ?? 'DIRECT',
+      type: json['type'] as String? ?? 'URL',
+      position: json['position'] as String?,
+      size: (json['size'] as num?)?.toInt() ?? 160,
+      label: json['label'] as String?,
+    );
+  }
+}
+
+class MediaQrCtaOverlay extends StatelessWidget {
+  final CtaModel? cta;
+  final String mediaId;
+  final String screenId;
+  final String apiBaseUrl; // ex: https://api.vitdoor.com.br
+
+  const MediaQrCtaOverlay({
+    Key? key,
+    required this.cta,
+    required this.mediaId,
+    required this.screenId,
+    required this.apiBaseUrl,
+  }) : super(key: key);
+
+  String get _typeIcon {
+    if (cta?.mode == 'PROFILE') return '🎴';
+    switch (cta?.type?.toUpperCase()) {
+      case 'WHATSAPP':
+        return '💬';
+      case 'INSTAGRAM':
+        return '📷';
+      default:
+        return '🌐';
+    }
+  }
+
+  Alignment _getAlignment() {
+    switch (cta?.position?.toUpperCase()) {
+      case 'TOP_LEFT':
+        return Alignment.topLeft;
+      case 'TOP_RIGHT':
+        return Alignment.topRight;
+      case 'BOTTOM_LEFT':
+        return Alignment.bottomLeft;
+      case 'BOTTOM_RIGHT':
+      default:
+        return Alignment.bottomRight;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (cta == null || !cta!.enabled || mediaId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // URL de rastreamento oficial
+    final domain = apiBaseUrl.replaceAll(RegExp(r'/api/?$'), '');
+    final trackingUrl = '$domain/r/$mediaId?s=$screenId';
+    final hasLabel = cta!.label != null && cta!.label!.trim().isNotEmpty;
+    final qrSize = cta!.size.toDouble();
+
+    return Align(
+      alignment: _getAlignment(),
+      child: Padding(
+        padding: const EdgeInsets.all(28.0),
+        child: Container(
+          padding: const EdgeInsets.all(10.0),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 20,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Imagem do QR Code
+              QrImageView(
+                data: trackingUrl,
+                version: QrVersions.auto,
+                size: qrSize,
+                backgroundColor: Colors.white,
+              ),
+
+              // Legenda de texto abaixo (renderizar SOMENTE se label não for vazia)
+              if (hasLabel) ...[
+                const SizedBox(height: 6),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: qrSize + 10),
+                  child: Text(
+                    '$_typeIcon ${cta!.label!.trim()}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF111827),
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+---
+
+### 30.6 Checklist de Entrega do Flutter (Módulo CTA/QR Code)
+
+- [x] Backend atualizado com gerador de Landing Page de Perfil Cartão Digital;
+- [x] Backend atualizado para aceitar qualquer canal (WhatsApp, Instagram, Link, Youtube, TikTok);
+- [x] Admin Web atualizado com Seletor de Modo (`Link Direto` vs `Cartão Digital`);
+- [x] Player Web atualizado com suporte aos novos ícones e modos;
+- [ ] Player Flutter implementa o widget `MediaQrCtaOverlay` sobreposto às mídias;
+- [ ] Player Flutter respeita omissão do rótulo quando `label` for nulo ou string vazia `""`.
+
 
