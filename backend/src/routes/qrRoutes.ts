@@ -121,7 +121,11 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
   }).catch(() => { /* Non-blocking: do not fail redirect if DB write fails */ });
 
   const redirectUrl = getNormalizedTargetUrl(cta);
-  return sendWhatsAppOrRedirect(res, cta, redirectUrl);
+
+  // Cache-busting: redirect must not be cached by proxies
+  res.setHeader('Cache-Control', 'no-store, no-cache');
+  res.setHeader('Pragma', 'no-cache');
+  return res.redirect(302, redirectUrl);
 });
 
 /**
@@ -240,10 +244,7 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
   }).catch(() => { /* Non-blocking */ });
 
   const redirectUrl = getNormalizedTargetUrl(cta);
-  return sendWhatsAppOrRedirect(res, cta, redirectUrl);
-});
 
-function sendWhatsAppOrRedirect(res: Response, cta: any, redirectUrl: string) {
   res.setHeader('Cache-Control', 'no-store, no-cache');
   res.setHeader('Pragma', 'no-cache');
 
@@ -395,5 +396,5 @@ function sendWhatsAppOrRedirect(res: Response, cta: any, redirectUrl: string) {
 
   // Todos os outros tipos continuam usando 302
   return res.redirect(302, redirectUrl);
-}
+});
 
