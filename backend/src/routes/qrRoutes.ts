@@ -5,7 +5,8 @@ import {
   getNormalizedTargetUrl,
   parseWhatsAppTarget,
   buildWhatsAppWebUrl,
-  buildWhatsAppAppUrl
+  buildWhatsAppAppUrl,
+  renderProfileHtml
 } from '../lib/ctaHelpers.js';
 
 export const qrRoutes = Router();
@@ -31,12 +32,8 @@ const VALID_CTA_TYPES = ['WHATSAPP', 'INSTAGRAM', 'URL', 'CUSTOM_URL', 'WEBSITE'
  * Endpoint público sem autenticação.
  * - Valida que a mídia pertence a um tenant ativo e tem CTA configurado.
  * - Registra o scan (tenantId, mediaId, screenId, ctaType, userAgent).
- * - Faz redirect 302 para a URL real (WhatsApp https://wa.me/ / Instagram / URL).
- *
- * URL gerada pelo player: /r/<mediaId>?s=<screenId>
- *
- * O QR Code aponta para wa.me e funciona corretamente em qualquer câmera.
- * O tratamento especial do aplicativo (whatsapp://) é exclusivo do fluxo NFC.
+ * - Se cta.mode === 'PROFILE': Renderiza a Landing Page do Perfil Cartão Digital.
+ * - Se cta.mode === 'DIRECT': Faz redirect 302 para a URL real.
  */
 qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Promise<any> => {
   const { mediaId } = req.params;
@@ -48,7 +45,7 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
 
   const media = await prisma.media.findFirst({
     where: { id: mediaId, tenant: { status: 'ACTIVE' } },
-    select: { id: true, tenantId: true, ctaJson: true }
+    select: { id: true, name: true, tenantId: true, ctaJson: true }
   });
 
   if (!media || !media.ctaJson) {
@@ -62,7 +59,7 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
     return res.status(404).send('Not found');
   }
 
-  if (!cta?.enabled || !cta?.target || !VALID_CTA_TYPES.includes(cta.type)) {
+  if (!cta?.enabled || (!cta?.target && cta?.mode !== 'PROFILE') || !VALID_CTA_TYPES.includes(cta.type)) {
     return res.status(404).send('Not found');
   }
 
@@ -104,11 +101,16 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
     }
   }).catch(() => { /* Non-blocking: do not fail redirect if DB write fails */ });
 
-  const redirectUrl = getNormalizedTargetUrl(cta);
-
-  // Cache-busting: redirect must not be cached by proxies
   res.setHeader('Cache-Control', 'no-store, no-cache');
   res.setHeader('Pragma', 'no-cache');
+
+  // MODO PROFILE — Renderiza a Landing Page do Perfil
+  if (cta.mode === 'PROFILE') {
+    return res.status(200).send(renderProfileHtml(cta, media.name));
+  }
+
+  // MODO DIRECT — Redirect 302 para a URL final
+  const redirectUrl = getNormalizedTargetUrl(cta);
   return res.redirect(302, redirectUrl);
 });
 
@@ -199,7 +201,7 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
   // Fetch media CTA configuration
   const media = await prisma.media.findFirst({
     where: { id: targetMediaId, tenantId: screen.tenantId },
-    select: { id: true, ctaJson: true }
+    select: { id: true, name: true, ctaJson: true }
   });
 
   if (!media || !media.ctaJson) {
@@ -213,7 +215,7 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
     return res.status(404).send('CTA inválido.');
   }
 
-  if (!cta?.enabled || !cta?.target || !VALID_CTA_TYPES.includes(cta.type)) {
+  if (!cta?.enabled || (!cta?.target && cta?.mode !== 'PROFILE') || !VALID_CTA_TYPES.includes(cta.type)) {
     return res.status(404).send('CTA desativado para a mídia atual.');
   }
 
@@ -232,6 +234,11 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
 
   res.setHeader('Cache-Control', 'no-store, no-cache');
   res.setHeader('Pragma', 'no-cache');
+
+  // MODO PROFILE — Renderiza a Landing Page do Perfil
+  if (cta.mode === 'PROFILE') {
+    return res.status(200).send(renderProfileHtml(cta, media.name));
+  }
 
   // -------------------------------------------------------------------------
   // WhatsApp: entregar página HTML intermediária que tenta abrir o app nativo

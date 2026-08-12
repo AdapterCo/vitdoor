@@ -215,9 +215,101 @@ function normalizeCta(value: unknown): string | null | undefined {
   if (!value || typeof value !== 'object') return undefined;
 
   const input = value as Record<string, unknown>;
-  const rawType = String(input.type || '').toUpperCase();
+  const mode = String(input.mode || '').toUpperCase() === 'PROFILE' ? 'PROFILE' : 'DIRECT';
 
-  // Fix: map known aliases to canonical types
+  const position = ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_LEFT', 'BOTTOM_RIGHT'].includes(String(input.position))
+    ? String(input.position)
+    : 'BOTTOM_RIGHT';
+  const size = Math.max(96, Math.min(320, Math.round(Number(input.size) || 160)));
+  const label = typeof input.label === 'string' ? input.label.trim().slice(0, 80) : '';
+
+  // -------------------------------------------------------------------------
+  // MODO PROFILE — Cartão de Visita Digital / Multi-links
+  // -------------------------------------------------------------------------
+  if (mode === 'PROFILE') {
+    const rawProfile = input.profile as Record<string, unknown> | undefined;
+    if (!rawProfile || typeof rawProfile !== 'object') return undefined;
+
+    const title = typeof rawProfile.title === 'string' ? rawProfile.title.trim().slice(0, 100) : '';
+    const subtitle = typeof rawProfile.subtitle === 'string' ? rawProfile.subtitle.trim().slice(0, 200) : '';
+    const rawLinks = Array.isArray(rawProfile.links) ? rawProfile.links : [];
+
+    if (!title || rawLinks.length === 0) return undefined;
+
+    const validLinks: any[] = [];
+    for (const l of rawLinks.slice(0, 6)) { // máx 6 links
+      if (!l || typeof l !== 'object') continue;
+      const linkType = String(l.type || '').toUpperCase();
+      const rawTarget = typeof l.target === 'string' ? l.target.trim() : '';
+      const linkLabel = typeof l.label === 'string' ? l.label.trim().slice(0, 60) : '';
+      const rawText = typeof l.text === 'string' ? l.text.trim().slice(0, 512) : undefined;
+
+      if (!rawTarget) continue;
+
+      if (linkType === 'WHATSAPP') {
+        const parsed = parseWhatsAppTarget({ target: rawTarget, text: rawText });
+        if (!parsed || !isValidPhone(parsed.phone)) continue;
+        const waUrl = buildWhatsAppWebUrl(parsed.phone);
+        validLinks.push({
+          id: String(l.id || `link_${validLinks.length + 1}`),
+          type: 'WHATSAPP',
+          target: waUrl,
+          ...(parsed.text ? { text: parsed.text } : {}),
+          label: linkLabel || 'Fale no WhatsApp'
+        });
+      } else if (linkType === 'INSTAGRAM') {
+        const normalized = normalizeInstagramTarget(rawTarget);
+        if (!normalized) continue;
+        validLinks.push({
+          id: String(l.id || `link_${validLinks.length + 1}`),
+          type: 'INSTAGRAM',
+          target: normalized,
+          label: linkLabel || 'Siga no Instagram'
+        });
+      } else if (linkType === 'YOUTUBE' || linkType === 'TIKTOK') {
+        const normalized = normalizeGenericUrl(rawTarget);
+        if (!normalized) continue;
+        validLinks.push({
+          id: String(l.id || `link_${validLinks.length + 1}`),
+          type: linkType,
+          target: normalized,
+          label: linkLabel || (linkType === 'YOUTUBE' ? 'Ver vídeo no YouTube' : 'Ver vídeo no TikTok')
+        });
+      } else {
+        // URL
+        const normalized = normalizeGenericUrl(rawTarget);
+        if (!normalized) continue;
+        validLinks.push({
+          id: String(l.id || `link_${validLinks.length + 1}`),
+          type: 'URL',
+          target: normalized,
+          label: linkLabel || 'Acesse o site'
+        });
+      }
+    }
+
+    if (validLinks.length === 0) return undefined;
+
+    return JSON.stringify({
+      enabled: true,
+      mode: 'PROFILE',
+      type: 'URL', // fallback type para leitores antigos
+      target: validLinks[0].target, // fallback target para leitores antigos
+      profile: {
+        title,
+        subtitle: subtitle || undefined,
+        links: validLinks
+      },
+      position,
+      size,
+      label: label || 'Escaneie para ver mais'
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // MODO DIRECT — Redirecionamento Direto
+  // -------------------------------------------------------------------------
+  const rawType = String(input.type || '').toUpperCase();
   let type: string;
   if (rawType === 'WHATSAPP') {
     type = 'WHATSAPP';
@@ -229,27 +321,19 @@ function normalizeCta(value: unknown): string | null | undefined {
     return undefined;
   }
 
-  const position = ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_LEFT', 'BOTTOM_RIGHT'].includes(String(input.position))
-    ? String(input.position)
-    : 'BOTTOM_RIGHT';
-  const size = Math.max(96, Math.min(320, Math.round(Number(input.size) || 160)));
-  const label = typeof input.label === 'string' ? input.label.trim().slice(0, 80) : '';
   const rawTarget = typeof input.target === 'string' ? input.target.trim() : '';
   const rawText = typeof input.text === 'string' ? input.text.trim().slice(0, 512) : undefined;
 
   if (!rawTarget) return undefined;
 
   if (type === 'WHATSAPP') {
-    // Delegate full parsing to the central helper to handle all input formats
     const parsed = parseWhatsAppTarget({ target: rawTarget, text: rawText });
     if (!parsed || !isValidPhone(parsed.phone)) return undefined;
 
-    // Always store target as a valid URL (https://wa.me/phone) so the Flutter player
-    // can use it directly for QR Code display. The optional message is stored in
-    // the separate `text` field.
     const waUrl = buildWhatsAppWebUrl(parsed.phone);
     return JSON.stringify({
       enabled: true,
+      mode: 'DIRECT',
       type,
       target: waUrl,
       ...(parsed.text ? { text: parsed.text } : {}),
@@ -264,6 +348,7 @@ function normalizeCta(value: unknown): string | null | undefined {
     if (!normalized) return undefined;
     return JSON.stringify({
       enabled: true,
+      mode: 'DIRECT',
       type,
       target: normalized,
       position,
@@ -277,6 +362,7 @@ function normalizeCta(value: unknown): string | null | undefined {
   if (!normalized) return undefined;
   return JSON.stringify({
     enabled: true,
+    mode: 'DIRECT',
     type,
     target: normalized,
     position,

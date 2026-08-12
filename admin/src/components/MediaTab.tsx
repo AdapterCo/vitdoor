@@ -348,15 +348,16 @@ export const MediaTab: React.FC<MediaTabProps> = ({
 function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => void; onSave: (cta: any) => void }) {
   const initial = media.cta || {};
 
-  // Resolve initial type
+  // Mode: DIRECT or PROFILE
+  const initialMode: 'DIRECT' | 'PROFILE' = initial.mode === 'PROFILE' ? 'PROFILE' : 'DIRECT';
+  const [mode, setMode] = useState<'DIRECT' | 'PROFILE'>(initialMode);
+
+  // --- MODO DIRECT STATE ---
   const initialType: 'WHATSAPP' | 'INSTAGRAM' | 'URL' =
     initial.type === 'INSTAGRAM' ? 'INSTAGRAM'
     : initial.type === 'URL' || initial.type === 'CUSTOM_URL' || initial.type === 'WEBSITE' ? 'URL'
     : 'WHATSAPP';
 
-  // Resolve initial phone for WhatsApp
-  // Supports legacy format: target = "https://wa.me/5521985080634?text=..."
-  // Supports new canonical format: target = "5521985080634"
   const resolveInitialPhone = (): string => {
     if (initialType !== 'WHATSAPP') return '';
     const raw = String(initial.target || '').trim();
@@ -372,8 +373,6 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
     return raw.replace(/\D/g, '');
   };
 
-  // Resolve initial text for WhatsApp
-  // Prefers the new model's `text` field; falls back to ?text= from legacy wa.me URL
   const resolveInitialText = (): string => {
     if (initialType !== 'WHATSAPP') return '';
     if (typeof initial.text === 'string' && initial.text) return initial.text;
@@ -384,22 +383,40 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
     return '';
   };
 
-  const [type, setType] = useState<'WHATSAPP' | 'INSTAGRAM' | 'URL'>(initialType);
+  const [directType, setDirectType] = useState<'WHATSAPP' | 'INSTAGRAM' | 'URL'>(initialType);
   const [phone, setPhone] = useState(resolveInitialPhone());
   const [text, setText] = useState(resolveInitialText());
   const [target, setTarget] = useState(initialType !== 'WHATSAPP' ? String(initial.target || '') : '');
   const [label, setLabel] = useState(initial.label || '');
   const [position, setPosition] = useState(initial.position || 'BOTTOM_RIGHT');
+
+  // --- MODO PROFILE STATE ---
+  const initialProfile = initial.profile || {};
+  const [profileTitle, setProfileTitle] = useState(initialProfile.title || media.name || '');
+  const [profileSubtitle, setProfileSubtitle] = useState(initialProfile.subtitle || 'Confira nossos links e fale conosco!');
+  const [profileLinks, setProfileLinks] = useState<Array<{ id: string; type: 'WHATSAPP' | 'INSTAGRAM' | 'YOUTUBE' | 'TIKTOK' | 'URL'; target: string; text?: string; label: string }>>(
+    Array.isArray(initialProfile.links) && initialProfile.links.length > 0
+      ? initialProfile.links
+      : [
+          { id: '1', type: 'WHATSAPP', target: resolveInitialPhone() || '5521985080634', text: resolveInitialText(), label: 'Fale conosco no WhatsApp' },
+          { id: '2', type: 'INSTAGRAM', target: '@sualoja', label: 'Siga-nos no Instagram' }
+        ]
+  );
+
   const [qr, setQr] = useState('');
 
+  // --- PREVIEW QR CODE ---
   const getQrPreviewUrl = (): string => {
-    if (type === 'WHATSAPP') {
+    if (mode === 'PROFILE') {
+      return `https://vitdoor.app/r/${media.id}`;
+    }
+    if (directType === 'WHATSAPP') {
       const digits = phone.replace(/\D/g, '');
       if (digits.length < 10) return '';
       const base = `https://wa.me/${digits}`;
       return text.trim() ? `${base}?text=${encodeURIComponent(text.trim())}` : base;
     }
-    if (type === 'INSTAGRAM') {
+    if (directType === 'INSTAGRAM') {
       const raw = target.trim();
       if (!raw) return '';
       if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
@@ -420,17 +437,46 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
     } else {
       setQr('');
     }
-  }, [qrPreviewUrl]);
+  }, [qrPreviewUrl, mode, directType, phone, text, target]);
 
+  // --- VALIDATION ---
   const isValid = (): boolean => {
-    if (type === 'WHATSAPP') return phone.replace(/\D/g, '').length >= 10;
+    if (mode === 'PROFILE') {
+      return profileTitle.trim().length > 0 && profileLinks.length > 0 && profileLinks.every(l => l.target.trim().length > 0);
+    }
+    if (directType === 'WHATSAPP') return phone.replace(/\D/g, '').length >= 10;
     return target.trim().length > 0;
   };
 
+  // --- PAYLOAD BUILDER ---
   const buildCtaPayload = () => {
-    if (type === 'WHATSAPP') {
+    if (mode === 'PROFILE') {
       return {
         enabled: true,
+        mode: 'PROFILE',
+        type: 'URL',
+        target: profileLinks[0]?.target || '',
+        profile: {
+          title: profileTitle.trim(),
+          subtitle: profileSubtitle.trim(),
+          links: profileLinks.map(l => ({
+            id: l.id,
+            type: l.type,
+            target: l.target.trim(),
+            ...(l.type === 'WHATSAPP' && l.text?.trim() ? { text: l.text.trim() } : {}),
+            label: l.label.trim()
+          }))
+        },
+        position,
+        size: 160,
+        label: label.trim() || 'Escaneie para ver mais'
+      };
+    }
+
+    if (directType === 'WHATSAPP') {
+      return {
+        enabled: true,
+        mode: 'DIRECT',
         type: 'WHATSAPP',
         target: phone.replace(/\D/g, ''),
         ...(text.trim() ? { text: text.trim() } : {}),
@@ -439,7 +485,7 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
         label
       };
     }
-    return { enabled: true, type, target: qrPreviewUrl, position, size: 160, label };
+    return { enabled: true, mode: 'DIRECT', type: directType, target: qrPreviewUrl, position, size: 160, label };
   };
 
   const positionLabels: Record<string, string> = {
@@ -447,19 +493,40 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
     BOTTOM_LEFT: 'Inferior esquerdo', BOTTOM_RIGHT: 'Inferior direito'
   };
 
-  const handleTypeChange = (newType: 'WHATSAPP' | 'INSTAGRAM' | 'URL') => {
-    setType(newType); setPhone(''); setText(''); setTarget(''); setQr('');
+  // Link Profile Management
+  const addProfileLink = () => {
+    if (profileLinks.length >= 6) return;
+    const newId = String(Date.now());
+    setProfileLinks([...profileLinks, { id: newId, type: 'URL', target: '', label: 'Novo Link' }]);
+  };
+
+  const updateProfileLink = (id: string, field: string, val: any) => {
+    setProfileLinks(profileLinks.map(l => l.id === id ? { ...l, [field]: val } : l));
+  };
+
+  const removeProfileLink = (id: string) => {
+    if (profileLinks.length <= 1) return;
+    setProfileLinks(profileLinks.filter(l => l.id !== id));
   };
 
   return (
     <div style={{
       position: 'fixed', inset: 0,
-      background: 'rgba(0,0,0,0.8)',
-      backdropFilter: 'blur(10px)',
+      background: 'rgba(0,0,0,0.85)',
+      backdropFilter: 'blur(12px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      zIndex: 2000
+      zIndex: 2000,
+      padding: 16
     }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="glass-panel" style={{ width: 520, padding: 32, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div className="glass-panel" style={{
+        width: 580,
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        padding: 32,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 20
+      }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -468,126 +535,282 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
               <QrCode size={20} color="#f59e0b" /> QR Code &amp; NFC — {media.name}
             </h3>
             <p style={{ fontSize: '0.82rem', color: '#64748b', marginTop: 3 }}>
-              Configure o destino para onde o cliente será redirecionado via QR Code ou Toque NFC.
+              Configure o redirecionamento quando o cliente escanea o QR Code ou toca no NFC do Totem.
             </p>
           </div>
           <button className="btn-secondary" style={{ padding: '6px' }} onClick={onClose}><X size={16} /></button>
         </div>
 
-        {/* Canal de destino */}
-        <div>
-          <p style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: 10, fontWeight: 600 }}>CANAL DE DESTINO</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-            {[
-              { id: 'WHATSAPP', label: 'WhatsApp', icon: '💬', color: '#25d366' },
-              { id: 'INSTAGRAM', label: 'Instagram', icon: '📷', color: '#e1306c' },
-              { id: 'URL',       label: 'Link / Site', icon: '🌐', color: '#38bdf8' }
-            ].map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleTypeChange(item.id as any)}
-                style={{
-                  padding: '12px 8px', borderRadius: 12,
-                  border: `2px solid ${type === item.id ? item.color : 'rgba(255,255,255,0.1)'}`,
-                  background: type === item.id ? `${item.color}20` : 'rgba(255,255,255,0.03)',
-                  color: type === item.id ? '#fff' : '#64748b',
-                  fontWeight: 700, fontSize: '0.86rem', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  transition: 'all .18s'
-                }}
-              >
-                {item.icon} {item.label}
-              </button>
-            ))}
-          </div>
+        {/* SELETOR DE MODO */}
+        <div style={{ background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, border: '1px solid rgba(255,255,255,0.08)' }}>
+          <button
+            type="button"
+            onClick={() => setMode('DIRECT')}
+            style={{
+              padding: '12px 14px',
+              borderRadius: 10,
+              border: 'none',
+              background: mode === 'DIRECT' ? '#f59e0b' : 'transparent',
+              color: mode === 'DIRECT' ? '#000' : '#94a3b8',
+              fontWeight: 800,
+              fontSize: '0.88rem',
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              transition: 'all .18s'
+            }}
+          >
+            ⚡ Link Direto
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('PROFILE')}
+            style={{
+              padding: '12px 14px',
+              borderRadius: 10,
+              border: 'none',
+              background: mode === 'PROFILE' ? '#f59e0b' : 'transparent',
+              color: mode === 'PROFILE' ? '#000' : '#94a3b8',
+              fontWeight: 800,
+              fontSize: '0.88rem',
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              transition: 'all .18s'
+            }}
+          >
+            🎴 Cartão Digital (Perfil)
+          </button>
         </div>
 
-        {/* Campos por tipo */}
-        {type === 'WHATSAPP' ? (
+        {/* MODO DIRECT */}
+        {mode === 'DIRECT' ? (
+          <>
+            <div>
+              <p style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: 10, fontWeight: 600 }}>CANAL DE DESTINO</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                {[
+                  { id: 'WHATSAPP', label: 'WhatsApp', icon: '💬', color: '#25d366' },
+                  { id: 'INSTAGRAM', label: 'Instagram', icon: '📷', color: '#e1306c' },
+                  { id: 'URL',       label: 'Link / Site', icon: '🌐', color: '#38bdf8' }
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => { setDirectType(item.id as any); setPhone(''); setText(''); setTarget(''); }}
+                    style={{
+                      padding: '12px 8px', borderRadius: 12,
+                      border: `2px solid ${directType === item.id ? item.color : 'rgba(255,255,255,0.1)'}`,
+                      background: directType === item.id ? `${item.color}20` : 'rgba(255,255,255,0.03)',
+                      color: directType === item.id ? '#fff' : '#64748b',
+                      fontWeight: 700, fontSize: '0.86rem', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      transition: 'all .18s'
+                    }}
+                  >
+                    {item.icon} {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {directType === 'WHATSAPP' ? (
+              <>
+                <div>
+                  <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                    NÚMERO DO WHATSAPP <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    className="input-field"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="Ex.: 21985080634 ou +55 (21) 98508-0634"
+                    style={{ fontSize: '0.95rem' }}
+                  />
+                  {phone.trim() !== '' && phone.replace(/\D/g, '').length < 10 && (
+                    <p style={{ color: '#f87171', fontSize: '0.75rem', marginTop: 4 }}>
+                      Informe o número com DDD e código do país (mín. 10 dígitos).
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                    MENSAGEM PRÉ-PREENCHIDA <span style={{ color: '#64748b', fontWeight: 400 }}>(opcional)</span>
+                  </label>
+                  <textarea
+                    className="input-field"
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    placeholder="Ex.: Olá! Vi sua empresa no VitDoor e gostaria de mais informações."
+                    rows={2}
+                    maxLength={512}
+                    style={{ fontSize: '0.9rem', resize: 'vertical', lineHeight: 1.5 }}
+                  />
+                </div>
+              </>
+            ) : directType === 'INSTAGRAM' ? (
+              <div>
+                <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                  PERFIL DO INSTAGRAM
+                </label>
+                <input
+                  className="input-field"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  placeholder="Ex.: @sualoja ou https://instagram.com/sualoja"
+                  style={{ fontSize: '0.95rem' }}
+                />
+              </div>
+            ) : (
+              <div>
+                <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                  URL DO SITE / LINK PERSONALIZADO
+                </label>
+                <input
+                  className="input-field"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  placeholder="Ex.: https://cardapio.com ou https://g.page/review"
+                  style={{ fontSize: '0.95rem' }}
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          /* MODO PROFILE (CARTÃO DIGITAL) */
           <>
             <div>
               <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-                NÚMERO DO WHATSAPP <span style={{ color: '#ef4444' }}>*</span>
+                NOME DA EMPRESA / CAMPANHA <span style={{ color: '#ef4444' }}>*</span>
               </label>
               <input
                 className="input-field"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Ex.: 5521985080634 ou +55 (21) 98508-0634"
+                value={profileTitle}
+                onChange={(e) => setProfileTitle(e.target.value)}
+                placeholder="Ex.: Restaurante Sabor &amp; Arte"
                 style={{ fontSize: '0.95rem' }}
               />
-              {phone.trim() !== '' && phone.replace(/\D/g, '').length < 10 && (
-                <p style={{ color: '#f87171', fontSize: '0.75rem', marginTop: 4 }}>
-                  Informe o número com DDD e código do país (mín. 10 dígitos).
-                </p>
-              )}
             </div>
+
             <div>
               <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-                MENSAGEM PRÉ-PREENCHIDA <span style={{ color: '#64748b', fontWeight: 400 }}>(opcional)</span>
+                SUBTÍTULO / APRESENTAÇÃO <span style={{ color: '#64748b', fontWeight: 400 }}>(opcional)</span>
               </label>
-              <textarea
+              <input
                 className="input-field"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Ex.: Olá! Vi sua empresa no VitDoor e gostaria de mais informações."
-                rows={3}
-                maxLength={512}
-                style={{ fontSize: '0.9rem', resize: 'vertical', lineHeight: 1.5 }}
+                value={profileSubtitle}
+                onChange={(e) => setProfileSubtitle(e.target.value)}
+                placeholder="Ex.: Confira nossas redes sociais, cardápio e fale conosco!"
+                maxLength={200}
               />
             </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600 }}>
+                  BOTÕES DE LINK DO CARTÃO DIGITAL ({profileLinks.length}/6)
+                </label>
+                {profileLinks.length < 6 && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ fontSize: '0.78rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                    onClick={addProfileLink}
+                  >
+                    <Plus size={14} /> Adicionar Link
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {profileLinks.map((link, idx) => (
+                  <div key={link.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <select
+                        className="input-field"
+                        value={link.type}
+                        onChange={(e) => updateProfileLink(link.id, 'type', e.target.value)}
+                        style={{ width: 140, fontSize: '0.82rem' }}
+                      >
+                        <option value="WHATSAPP">💬 WhatsApp</option>
+                        <option value="INSTAGRAM">📷 Instagram</option>
+                        <option value="YOUTUBE">🎬 Vídeo YouTube</option>
+                        <option value="TIKTOK">🎵 Vídeo TikTok</option>
+                        <option value="URL">🌐 Link / Site</option>
+                      </select>
+
+                      <input
+                        className="input-field"
+                        value={link.label}
+                        onChange={(e) => updateProfileLink(link.id, 'label', e.target.value)}
+                        placeholder="Texto do Botão (ex.: Fale no WhatsApp)"
+                        style={{ flex: 1, fontSize: '0.82rem' }}
+                      />
+
+                      {profileLinks.length > 1 && (
+                        <button
+                          type="button"
+                          className="btn-danger"
+                          style={{ padding: '8px' }}
+                          onClick={() => removeProfileLink(link.id)}
+                          title="Remover este link"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    <input
+                      className="input-field"
+                      value={link.target}
+                      onChange={(e) => updateProfileLink(link.id, 'target', e.target.value)}
+                      placeholder={
+                        link.type === 'WHATSAPP' ? 'Número WhatsApp (ex.: 21985080634)'
+                        : link.type === 'INSTAGRAM' ? 'Perfil ou Link (ex.: @sualoja)'
+                        : link.type === 'YOUTUBE' ? 'Link do Vídeo no YouTube'
+                        : link.type === 'TIKTOK' ? 'Link do Vídeo no TikTok'
+                        : 'https://seusite.com.br'
+                      }
+                      style={{ fontSize: '0.82rem' }}
+                    />
+
+                    {link.type === 'WHATSAPP' && (
+                      <input
+                        className="input-field"
+                        value={link.text || ''}
+                        onChange={(e) => updateProfileLink(link.id, 'text', e.target.value)}
+                        placeholder="Mensagem pronta opcional (ex.: Olá! Vi o anúncio no VitDoor)"
+                        style={{ fontSize: '0.8rem', opacity: 0.9 }}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           </>
-        ) : type === 'INSTAGRAM' ? (
-          <div>
-            <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-              PERFIL DO INSTAGRAM
-            </label>
-            <input
-              className="input-field"
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              placeholder="Ex.: @sualoja ou https://instagram.com/sualoja"
-              style={{ fontSize: '0.95rem' }}
-            />
-          </div>
-        ) : (
-          <div>
-            <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-              URL DO SITE / LINK PERSONALIZADO
-            </label>
-            <input
-              className="input-field"
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              placeholder="Ex.: https://cardapio.com ou https://g.page/review"
-              style={{ fontSize: '0.95rem' }}
-            />
-          </div>
         )}
 
-        {/* Texto abaixo do QR Code */}
+        {/* Texto abaixo do QR Code no Player */}
         <div>
           <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-            TEXTO ABAIXO DO QR CODE <span style={{ color: '#64748b', fontWeight: 400 }}>(opcional)</span>
+            TEXTO EXIBIDO ABAIXO DO QR CODE NA TELA <span style={{ color: '#64748b', fontWeight: 400 }}>(opcional)</span>
           </label>
           <input
             className="input-field"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder={
-              type === 'WHATSAPP' ? 'Ex.: Fale conosco no WhatsApp!'
-              : type === 'INSTAGRAM' ? 'Ex.: Siga-nos no Instagram'
-              : 'Ex.: Acesse nosso cardápio'
+              mode === 'PROFILE' ? 'Ex.: Escaneie e confira nossas ofertas!'
+              : directType === 'WHATSAPP' ? 'Ex.: Fale conosco no WhatsApp!'
+              : directType === 'INSTAGRAM' ? 'Ex.: Siga-nos no Instagram'
+              : 'Ex.: Acesse nosso site'
             }
             maxLength={80}
           />
         </div>
 
-        {/* Posição */}
+        {/* Posição na Tela */}
         <div>
           <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-            POSIÇÃO NA TELA
+            POSIÇÃO DO QR CODE NA TELA
           </label>
           <select className="input-field" value={position} onChange={(e) => setPosition(e.target.value)}>
             {Object.entries(positionLabels).map(([val, lbl]) => (
@@ -601,10 +824,13 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
           <div style={{ display: 'flex', alignItems: 'center', gap: 18, background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '16px 20px' }}>
             <img src={qr} alt="Prévia do QR Code" width={100} height={100} style={{ borderRadius: 8 }} />
             <div>
-              <p style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>Prévia do QR Code</p>
+              <p style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>
+                Prévia do QR Code ({mode === 'PROFILE' ? '🎴 Cartão Digital' : '⚡ Link Direto'})
+              </p>
               <p style={{ color: '#64748b', fontSize: '0.78rem', marginTop: 4, lineHeight: 1.5 }}>
-                Ao escanear, o sistema registra o acesso e redireciona para o destino configurado.
-                {type === 'WHATSAPP' && ' Via NFC, o aplicativo do WhatsApp é aberto diretamente.'}
+                {mode === 'PROFILE'
+                  ? 'Ao escanear ou encostar via NFC, o cliente abrirá o Cartão Digital com todos os seus botões de contato e vídeos.'
+                  : 'Ao escanear ou encostar via NFC, o cliente será levado diretamente para o destino configurado.'}
               </p>
             </div>
           </div>
@@ -621,7 +847,7 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
             }}
             onClick={() => isValid() && onSave(buildCtaPayload())}
           >
-            <QrCode size={16} /> Salvar QR Code
+            <QrCode size={16} /> Salvar QR Code / NFC
           </button>
           {media.cta?.enabled && (
             <button
@@ -638,6 +864,7 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
     </div>
   );
 }
+
 
 
 
