@@ -45,6 +45,7 @@ export const QueueTab: React.FC<QueueTabProps> = ({ screens, tenantId }) => {
     try {
       const res = await apiFetch('/queues/admin', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
           prefix: prefix.trim(),
