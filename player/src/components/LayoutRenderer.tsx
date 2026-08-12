@@ -191,7 +191,11 @@ export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
         <div style={{
           position: 'absolute',
           inset: 0,
-          background: 'rgba(185, 28, 28, 0.95)',
+          background: activeAlert.alertType === 'EVACUATION' || activeAlert.alertType === 'DANGER'
+            ? 'rgba(185, 28, 28, 0.95)'
+            : activeAlert.alertType === 'INFO'
+            ? 'rgba(29, 78, 216, 0.95)'
+            : 'rgba(180, 83, 9, 0.95)',
           zIndex: 9999,
           display: 'flex',
           flexDirection: 'column',

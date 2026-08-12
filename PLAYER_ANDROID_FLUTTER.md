@@ -4,9 +4,9 @@
 >
 > Repositório sugerido: `vitdoor-player-flutter`. O painel web e o backend permanecem no repositório `vitdoor`.
 
-**Versão:** 1.4
+**Versão:** 1.5
 **Data:** 11/08/2026  
-**Estado:** especificação atualizada; backend do Chamador de Senhas (TICKET_CALLED + TTS) e QR Code com rastreamento concluídos, integração Flutter pendente
+**Estado:** especificação atualizada; backend, chamador de senhas e paleta de cores de Alertas Emergenciais (Vermelho, Laranja, Azul) concluídos no web/backend, integração Flutter pendente
 
 ## 1. Objetivo
 
@@ -1127,3 +1127,85 @@ Campos da mensagem:
 - [ ] Player Flutter inclui áudio/sintetizador de *Chime*;
 - [ ] Widget `QueueTicketOverlay` implementado com animação e card de senha gigante;
 - [ ] Teste de integração: clique em "Chamar Próximo" no celular toca a TV instantaneamente.
+
+---
+
+## 28. Alertas Emergenciais (Tonalidades de Cor por Nível de Severidade)
+
+**Estado:** `BACKEND_PRONTO` — integração Flutter pendente.
+
+### 28.1 Objetivo
+
+Permitir que o administrador da plataforma ou do cliente transmita mensagens de alerta de alta prioridade que sobrepõem a programação em exibição na TV. O sistema suporta **3 níveis de severidade visual**, cada um associado a uma cor de fundo específica.
+
+---
+
+### 28.2 Mensagens WebSocket Recebidas
+
+#### A. Disparo de Alerta (`EMERGENCY_ALERT_TRIGGERED`)
+
+```json
+{
+  "type": "EMERGENCY_ALERT_TRIGGERED",
+  "alert": {
+    "id": "uuid",
+    "title": "EVACUAÇÃO IMEDIATA",
+    "message": "Incêndio detectado no Bloco B. Utilize as saídas de emergência.",
+    "alertType": "EVACUATION",
+    "active": true,
+    "durationSeconds": 120,
+    "createdAt": "2026-08-11T21:15:00.000Z"
+  }
+}
+```
+
+#### B. Remoção de Alerta (`EMERGENCY_ALERT_CLEARED`)
+
+```json
+{
+  "type": "EMERGENCY_ALERT_CLEARED"
+}
+```
+
+---
+
+### 28.3 Especificação das 3 Tonalidades de Cor (`alertType`)
+
+O player Flutter deve selecionar a cor de fundo do modal de sobreposição em tela cheia com base no campo `alert.alertType`:
+
+| Nível de Severidade | Valores de `alertType` | Cor HEX | Cor RGBA (Transparência 95%) | Uso Recomendado |
+|---|---|---|---|---|
+| 🔴 **VERMELHO (Crítico / Perigo)** | `EVACUATION`, `DANGER`, `CRITICAL` | `#b91c1c` | `rgba(185, 28, 28, 0.95)` | Evacuação imediata, incêndio, ameaça à segurança, emergência médica crítica |
+| 🟠 **LARANJA (Urgente / Atenção)** | `WARNING`, `URGENT` | `#b45309` | `rgba(180, 83, 9, 0.95)` | Alerta de manutenção urgente, queda de energia iminente, tempestade, atenção |
+| 🔵 **AZUL (Informativo / Geral)** | `INFO`, `NOTICE` | `#1d4ed8` | `rgba(29, 78, 216, 0.95)` | Comunicado oficial importante, avisos gerais de utilidade pública |
+
+> **Regra de Fallback**: Caso o campo `alertType` venha com um valor desconhecido ou nulo, o player deve utilizar a cor **Laranja (`rgba(180, 83, 9, 0.95)`)** como padrão.
+
+---
+
+### 28.4 Regras de Renderização Visual no Flutter
+
+- **Camada e zIndex**: Renderizar em tela cheia (`inset: 0`) como o widget de **maior prioridade visual** de toda a aplicação (acima de mídias, playlists, relógios e chamadas de senhas).
+- **Tipografia**:
+  - Título (`title`): fonte em caixa alta, tamanho de pelo menos 48–64 sp, peso 900 (ultra bold), cor branca (`#ffffff`).
+  - Mensagem (`message`): fonte em tamanho 24–36 sp, peso 600, cor branca (`#ffffff`), alinhada ao centro com quebras de linha respeitadas.
+- **Ícone**: Exibir o ícone de alerta/sirene (`AlertTriangle` / `Siren`) em tamanho gigante (120 sp) centralizado acima do título.
+- **Animação**: Aplicar efeito de pulso contínuo de escala/opacidade (*pulse animation*) a cada 1,5 segundo para capturar a atenção de todos no ambiente.
+
+---
+
+### 28.5 Hierarquia e Prioridades de Áudio e Tela
+
+1. O **Alerta Emergencial** cancela a reprodução de áudio da mídia ativa e suprime o som do chamador de senhas.
+2. Quando a mensagem `EMERGENCY_ALERT_CLEARED` for recebida, o modal deve ser removido instantaneamente e o player deve retomar a programação normal.
+
+---
+
+### 28.6 Checklist de Entrega — Alertas Emergenciais no Flutter
+
+- [x] Backend gerencia criação, ativação, expiração e broadcast de alertas por tela;
+- [x] Painel admin exibe prévia em tempo real com as 3 cores (Vermelho, Laranja, Azul);
+- [x] Player Web atualizado para aplicar cores dinâmicas conforme `alertType`;
+- [ ] Player Flutter implementa overlay de alerta com as 3 cores conforme tabela acima;
+- [ ] Player Flutter escuta mensagens `EMERGENCY_ALERT_TRIGGERED` e `EMERGENCY_ALERT_CLEARED`;
+- [ ] Teste de integração: disparo de alerta no admin muda a cor da TV instantaneamente.
