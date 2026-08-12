@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   Building2,
   Tv2,
+  Ticket,
   LogOut
 } from 'lucide-react';
 
@@ -29,7 +30,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, tenan
     { id: 'layouts', label: 'Editor de Layouts', icon: Layout },
     { id: 'playlists', label: 'Playlists', icon: ListVideo },
     { id: 'campaigns', label: 'Campanhas & Agendamentos', icon: CalendarRange },
-    { id: 'proof-of-play', label: 'Proof of Play & Relatórios', icon: BarChart3 },
+    {id: 'proof-of-play', label: 'Proof of Play & Relatórios', icon: BarChart3 },
+    { id: 'queues', label: 'Chamador de Senhas', icon: Ticket },
     { id: 'emergency', label: 'Alerta Emergencial', icon: AlertTriangle },
     { id: 'tenants', label: 'Clientes & Licenças', icon: Building2, masterOnly: true },
   ];

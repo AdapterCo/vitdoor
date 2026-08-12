@@ -300,6 +300,16 @@ export function sendCommandToScreen(screenId: string, command: any) {
   return false;
 }
 
+export function broadcastTicketCalled(screenId: string, data: { ticketNumber: string; deskName: string; audioText: string }) {
+  return sendCommandToScreen(screenId, {
+    type: 'TICKET_CALLED',
+    ticketNumber: data.ticketNumber,
+    deskName: data.deskName,
+    audioText: data.audioText,
+    calledAt: new Date().toISOString()
+  });
+}
+
 export async function sendManifestToScreen(
   screenId: string,
   forceReload = false,

@@ -35,6 +35,7 @@ model Tenant {
   tickets         MaintenanceTicket[]
   remoteCommands  RemoteCommand[]
   qrScans         QrScan[]
+  ticketQueues    TicketQueue[]
 }
 
 model User {
@@ -111,6 +112,7 @@ model Screen {
   remoteCommands   RemoteCommand[]
   manifests        ScreenManifest[]
   qrScans          QrScan[]
+  ticketQueues     TicketQueue[]
 }
 
 model ScreenManifest {
@@ -349,4 +351,35 @@ model QrScan {
   @@index([tenantId, scannedAt])
   @@index([mediaId, scannedAt])
   @@index([screenId, scannedAt])
+}
+
+model TicketQueue {
+  id           String        @id @default(uuid())
+  tenantId     String
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String        // ex: "Atendimento Geral", "Açougue", "Consultório 1"
+  prefix       String        @default("") // ex: "A", "P", "C", ou ""
+  currentNum   Int           @default(0)
+  pinCode      String        // PIN único de 4-6 dígitos para acesso do operador (ex: 1234)
+  deskName     String        @default("Guichê 01") // ex: "Consultório 03", "Balcão 02"
+  screenId     String?
+  screen       Screen?       @relation(fields: [screenId], references: [id], onDelete: SetNull)
+  tickets      QueueTicket[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([tenantId])
+  @@index([pinCode])
+}
+
+model QueueTicket {
+  id           String      @id @default(uuid())
+  queueId      String
+  queue        TicketQueue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  ticketNumber String      // ex: "A042" ou "042"
+  deskName     String      // ex: "Consultório 03"
+  status       String      @default("CALLED") // CALLED, COMPLETED, CANCELLED
+  calledAt     DateTime    @default(now())
+
+  @@index([queueId, calledAt])
 }

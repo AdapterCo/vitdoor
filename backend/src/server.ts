@@ -24,6 +24,7 @@ import { authenticate } from './middleware/auth.js';
 import { assertStorageConfiguration } from './lib/storage.js';
 import { qrRoutes } from './routes/qrRoutes.js';
 import { qrStatsRoutes } from './routes/qrStatsRoutes.js';
+import { queueRoutes } from './routes/queueRoutes.js';
 import {
   apiRateLimiter,
   loginRateLimiter,
@@ -83,6 +84,7 @@ app.use('/api/proof-of-play', proofOfPlayRoutes);
 app.use('/api/emergency', authenticate, emergencyRoutes);
 app.use('/api/tenants', authenticate, tenantRoutes);
 app.use('/api/qr-scans', authenticate, qrStatsRoutes);
+app.use('/api/queues', queueRoutes); // handles both /operator (public with PIN) and /admin (authed)
 app.use('/r', qrRoutes); // public QR redirect — no auth
 
 app.get('/api/health', async (_req, res) => {

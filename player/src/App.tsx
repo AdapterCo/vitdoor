@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { PairingScreen } from './components/PairingScreen';
 import { LayoutRenderer } from './components/LayoutRenderer';
+import { QueueTicketOverlay } from './components/QueueTicketOverlay';
 import { setCache, getCache, addProofLog, getAllProofLogs, clearProofLogs } from './services/storageService';
 import { API_BASE, getWebSocketUrl } from './config';
 
@@ -15,6 +16,7 @@ export function App() {
   const [activePlaylist, setActivePlaylist] = useState<any>(null);
   const [activeLayout, setActiveLayout] = useState<any>(null);
   const [activeAlert, setActiveAlert] = useState<any>(null);
+  const [calledTicket, setCalledTicket] = useState<any>(null);
   const [volume, setVolume] = useState<number>(80);
   const [suspended, setSuspended] = useState(false);
 
@@ -181,6 +183,13 @@ export function App() {
             setActiveAlert(msg.alert);
           } else if (msg.type === 'EMERGENCY_ALERT_CLEARED') {
             setActiveAlert(null);
+          } else if (msg.type === 'TICKET_CALLED') {
+            setCalledTicket({
+              ticketNumber: msg.ticketNumber,
+              deskName: msg.deskName,
+              audioText: msg.audioText,
+              calledAt: msg.calledAt
+            });
           } else if (msg.type === 'TENANT_SUSPENDED') {
             setSuspended(true);
             setActiveAlert(null);
@@ -261,14 +270,17 @@ export function App() {
       ) : !paired ? (
         <PairingScreen pairingCode={pairingCode} isConnected={isConnected} />
       ) : (
-        <LayoutRenderer
-          activePlaylist={activePlaylist}
-          activeLayout={activeLayout}
-          activeAlert={activeAlert}
-          volume={volume}
-          screenId={screenInfo?.id}
-          onMediaChanged={handleMediaChanged}
-        />
+        <>
+          <LayoutRenderer
+            activePlaylist={activePlaylist}
+            activeLayout={activeLayout}
+            activeAlert={activeAlert}
+            volume={volume}
+            screenId={screenInfo?.id}
+            onMediaChanged={handleMediaChanged}
+          />
+          <QueueTicketOverlay ticket={calledTicket} />
+        </>
       )}
     </div>
   );

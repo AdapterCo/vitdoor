@@ -9,6 +9,8 @@ import { CampaignsTab } from './components/CampaignsTab';
 import { ProofOfPlayTab } from './components/ProofOfPlayTab';
 import { EmergencyTab } from './components/EmergencyTab';
 import { TenantsTab } from './components/TenantsTab';
+import { QueueTab } from './components/QueueTab';
+import { QueueCallerApp } from './components/QueueCallerApp';
 import { getWebSocketUrl } from './config';
 import { apiFetch } from './api';
 import { LoginScreen } from './components/LoginScreen';
@@ -426,6 +428,11 @@ export function App() {
     clearAuthenticatedState();
   };
 
+  // If URL path is /chamar, render the standalone QueueCallerApp directly without requiring full admin login
+  if (window.location.pathname === '/chamar' || window.location.pathname.startsWith('/chamar')) {
+    return <QueueCallerApp />;
+  }
+
   if (authLoading) {
     return <div className="login-page"><div style={{ color: '#94a3b8' }}>Carregando painel...</div></div>;
   }
@@ -514,6 +521,13 @@ export function App() {
         )}
 
         {activeTab === 'proof-of-play' && <ProofOfPlayTab stats={stats} qrStats={qrStats} />}
+
+        {activeTab === 'queues' && (
+          <QueueTab
+            screens={screens}
+            tenantId={activeTenant?.id}
+          />
+        )}
 
         {activeTab === 'emergency' && (
           <EmergencyTab
