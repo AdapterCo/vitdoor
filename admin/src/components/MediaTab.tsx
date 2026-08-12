@@ -478,7 +478,7 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
           <button
             className="btn-primary"
             style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px' }}
-            onClick={() => onSave({ enabled: true, type, target, position, size: 160, label })}
+            onClick={() => onSave({ enabled: true, type, target: normalized, position, size: 160, label })}
           >
             <QrCode size={16} /> Salvar QR Code
           </button>
