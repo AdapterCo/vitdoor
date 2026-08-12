@@ -4,27 +4,29 @@
 >
 > Repositório sugerido: `vitdoor-player-flutter`. O painel web e o backend permanecem no repositório `vitdoor`.
 
-**Versão:** 1.5
+**Versão:** 1.6
 **Data:** 11/08/2026  
-**Estado:** especificação atualizada; backend, chamador de senhas e paleta de cores de Alertas Emergenciais (Vermelho, Laranja, Azul) concluídos no web/backend, integração Flutter pendente
+**Estado:** especificação oficial; o aplicativo Flutter Android é o ÚNICO player comercial de produção e ambiente oficial de testes e homologação. O simulador web foi descontinuado.
 
 ## 1. Objetivo
 
-Criar o player comercial do VitDoor como aplicativo Flutter para Android, capaz de:
+Criar e manter o player comercial exclusivo do VitDoor como aplicativo Flutter para Android (`br.com.vitdoor.player`), capaz de:
 
 - parear uma TV Box por código de uso único;
-- receber programação exclusiva da tela autenticada;
-- baixar e validar todas as mídias antes da publicação;
+- receber programação exclusiva da tela autenticada via manifesto versionado;
+- baixar e validar todas as mídias fisicamente antes da publicação;
 - reproduzir vídeo, imagem, áudio, páginas permitidas e layouts multizona;
-- continuar reproduzindo sem internet e após reinicialização;
+- reproduzir integralmente offline e após reinicialização;
 - executar loop contínuo por padrão;
 - respeitar áudio, volume e enquadramento por zona;
+- exibir chamadas de senhas em tempo real (`TICKET_CALLED`) com som de Chime e síntese de voz (TTS);
+- exibir alertas emergenciais sobrepostos com as 3 cores dinâmicas (Vermelho, Laranja, Azul);
 - receber sincronização, volume, alerta, screenshot e reinicialização remotos;
-- registrar proof-of-play offline e sincronizar posteriormente;
-- operar em tela cheia, iniciar no boot e oferecer modo quiosque;
-- preservar a última programação válida quando uma atualização falhar.
+- registrar proof-of-play offline com ID único idempotente e sincronizar posteriormente;
+- operar em tela cheia, iniciar automaticamente no boot e oferecer modo quiosque/Lock Task;
+- preservar a última programação válida quando uma atualização falhar (rollback atômico).
 
-O aplicativo não terá funções administrativas. Uploads, clientes, telas, layouts e playlists continuam no painel web.
+O aplicativo não possui funções administrativas. Todo o gerenciamento de mídias, clientes, telas, playlists, chamador de senhas e relatórios é realizado via painel web/API.
 
 ## 2. Decisão tecnológica
 
