@@ -33,12 +33,38 @@ export function QueueCallerApp() {
   const [isCustomModalOpen, setIsCustomModalOpen] = useState<boolean>(false);
   const [lastCalled, setLastCalled] = useState<string | null>(null);
 
-  // Auto-login if PIN is saved
+  // Read PIN from URL query string if provided, then clean URL immediately
   useEffect(() => {
-    if (pinCode) {
+    const searchParams = new URLSearchParams(window.location.search);
+    const pinFromUrl = searchParams.get('pin');
+    if (pinFromUrl) {
+      const cleanPin = pinFromUrl.trim();
+      setPinCode(cleanPin);
+      // Clean query string from browser address bar immediately for security and aesthetics
+      window.history.replaceState({}, document.title, window.location.pathname);
+      handleAuth(cleanPin);
+    } else if (pinCode) {
       handleAuth(pinCode);
     }
   }, []);
+
+  // Poll status every 10 seconds when authenticated to keep TV Online/Offline status updated
+  useEffect(() => {
+    if (!authenticated || !pinCode) return;
+    const interval = setInterval(() => {
+      fetch(`${API_BASE}/queues/operator/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinCode: pinCode.trim() })
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.queue) setQueue(data.queue);
+        })
+        .catch(() => undefined);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [authenticated, pinCode]);
 
   const handleAuth = async (pinToUse: string) => {
     setLoading(true);

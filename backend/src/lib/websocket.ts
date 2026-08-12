@@ -290,6 +290,16 @@ function clampInteger(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
+export function isScreenOnline(screenId?: string | null): boolean {
+  if (!screenId) return false;
+  for (const conn of activeConnections) {
+    if (conn.type === 'PLAYER' && conn.screenId === screenId && conn.ws.readyState === WebSocket.OPEN) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function sendCommandToScreen(screenId: string, command: any) {
   for (const conn of activeConnections) {
     if (conn.type === 'PLAYER' && conn.screenId === screenId && conn.ws.readyState === WebSocket.OPEN) {

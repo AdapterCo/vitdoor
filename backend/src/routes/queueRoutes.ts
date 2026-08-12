@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, tenantScope } from '../middleware/auth.js';
-import { broadcastTicketCalled } from '../lib/websocket.js';
+import { broadcastTicketCalled, isScreenOnline } from '../lib/websocket.js';
 
 export const queueRoutes = Router();
 
@@ -22,7 +22,7 @@ queueRoutes.post('/operator/auth', async (req: Request, res: Response): Promise<
   const queue = await prisma.ticketQueue.findFirst({
     where: { pinCode: pinCode.trim() },
     include: {
-      screen: { select: { id: true, name: true, status: true } },
+      screen: { select: { id: true, name: true, status: true, lastPing: true } },
       tenant: { select: { status: true } }
     }
   });
@@ -38,6 +38,10 @@ queueRoutes.post('/operator/auth', async (req: Request, res: Response): Promise<
     take: 5
   });
 
+  const online = isScreenOnline(queue.screenId) ||
+    queue.screen?.status === 'ONLINE' ||
+    Boolean(queue.screen?.lastPing && (Date.now() - new Date(queue.screen.lastPing).getTime()) < 60000);
+
   return res.json({
     queue: {
       id: queue.id,
@@ -47,7 +51,7 @@ queueRoutes.post('/operator/auth', async (req: Request, res: Response): Promise<
       deskName: queue.deskName,
       screenId: queue.screenId,
       screenName: queue.screen?.name || null,
-      screenStatus: queue.screen?.status || 'OFFLINE'
+      screenStatus: online ? 'ONLINE' : 'OFFLINE'
     },
     recentTickets
   });
