@@ -16,13 +16,24 @@ const scanRateLimit = rateLimit({
   }
 });
 
+function getNormalizedTargetUrl(cta: any): string {
+  if (cta?.type === 'WHATSAPP') {
+    const rawTarget = String(cta.target || '');
+    const phoneDigits = rawTarget.replace(/\D/g, '');
+    if (phoneDigits.length >= 10) {
+      return `https://wa.me/${phoneDigits}`;
+    }
+  }
+  return String(cta?.target || '');
+}
+
 /**
  * GET /r/:mediaId?s=:screenId
  *
  * Endpoint público sem autenticação.
  * - Valida que a mídia pertence a um tenant ativo e tem CTA configurado.
  * - Registra o scan (tenantId, mediaId, screenId, ctaType, userAgent).
- * - Faz redirect 302 para a URL real (WhatsApp/Instagram).
+ * - Faz redirect 302 para a URL real (WhatsApp https://wa.me/ / Instagram).
  *
  * URL gerada pelo player: /r/<mediaId>?s=<screenId>
  */
@@ -54,7 +65,7 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
     return res.status(404).send('Not found');
   }
 
-  // Validate screenId if provided (looks up by ID, matching tenant first, then fallback to ID alone)
+  // Validate screenId if provided, or resolve automatically from media's active screens
   let validatedScreenId: string | null = null;
   if (screenId && screenId.length > 0) {
     const screen = await prisma.screen.findFirst({
@@ -62,6 +73,21 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
       select: { id: true }
     });
     validatedScreenId = screen?.id ?? null;
+  }
+
+  // Fallback: if screenId wasn't passed in query string, resolve which screen is currently playing this mediaId
+  if (!validatedScreenId) {
+    const activeScreen = await prisma.screen.findFirst({
+      where: {
+        tenantId: media.tenantId,
+        OR: [
+          { currentMediaId: media.id },
+          { activePlaylist: { items: { some: { mediaId: media.id } } } }
+        ]
+      },
+      select: { id: true }
+    });
+    validatedScreenId = activeScreen?.id ?? null;
   }
 
   // Register the scan asynchronously (do not block the redirect)
@@ -77,10 +103,12 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
     }
   }).catch(() => { /* Non-blocking: do not fail redirect if DB write fails */ });
 
+  const redirectUrl = getNormalizedTargetUrl(cta);
+
   // Cache-busting: redirect must not be cached by proxies
   res.setHeader('Cache-Control', 'no-store, no-cache');
   res.setHeader('Pragma', 'no-cache');
-  return res.redirect(302, cta.target);
+  return res.redirect(302, redirectUrl);
 });
 
 /**
@@ -198,9 +226,11 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
     }
   }).catch(() => { /* Non-blocking */ });
 
+  const redirectUrl = getNormalizedTargetUrl(cta);
+
   // Redirect to WhatsApp / Instagram
   res.setHeader('Cache-Control', 'no-store, no-cache');
   res.setHeader('Pragma', 'no-cache');
-  return res.redirect(302, cta.target);
+  return res.redirect(302, redirectUrl);
 });
 
