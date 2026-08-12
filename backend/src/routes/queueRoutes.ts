@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { tenantScope } from '../middleware/auth.js';
+import { authenticate, tenantScope } from '../middleware/auth.js';
 import { broadcastTicketCalled } from '../lib/websocket.js';
 
 export const queueRoutes = Router();
@@ -237,74 +237,86 @@ queueRoutes.post('/operator/reset', async (req: Request, res: Response): Promise
 // ==========================================
 
 /**
- * GET /api/queues?tenantId=:tenantId
+ * GET /api/queues/admin?tenantId=:tenantId
  */
-queueRoutes.get('/admin', async (req: Request, res: Response): Promise<any> => {
-  const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
+queueRoutes.get('/admin', authenticate, async (req: Request, res: Response): Promise<any> => {
+  try {
+    const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
 
-  const queues = await prisma.ticketQueue.findMany({
-    where: { tenantId },
-    include: {
-      screen: { select: { id: true, name: true, status: true } },
-      _count: { select: { tickets: true } }
-    },
-    orderBy: { createdAt: 'desc' }
-  });
+    const queues = await prisma.ticketQueue.findMany({
+      where: { tenantId },
+      include: {
+        screen: { select: { id: true, name: true, status: true } },
+        _count: { select: { tickets: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
 
-  return res.json(queues);
+    return res.json(queues);
+  } catch (err: any) {
+    return res.status(err.message === 'UNAUTHENTICATED' ? 401 : 400).json({ error: err.message || 'Erro ao buscar filas' });
+  }
 });
 
 /**
  * POST /api/queues/admin
  * Admin cria uma nova fila de senhas com PIN
  */
-queueRoutes.post('/admin', async (req: Request, res: Response): Promise<any> => {
-  const tenantId = tenantScope(req, req.body.tenantId);
-  const { name, prefix, deskName, screenId, pinCode } = req.body;
+queueRoutes.post('/admin', authenticate, async (req: Request, res: Response): Promise<any> => {
+  try {
+    const tenantId = tenantScope(req, req.body.tenantId);
+    const { name, prefix, deskName, screenId, pinCode } = req.body;
 
-  if (!name || typeof name !== 'string' || !name.trim()) {
-    return res.status(400).json({ error: 'Nome da fila é obrigatório.' });
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Nome da fila é obrigatório.' });
+    }
+
+    const cleanPin = typeof pinCode === 'string' && pinCode.trim() ? pinCode.trim() : Math.floor(1000 + Math.random() * 9000).toString();
+
+    // Check PIN uniqueness
+    const existingPin = await prisma.ticketQueue.findFirst({ where: { pinCode: cleanPin } });
+    if (existingPin) {
+      return res.status(400).json({ error: 'PIN já está em uso por outra fila. Escolha outro código.' });
+    }
+
+    let validatedScreenId: string | null = null;
+    if (screenId) {
+      const screen = await prisma.screen.findFirst({ where: { id: screenId, tenantId } });
+      if (screen) validatedScreenId = screen.id;
+    }
+
+    const queue = await prisma.ticketQueue.create({
+      data: {
+        tenantId,
+        name: name.trim(),
+        prefix: (prefix || '').trim().toUpperCase(),
+        deskName: (deskName || 'Guichê 01').trim(),
+        screenId: validatedScreenId,
+        pinCode: cleanPin
+      },
+      include: { screen: { select: { id: true, name: true } } }
+    });
+
+    return res.status(201).json(queue);
+  } catch (err: any) {
+    return res.status(err.message === 'UNAUTHENTICATED' ? 401 : 400).json({ error: err.message || 'Erro ao criar fila' });
   }
-
-  const cleanPin = typeof pinCode === 'string' && pinCode.trim() ? pinCode.trim() : Math.floor(1000 + Math.random() * 9000).toString();
-
-  // Check PIN uniqueness
-  const existingPin = await prisma.ticketQueue.findFirst({ where: { pinCode: cleanPin } });
-  if (existingPin) {
-    return res.status(400).json({ error: 'PIN já está em uso por outra fila. Escolha outro código.' });
-  }
-
-  let validatedScreenId: string | null = null;
-  if (screenId) {
-    const screen = await prisma.screen.findFirst({ where: { id: screenId, tenantId } });
-    if (screen) validatedScreenId = screen.id;
-  }
-
-  const queue = await prisma.ticketQueue.create({
-    data: {
-      tenantId,
-      name: name.trim(),
-      prefix: (prefix || '').trim().toUpperCase(),
-      deskName: (deskName || 'Guichê 01').trim(),
-      screenId: validatedScreenId,
-      pinCode: cleanPin
-    },
-    include: { screen: { select: { id: true, name: true } } }
-  });
-
-  return res.status(201).json(queue);
 });
 
 /**
  * DELETE /api/queues/admin/:id
  */
-queueRoutes.delete('/admin/:id', async (req: Request, res: Response): Promise<any> => {
-  const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const { id } = req.params;
+queueRoutes.delete('/admin/:id', authenticate, async (req: Request, res: Response): Promise<any> => {
+  try {
+    const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
+    const { id } = req.params;
 
-  const queue = await prisma.ticketQueue.findFirst({ where: { id, tenantId } });
-  if (!queue) return res.status(404).json({ error: 'Fila não encontrada.' });
+    const queue = await prisma.ticketQueue.findFirst({ where: { id, tenantId } });
+    if (!queue) return res.status(404).json({ error: 'Fila não encontrada.' });
 
-  await prisma.ticketQueue.delete({ where: { id } });
-  return res.json({ success: true });
+    await prisma.ticketQueue.delete({ where: { id } });
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(err.message === 'UNAUTHENTICATED' ? 401 : 400).json({ error: err.message || 'Erro ao excluir fila' });
+  }
 });
