@@ -120,9 +120,9 @@ export async function bumpScreenManifestVersions(screenIds: string[]): Promise<v
   });
 }
 
-export async function bumpOwnerManifestVersions(tenantId: string, ownerId: string): Promise<string[]> {
+export async function bumpOwnerManifestVersions(tenantId: string, _ownerId?: string): Promise<string[]> {
   const screens = await prisma.screen.findMany({
-    where: { tenantId, createdById: ownerId },
+    where: { tenantId },
     select: { id: true }
   });
   const ids = screens.map((screen) => screen.id);
