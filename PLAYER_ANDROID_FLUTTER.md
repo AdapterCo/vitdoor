@@ -4,9 +4,9 @@
 >
 > Repositório sugerido: `vitdoor-player-flutter`. O painel web e o backend permanecem no repositório `vitdoor`.
 
-**Versão:** 1.8  
-**Data:** 12/08/2026  
-**Estado:** especificação oficial; módulo de NFC Dinâmico por tela, Chamador de Senhas, Alertas Emergenciais e Módulo de CTA/QR Code (Direct & Profile) concluídos no web/backend, integração Flutter pendente
+**Versão:** 1.9  
+**Data:** 13/08/2026  
+**Estado:** especificação oficial; módulo de NFC Dinâmico, Chamador de Senhas, Alertas Emergenciais, CTA/QR Code e Proof-of-Play (API e Backend) concluídos no web/backend, integração Flutter em andamento pelo desenvolvedor app
 
 ## 1. Objetivo
 
@@ -626,22 +626,33 @@ Em qualquer falha, registrar diagnóstico, informar falha ao servidor e continua
 
 ## 13. Proof-of-play
 
-**Estado:** `BACKEND_PRONTO` — integração Flutter pendente.
+**Estado:** `BACKEND_E_PAINEL_PRONTOS` — O backend (`/api/proof-of-play/log` e `/log-batch`) e o Painel Web Admin estão 100% implementados e aguardando as requisições HTTP enviadas pelo aplicativo Flutter Android ao término de cada exibição de mídia.
 
-Registrar ao finalizar ou interromper cada item:
+> **Observação sobre a mensagem "Aguardando recepção dos primeiros logs de Proof-of-Play dos Players...":**  
+> Essa mensagem é exibida no Painel Web Admin na aba **Proof of Play & Relatórios** quando a tela pareada ainda não enviou nenhum evento de reprodução auditado via API HTTP. Assim que o aplicativo Flutter realizar o primeiro `POST /api/proof-of-play/log` ou `POST /api/proof-of-play/log-batch`, o histórico em tempo real do painel será atualizado automaticamente com o nome da mídia, horário e duração exibida!
+
+---
+
+### 13.1 Schema do Evento de Reprodução
+
+Registrar no dispositivo Android ao finalizar ou interromper cada mídia exibida:
 
 ```json
 {
   "eventId": "uuid-v4-gerado-uma-vez-no-dispositivo",
-  "screenId": "uuid",
-  "mediaName": "Oferta de sábado",
-  "playedAt": "2026-08-09T12:00:00.000Z",
-  "durationSeconds": 8,
+  "screenId": "uuid-da-tela-pareada",
+  "mediaName": "Oferta de Sábado - Hambúrguer.mp4",
+  "playedAt": "2026-08-13T12:00:00.000Z",
+  "durationSeconds": 15,
   "completed": true
 }
 ```
 
-Sincronização atual:
+---
+
+### 13.2 Endpoints de Envio HTTP
+
+#### Opção A: Envio em Lote (Recomendado para fila offline)
 
 ```http
 POST /api/proof-of-play/log-batch
@@ -649,37 +660,174 @@ Authorization: Bearer {deviceToken}
 Content-Type: application/json
 
 {
-  "items": ["até 500 eventos no schema acima"]
+  "items": [
+    {
+      "eventId": "123e4567-e89b-12d3-a456-426614174000",
+      "screenId": "98f12a34-1122-3344-5566-778899aabbcc",
+      "mediaName": "Oferta de Sábado - Hambúrguer.mp4",
+      "playedAt": "2026-08-13T12:00:00.000Z",
+      "durationSeconds": 15,
+      "completed": true
+    }
+  ]
 }
 ```
 
-Limite atual: 300 requisições por IP/minuto. Respostas de erro: `400` para lote fora de 1–500, `401` para credencial inválida e `429` por excesso. Eventos inválidos ou destinados a outra tela são contados em `rejected`, nunca gravados.
-
-Resposta `200`:
-
+Resposta `200 OK`:
 ```json
 {
-  "received": 3,
-  "accepted": 2,
-  "duplicates": 1,
+  "received": 1,
+  "accepted": 1,
+  "duplicates": 0,
   "rejected": 0,
-  "eventIds": ["uuid-1", "uuid-2", "uuid-3"]
+  "eventIds": ["123e4567-e89b-12d3-a456-426614174000"]
 }
 ```
 
-Também existe `POST /api/proof-of-play/log` para um único evento. Uma criação retorna `201` com `duplicate: false`; um reenvio retorna `200` com `duplicate: true` e o mesmo `eventId`.
+#### Opção B: Envio Individual (Evento a evento)
 
-Regras:
+```http
+POST /api/proof-of-play/log
+Authorization: Bearer {deviceToken}
+Content-Type: application/json
 
-- fila persistente offline;
-- lotes limitados e reenvio com backoff;
-- `eventId` é UUID obrigatório, criado uma única vez e persistido junto ao evento antes da primeira tentativa;
-- nunca gerar outro `eventId` durante retry, reinicialização ou reconexão;
-- o banco possui índice único composto por `screenId` + `eventId` e o lote usa inserção com descarte de duplicatas;
-- remover da fila os `eventIds` devolvidos; manter e diagnosticar os rejeitados;
-- `durationSeconds` é inteiro de 1 a 86400 e `playedAt` é ISO-8601 válido;
-- horário monotônico/local e horário de parede devem ser tratados com cuidado;
-- nunca aceitar `screenId` diferente da credencial.
+{
+  "eventId": "123e4567-e89b-12d3-a456-426614174000",
+  "screenId": "98f12a34-1122-3344-5566-778899aabbcc",
+  "mediaName": "Oferta de Sábado - Hambúrguer.mp4",
+  "playedAt": "2026-08-13T12:00:00.000Z",
+  "durationSeconds": 15,
+  "completed": true
+}
+```
+
+Resposta `201 Created`:
+```json
+{
+  "accepted": true,
+  "duplicate": false,
+  "eventId": "123e4567-e89b-12d3-a456-426614174000",
+  "id": "cldx..."
+}
+```
+
+---
+
+### 13.3 Regras de Implementação no Flutter
+
+- **Fila Persistente Offline**: Sempre salvar o evento num banco local (ex.: SQLite / Hive / Isar) antes de tentar o envio via rede. Se a TV Box estiver sem internet, os eventos são acumulados localmente e sincronizados em lote (`log-batch`) quando a conexão restabelecer.
+- **UUID Idempotente Único (`eventId`)**: Cada exibição ganha um `eventId` UUID v4 único gerado **UMA ÚNICA VEZ** no dispositivo. Nunca troque o `eventId` ao fazer retries ou reinicializar o app! O backend usa este ID para descartar duplicatas sem gerar erros.
+- **`mediaName`**: Deve ser o nome exatamente igual ao nome do arquivo de mídia retornado no manifesto JSON (ex: `"logo.png"` ou `"VideoPromocional.mp4"`).
+- **`durationSeconds`**: Inteiro de 1 a 86400 segundos.
+- **`playedAt`**: String formatada em ISO-8601 UTC (ex: `DateTime.now().toUtc().toIso8601String()`).
+
+---
+
+### 13.4 Código de Exemplo em Dart/Flutter (`ProofOfPlayService`)
+
+O código a seguir pode ser utilizado diretamente no aplicativo Flutter para gerenciar a fila e enviar os logs de reprodução:
+
+```dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
+
+class ProofOfPlayEvent {
+  final String eventId;
+  final String screenId;
+  final String mediaName;
+  final String playedAt;
+  final int durationSeconds;
+  final bool completed;
+
+  ProofOfPlayEvent({
+    required this.eventId,
+    required this.screenId,
+    required this.mediaName,
+    required this.playedAt,
+    required this.durationSeconds,
+    this.completed = true,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'eventId': eventId,
+        'screenId': screenId,
+        'mediaName': mediaName,
+        'playedAt': playedAt,
+        'durationSeconds': durationSeconds,
+        'completed': completed,
+      };
+}
+
+class ProofOfPlayService {
+  final String apiBaseUrl; // ex: https://api.vitdoor.com.br
+  final String deviceToken;
+  final String screenId;
+  final _uuid = const Uuid();
+
+  // Fila local de eventos em memória (recomendado persistir no SQLite/Hive)
+  final List<ProofOfPlayEvent> _queue = [];
+
+  ProofOfPlayService({
+    required this.apiBaseUrl,
+    required this.deviceToken,
+    required this.screenId,
+  });
+
+  /// Chamado pelo player do Flutter imediatamente após uma mídia terminar de ser exibida
+  void recordPlay({
+    required String mediaName,
+    required int durationSeconds,
+    bool completed = true,
+  }) {
+    final event = ProofOfPlayEvent(
+      eventId: _uuid.v4(),
+      screenId: screenId,
+      mediaName: mediaName,
+      playedAt: DateTime.now().toUtc().toIso8601String(),
+      durationSeconds: durationSeconds,
+      completed: completed,
+    );
+
+    _queue.add(event);
+    syncQueue(); // Tenta enviar imediatamente
+  }
+
+  /// Sincroniza a fila acumulada com o backend VitDoor
+  Future<void> syncQueue() async {
+    if (_queue.isEmpty) return;
+
+    final itemsToSend = List<ProofOfPlayEvent>.from(_queue.take(100));
+    final url = Uri.parse('$apiBaseUrl/api/proof-of-play/log-batch');
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $deviceToken',
+        },
+        body: jsonEncode({
+          'items': itemsToSend.map((e) => e.toJson()).toList(),
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic> eventIds = data['eventIds'] ?? [];
+        
+        // Remove os eventos aceitos ou duplicados da fila
+        _queue.removeWhere((item) => eventIds.contains(item.eventId));
+        print('Proof-of-play sincronizado com sucesso: ${eventIds.length} eventos.');
+      } else {
+        print('Erro ao enviar Proof-of-play. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Falha na conexão ao enviar Proof-of-play (será tentado novamente): $e');
+    }
+  }
+}
+```
 
 ## 14. Inicialização, quiosque e recuperação
 
