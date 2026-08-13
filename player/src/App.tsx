@@ -228,6 +228,7 @@ export function App() {
     currentMediaNameRef.current = mediaName;
     if (!screenInfo?.id) return;
     const logItem = {
+      eventId: crypto.randomUUID(),
       screenId: screenInfo.id,
       mediaName,
       playedAt: new Date().toISOString(),
@@ -253,7 +254,7 @@ export function App() {
             throw new Error(`Servidor recusou os eventos (${response.status})`);
           }
           const result = await response.json();
-          if (result.count === logs.length) {
+          if (result.accepted > 0 || result.count > 0 || result.received > 0) {
             await clearProofLogs();
           }
         }

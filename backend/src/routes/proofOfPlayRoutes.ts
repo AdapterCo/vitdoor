@@ -57,12 +57,15 @@ proofOfPlayRoutes.post('/log-batch', authenticateDevice, async (req: Request, re
 });
 
 function normalizeProofEvent(value: any) {
-  const eventId = typeof value?.eventId === 'string' ? value.eventId.trim().toLowerCase() : '';
+  let eventId = typeof value?.eventId === 'string' ? value.eventId.trim().toLowerCase() : '';
+  if (!isUuid(eventId)) {
+    eventId = crypto.randomUUID();
+  }
   const screenId = typeof value?.screenId === 'string' ? value.screenId.trim() : '';
   const mediaName = typeof value?.mediaName === 'string' ? value.mediaName.trim().slice(0, 255) : '';
-  const durationSeconds = Number(value?.durationSeconds);
-  const playedAt = new Date(value?.playedAt);
-  if (!isUuid(eventId) || !screenId || !mediaName || !Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > 86400 || Number.isNaN(playedAt.getTime())) return null;
+  const durationSeconds = Math.max(1, Math.min(86400, Math.round(Number(value?.durationSeconds) || 10)));
+  const playedAt = value?.playedAt ? new Date(value.playedAt) : new Date();
+  if (!screenId || !mediaName || Number.isNaN(playedAt.getTime())) return null;
   return { eventId, screenId, mediaName, playedAt, durationSeconds, completed: value?.completed !== false };
 }
 
@@ -73,38 +76,37 @@ function isUuid(value: string): boolean {
 // Analytics dashboard summary
 proofOfPlayRoutes.get('/stats', authenticate, async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const ownerId = req.auth!.userId;
 
   const totalPlays = await prisma.proofOfPlay.count({
-    where: { tenantId, screen: { createdById: ownerId } }
+    where: { tenantId }
   });
 
   const totalScreens = await prisma.screen.count({
-    where: { tenantId, createdById: ownerId }
+    where: { tenantId }
   });
 
   const onlineScreens = await prisma.screen.count({
     where: {
-      tenantId, createdById: ownerId,
+      tenantId,
       status: 'ONLINE'
     }
   });
 
   const offlineScreens = await prisma.screen.count({
     where: {
-      tenantId, createdById: ownerId,
+      tenantId,
       status: 'OFFLINE'
     }
   });
 
   const recentLogs = await prisma.proofOfPlay.findMany({
-    where: { tenantId, screen: { createdById: ownerId } },
+    where: { tenantId },
     include: { screen: { select: { id: true, name: true } } },
     orderBy: { playedAt: 'desc' },
-    take: 20
+    take: 50
   });
   const [storage, tenant] = await Promise.all([
-    prisma.media.aggregate({ where: { tenantId, createdById: ownerId }, _sum: { sizeBytes: true } }),
+    prisma.media.aggregate({ where: { tenantId }, _sum: { sizeBytes: true } }),
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { maxScreens: true, maxStorageMb: true, unlimitedScreens: true } })
   ]);
 
