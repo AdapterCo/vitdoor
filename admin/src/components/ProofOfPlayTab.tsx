@@ -10,20 +10,64 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
   const recentLogs = stats?.recentLogs || [];
   const [qrPeriod] = useState(30);
 
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleExportCsv = () => {
+    let csv = '\uFEFF';
+    csv += 'VitDoor - Relatório de Proof of Play e Conversões\n';
+    csv += `Data de Emissão:;${new Date().toLocaleString('pt-BR')}\n\n`;
+
+    csv += 'RASTREAMENTO DE CONVERSÕES VIA QR CODE E NFC\n';
+    csv += `Total de Interações:;${qrStats?.totalScans || 0}\n`;
+    csv += `Scans QR Code:;${qrStats?.qrCodeScans || 0}\n`;
+    csv += `Aproximações NFC:;${qrStats?.nfcTapScans || 0}\n`;
+    csv += `Conversões WhatsApp:;${qrStats?.whatsappScans || 0}\n`;
+    csv += `Conversões Instagram:;${qrStats?.instagramScans || 0}\n`;
+    csv += `Conversões Link / Site:;${qrStats?.urlScans || 0}\n`;
+    csv += `Conversões Cartão Digital:;${qrStats?.profileScans || 0}\n\n`;
+
+    csv += 'HISTÓRICO RECENTE DE CONVERSÕES\n';
+    csv += 'Data / Hora;Origem;Tela;Mídia;Destino\n';
+    (qrStats?.recentScans || []).forEach((scan: any) => {
+      csv += `"${new Date(scan.scannedAt).toLocaleString('pt-BR')}";"${scan.scanSource === 'NFC_TAP' ? 'NFC Totem' : 'QR Code'}";"${scan.screen?.name || 'Tela'}";"${scan.media?.name || 'Mídia'}";"${scan.ctaType}"\n`;
+    });
+
+    csv += '\nHISTÓRICO RECENTE DE EXIBIÇÕES AUDITADAS\n';
+    csv += 'Data / Hora;Tela;Mídia Exibida;Duração (s);Status\n';
+    (recentLogs || []).forEach((log: any) => {
+      csv += `"${new Date(log.playedAt).toLocaleString('pt-BR')}";"${log.screen?.name || 'Tela'}";"${log.mediaName}";${log.durationSeconds};"Completa (100%)"\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `relatorio_proof_of_play_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
 
       {/* ── Header ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h2 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>Proof of Play &amp; Conversões</h2>
           <p style={{ color: '#94a3b8', fontSize: '0.95rem' }}>
             Reproduções auditadas e rastreamento de scans de QR Code por tela e mídia.
           </p>
         </div>
-        <button className="btn-secondary">
-          <Download size={18} /> Exportar Relatório (PDF / Excel)
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }} className="no-print">
+          <button className="btn-secondary" onClick={handleExportCsv} title="Baixar planilha CSV para Excel">
+            <Download size={16} /> Exportar Excel (CSV)
+          </button>
+          <button className="btn-primary" onClick={handlePrint} title="Imprimir ou Salvar em PDF">
+            <Download size={16} /> Exportar PDF / Imprimir
+          </button>
+        </div>
       </div>
 
       {/* ── QR Code Conversion Dashboard ── */}

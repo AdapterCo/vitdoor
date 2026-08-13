@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { UploadCloud, Image, Film, Globe, Rss, Trash2, Save, Plus, Folder, FolderPlus, Pencil, QrCode, X } from 'lucide-react';
+import { UploadCloud, Image, Film, Globe, Rss, Trash2, Save, Plus, Folder, FolderPlus, Pencil, QrCode, X, ExternalLink, Share2 } from 'lucide-react';
 
 interface MediaTabProps {
   medias: any[];
@@ -226,8 +226,8 @@ export const MediaTab: React.FC<MediaTabProps> = ({
                 <Save size={15} />
               </button>
             </div>
-            {/* QR Code button — shown on card, opens modal */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid rgba(255,255,255,.06)', paddingTop: '10px' }}>
+            {/* QR Code & Relatório Auditado buttons */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', borderTop: '1px solid rgba(255,255,255,.06)', paddingTop: '10px' }}>
               <button
                 className={media.cta?.enabled ? 'btn-secondary' : 'btn-secondary'}
                 style={{
@@ -235,17 +235,47 @@ export const MediaTab: React.FC<MediaTabProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '7px',
-                  padding: '9px',
-                  fontSize: '0.83rem',
+                  gap: '6px',
+                  padding: '8px 10px',
+                  fontSize: '0.8rem',
                   background: media.cta?.enabled ? 'rgba(245,158,11,0.18)' : undefined,
                   borderColor: media.cta?.enabled ? '#f59e0b' : undefined,
                   color: media.cta?.enabled ? '#fbbf24' : undefined
                 }}
                 onClick={() => setQrModal(media)}
               >
-                <QrCode size={15} />
-                {media.cta?.enabled ? '✓ QR Code configurado' : 'Configurar QR Code'}
+                <QrCode size={14} />
+                {media.cta?.enabled ? 'QR Code' : 'Add QR'}
+              </button>
+
+              <button
+                className="btn-secondary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '8px 10px',
+                  fontSize: '0.8rem',
+                  color: '#60a5fa',
+                  borderColor: 'rgba(96,165,250,0.3)'
+                }}
+                onClick={() => window.open(`/report/media/${media.id}`, '_blank')}
+                title="Abrir Relatório de Auditoria da Mídia"
+              >
+                <ExternalLink size={14} /> Relatório
+              </button>
+
+              <button
+                className="btn-secondary"
+                style={{ padding: '8px', color: '#94a3b8' }}
+                onClick={() => {
+                  const url = `${window.location.origin}/report/media/${media.id}`;
+                  navigator.clipboard.writeText(url);
+                  alert(`Link de auditoria copiado para a área de transferência!\n\nEnvie ao seu cliente:\n${url}`);
+                }}
+                title="Copiar Link de Auditoria para Enviar ao Cliente"
+              >
+                <Share2 size={14} />
               </button>
             </div>
           </div>

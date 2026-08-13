@@ -11,6 +11,7 @@ import { EmergencyTab } from './components/EmergencyTab';
 import { TenantsTab } from './components/TenantsTab';
 import { QueueTab } from './components/QueueTab';
 import { QueueCallerApp } from './components/QueueCallerApp';
+import { AdvertiserReportPage } from './components/AdvertiserReportPage';
 import { getWebSocketUrl } from './config';
 import { apiFetch } from './api';
 import { LoginScreen } from './components/LoginScreen';
@@ -431,6 +432,12 @@ export function App() {
   // If URL path is /chamar, render the standalone QueueCallerApp directly without requiring full admin login
   if (window.location.pathname === '/chamar' || window.location.pathname.startsWith('/chamar')) {
     return <QueueCallerApp />;
+  }
+
+  // If URL path is /report/media/:mediaId, render the public AdvertiserReportPage directly without requiring admin login
+  const reportMediaMatch = window.location.pathname.match(/^\/report\/media\/([0-9a-f-]{36})/i);
+  if (reportMediaMatch) {
+    return <AdvertiserReportPage mediaId={reportMediaMatch[1]} />;
   }
 
   if (authLoading) {
