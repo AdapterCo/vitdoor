@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express';
 
 export const rssRoutes = Router();
 
-// Cache em memória para evitar requisições excessivas aos servidores de notícias (TTL: 5 min)
 const feedCache = new Map<string, { timestamp: number; data: any }>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -11,10 +10,15 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
  * Proxy e Parser público de RSS / Atom feeds de notícias.
  */
 rssRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
-  const feedUrl = req.query.url as string | undefined;
+  let feedUrl = req.query.url as string | undefined;
 
-  if (!feedUrl || typeof feedUrl !== 'string' || !/^https?:\/\//i.test(feedUrl)) {
-    return res.status(400).json({ error: 'URL de feed RSS válida é obrigatória.' });
+  if (!feedUrl || typeof feedUrl !== 'string') {
+    return res.status(400).json({ error: 'URL de feed RSS é obrigatória.' });
+  }
+
+  feedUrl = feedUrl.trim();
+  if (!/^https?:\/\//i.test(feedUrl)) {
+    feedUrl = `https://${feedUrl}`;
   }
 
   const cached = feedCache.get(feedUrl);
@@ -24,7 +28,7 @@ rssRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000); // 8s timeout
+    const timeout = setTimeout(() => controller.abort(), 8000);
 
     const response = await fetch(feedUrl, {
       signal: controller.signal,
@@ -39,7 +43,24 @@ rssRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
       throw new Error(`Servidor de notícias retornou HTTP ${response.status}`);
     }
 
-    const xmlText = await response.text();
+    const buffer = await response.arrayBuffer();
+
+    // Detect encoding from Content-Type or XML header
+    const contentType = response.headers.get('content-type') || '';
+    let charset = 'utf-8';
+    if (/iso-8859-1|latin1/i.test(contentType)) {
+      charset = 'iso-8859-1';
+    } else {
+      const sampleText = new TextDecoder('ascii').decode(buffer.slice(0, 300));
+      const encodingMatch = sampleText.match(/encoding=["']([^"']+)["']/i);
+      if (encodingMatch && /iso-8859-1|latin1/i.test(encodingMatch[1])) {
+        charset = 'iso-8859-1';
+      }
+    }
+
+    const decoder = new TextDecoder(charset);
+    const xmlText = decoder.decode(buffer);
+
     const parsedFeed = parseRssXml(xmlText);
 
     feedCache.set(feedUrl, { timestamp: Date.now(), data: parsedFeed });
@@ -103,15 +124,12 @@ function extractAttribute(xmlBlock: string, tagName: string, attrName: string): 
 }
 
 function extractImage(xmlBlock: string, htmlContent: string): string | null {
-  // 1. Check media:content or media:thumbnail
   const mediaMatch = xmlBlock.match(/url=["'](https?:\/\/[^"']+\.(?:jpg|jpeg|png|webp|gif)[^"']*)["']/i);
   if (mediaMatch) return mediaMatch[1];
 
-  // 2. Check enclosure
   const enclosureMatch = xmlBlock.match(/<enclosure[^>]*url=["'](https?:\/\/[^"']+)["']/i);
   if (enclosureMatch) return enclosureMatch[1];
 
-  // 3. Check <img> tag inside description HTML
   const imgMatch = htmlContent.match(/<img[^>]+src=["'](https?:\/\/[^"']+)["']/i);
   if (imgMatch) return imgMatch[1];
 

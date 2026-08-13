@@ -38,24 +38,33 @@ export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 
   </div>;
 }
 
+function extractRssUrl(input: string): string | null {
+  const str = input.trim();
+  if (/^https?:\/\//i.test(str)) return str;
+  if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}(\/.*)?$/i.test(str) && (str.includes('rss') || str.includes('feed') || str.includes('.xml') || str.includes('/xml') || str.includes('folha') || str.includes('g1') || str.includes('uol'))) {
+    return `https://${str}`;
+  }
+  return null;
+}
+
 function TickerFooter({ tickerText, clockEnabled, clockPosition, time }: { tickerText: string; clockEnabled?: boolean; clockPosition?: string; time: string }) {
-  const isRssUrl = /^https?:\/\//i.test(tickerText.trim());
-  const [displayText, setDisplayText] = useState(isRssUrl ? '🗞️ Carregando últimas notícias em tempo real...' : tickerText);
+  const targetRssUrl = extractRssUrl(tickerText);
+  const [displayText, setDisplayText] = useState(targetRssUrl ? '🗞️ Carregando notícias da Folha / Feed...' : tickerText);
 
   useEffect(() => {
-    if (!isRssUrl) {
+    if (!targetRssUrl) {
       setDisplayText(tickerText);
       return;
     }
 
     let active = true;
-    setDisplayText('🗞️ Carregando últimas notícias em tempo real...');
+    setDisplayText('🗞️ Carregando notícias em tempo real...');
 
     const fetchRssTicker = async () => {
       try {
-        const res = await fetch(`${API_BASE}/public/rss?url=${encodeURIComponent(tickerText.trim())}`);
+        const res = await fetch(`${API_BASE}/public/rss?url=${encodeURIComponent(targetRssUrl)}`);
         if (!res.ok) {
-          if (active) setDisplayText('🗞️ Plantão de Notícias em Tempo Real');
+          if (active) setDisplayText(`🗞️ Notícias em Tempo Real (${targetRssUrl})`);
           return;
         }
         const data = await res.json();
@@ -73,9 +82,9 @@ function TickerFooter({ tickerText, clockEnabled, clockPosition, time }: { ticke
     };
 
     fetchRssTicker();
-    const interval = setInterval(fetchRssTicker, 10 * 60 * 1000); // refresh RSS every 10 min
+    const interval = setInterval(fetchRssTicker, 10 * 60 * 1000);
     return () => { active = false; clearInterval(interval); };
-  }, [tickerText, isRssUrl]);
+  }, [tickerText, targetRssUrl]);
 
   return (
     <div style={{ height: '64px', flexShrink: 0, background: '#0f172a', borderTop: '2px solid #2563eb', color: '#fff', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
