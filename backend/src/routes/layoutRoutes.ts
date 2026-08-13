@@ -123,9 +123,9 @@ async function prepareCanvasConfig(tenantId: string, userId: string, value: any)
   });
 }
 
-async function validateScreens(tenantId: string, userId: string, screenIds: string[]): Promise<boolean> {
+async function validateScreens(tenantId: string, _userId: string, screenIds: string[]): Promise<boolean> {
   if (screenIds.length === 0) return true;
-  return await prisma.screen.count({ where: { tenantId, createdById: userId, id: { in: screenIds } } }) === screenIds.length;
+  return await prisma.screen.count({ where: { tenantId, id: { in: screenIds } } }) === screenIds.length;
 }
 
 function normalizeIds(value: unknown): string[] {
@@ -134,10 +134,10 @@ function normalizeIds(value: unknown): string[] {
   return value.filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
 
-async function publishLayout(tenantId: string, userId: string, layout: any, screenIds: string[], notify = true) {
+async function publishLayout(tenantId: string, _userId: string, layout: any, screenIds: string[], notify = true) {
   if (!screenIds.length) return;
   await prisma.screen.updateMany({
-    where: { tenantId, createdById: userId, id: { in: screenIds } },
+    where: { tenantId, id: { in: screenIds } },
     data: { activeLayoutId: layout.id, activePlaylistId: null }
   });
   if (notify) {

@@ -4,8 +4,15 @@ import { MediaVideo } from './MediaVideo';
 
 export function MultiZoneLayout({ layout, activeAlert, volume = 80 }: { layout: any; activeAlert?: any; volume?: number }) {
   const config = useMemo(() => {
-    try { return JSON.parse(layout.canvasConfigJson); } catch { return null; }
-  }, [layout.id, layout.canvasConfigJson]);
+    if (!layout) return null;
+    if (layout.canvasConfig && typeof layout.canvasConfig === 'object') {
+      return layout.canvasConfig;
+    }
+    if (layout.canvasConfigJson) {
+      try { return JSON.parse(layout.canvasConfigJson); } catch { return null; }
+    }
+    return null;
+  }, [layout?.id, layout?.canvasConfig, layout?.canvasConfigJson]);
   const [time, setTime] = useState('');
   useEffect(() => {
     const update = () => setTime(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));

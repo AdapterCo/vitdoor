@@ -20,15 +20,8 @@ export async function buildScreenManifest(screenId: string) {
     }
   });
   if (!screen) return null;
-  if (!screen.createdById) return null;
-  if (screen.activePlaylist && (
-    screen.activePlaylist.tenantId !== screen.tenantId ||
-    screen.activePlaylist.createdById !== screen.createdById
-  )) return null;
-  if (screen.activeLayout && (
-    screen.activeLayout.tenantId !== screen.tenantId ||
-    screen.activeLayout.createdById !== screen.createdById
-  )) return null;
+  if (screen.activePlaylist && screen.activePlaylist.tenantId !== screen.tenantId) return null;
+  if (screen.activeLayout && screen.activeLayout.tenantId !== screen.tenantId) return null;
 
   const published = await prisma.screenManifest.findUnique({
     where: { screenId_version: { screenId: screen.id, version: screen.manifestVersion } },
@@ -61,8 +54,7 @@ export async function buildScreenManifest(screenId: string) {
     ? await prisma.media.findMany({
         where: {
           id: { in: [...mediaIds] },
-          tenantId: screen.tenantId,
-          createdById: screen.createdById
+          tenantId: screen.tenantId
         },
         orderBy: { id: 'asc' }
       })
