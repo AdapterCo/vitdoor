@@ -4,9 +4,9 @@
 >
 > Repositório sugerido: `vitdoor-player-flutter`. O painel web e o backend permanecem no repositório `vitdoor`.
 
-**Versão:** 2.1  
+**Versão:** 2.2  
 **Data:** 13/08/2026  
-**Estado:** especificação oficial; suporte simultâneo a Layout (Estrutura + Ticker/Relógio) e Playlist (Mídias), solução PixelCopy para screenshot sem tela preta, NFC, Chamador de Senhas, Alertas e Proof-of-Play concluídos no backend; aplicativo Android (Kotlin) em integração
+**Estado:** especificação oficial; suporte a Rodapé com notícias RSS automáticas ou texto personalizado, suporte simultâneo a Layout e Playlist, solução PixelCopy para screenshot sem tela preta, NFC, Chamador de Senhas, Alertas e Proof-of-Play concluídos no backend; aplicativo Android (Kotlin) em integração
 
 ## 1. Objetivo
 
@@ -536,7 +536,10 @@ Contrato de layout v2 (Simultâneo com Playlist):
 - `loop` é sempre `true`;
 - no máximo uma zona pode ter `audioEnabled: true`; as demais devem ficar mudas;
 - vídeos avançam pelo término real; imagens e conteúdos estáticos usam `durationSeconds`;
-- `ticker.enabled` é opcional; quando ativo, `text` é obrigatório e limitado a 500 caracteres;
+- `ticker.enabled` é opcional; quando ativo, `text` é obrigatório (máximo 500 caracteres);
+- **Suporte a Notícias Dinâmicas no Rodapé (`ticker.text`)**:
+  - Se `ticker.text` for um texto comum (ex: `"Ofertas válidas enquanto durarem os estoques"`), exibir o texto em animação de letreiro (*marquee*);
+  - Se `ticker.text` for uma **URL de Feed RSS** (iniciando com `http://` ou `https://`, ex: `https://g1.globo.com/rss/g1/economia/`), o player deve realizar a chamada HTTP `GET https://api.vitdoor.com.br/api/public/rss?url={ticker.text}` para receber o JSON das manchetes prontas e exibir as notícias rolando no rodapé;
 - `clock.position`: `TOP_LEFT`, `TOP_RIGHT`, `BOTTOM_LEFT`, `BOTTOM_RIGHT` ou `FOOTER`;
 - `FOOTER` só é válido quando o ticker está ativo;
 - data/hora vêm do relógio real do Android;

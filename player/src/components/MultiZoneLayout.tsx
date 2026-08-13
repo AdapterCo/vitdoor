@@ -31,14 +31,54 @@ export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 
         );
       })}
     </div>
-    {config.ticker?.enabled && <div style={{ height: '64px', flexShrink: 0, background: '#0f172a', borderTop: '2px solid #2563eb', color: '#fff', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
-      <div style={{ flex: 1, overflow: 'hidden' }}><div style={{ whiteSpace: 'nowrap', paddingLeft: '100%', animation: 'layout-marquee 28s linear infinite', fontSize: '1.15rem' }}>{config.ticker.text}</div></div>
-      {config.clock?.enabled && config.clock.position === 'FOOTER' && <ClockDisplay time={time} footer />}
-      <style>{`@keyframes layout-marquee{from{transform:translateX(0)}to{transform:translateX(-100%)}}`}</style>
-    </div>}
+    {config.ticker?.enabled && <TickerFooter tickerText={config.ticker.text} clockEnabled={config.clock?.enabled} clockPosition={config.clock?.position} time={time} />}
     {config.clock?.enabled && config.clock.position !== 'FOOTER' && <div style={{ position: 'absolute', ...clockPositionStyle(config.clock.position), zIndex: 20 }}><ClockDisplay time={time} /></div>}
     {activeAlert?.active && <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'rgba(185,28,28,.96)', color: '#fff', display: 'grid', placeItems: 'center', textAlign: 'center', padding: '40px' }}><div><h1 style={{ fontSize: '3.5rem' }}>{activeAlert.title}</h1><p style={{ fontSize: '2rem' }}>{activeAlert.message}</p></div></div>}
   </div>;
+}
+
+function TickerFooter({ tickerText, clockEnabled, clockPosition, time }: { tickerText: string; clockEnabled?: boolean; clockPosition?: string; time: string }) {
+  const [displayText, setDisplayText] = useState(tickerText);
+  const isRssUrl = /^https?:\/\//i.test(tickerText.trim());
+
+  useEffect(() => {
+    if (!isRssUrl) {
+      setDisplayText(tickerText);
+      return;
+    }
+
+    let active = true;
+    const fetchRssTicker = async () => {
+      try {
+        const res = await fetch(`/api/public/rss?url=${encodeURIComponent(tickerText.trim())}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (active && data.items && data.items.length > 0) {
+          const headlines = data.items.map((i: any) => i.title).join('   •   ');
+          const formatted = `🗞️ ${data.title.toUpperCase()}:   ${headlines}`;
+          setDisplayText(formatted);
+        }
+      } catch (err) {
+        console.error('Error loading RSS for ticker:', err);
+      }
+    };
+
+    fetchRssTicker();
+    const interval = setInterval(fetchRssTicker, 10 * 60 * 1000); // refresh RSS every 10 min
+    return () => { active = false; clearInterval(interval); };
+  }, [tickerText, isRssUrl]);
+
+  return (
+    <div style={{ height: '64px', flexShrink: 0, background: '#0f172a', borderTop: '2px solid #2563eb', color: '#fff', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div style={{ whiteSpace: 'nowrap', paddingLeft: '100%', animation: 'layout-marquee 35s linear infinite', fontSize: '1.2rem', fontWeight: 600 }}>
+          {displayText}
+        </div>
+      </div>
+      {clockEnabled && clockPosition === 'FOOTER' && <ClockDisplay time={time} footer />}
+      <style>{`@keyframes layout-marquee{from{transform:translateX(0)}to{transform:translateX(-100%)}}`}</style>
+    </div>
+  );
 }
 
 function ClockDisplay({ time, footer = false }: { time: string; footer?: boolean }) {

@@ -112,7 +112,7 @@ export const LayoutsTab: React.FC<Props> = ({ layouts, screens, onCreateLayout, 
             </label>
           </div>)}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '12px' }}>
-            <label className="glass-panel" style={{ padding: '14px' }}><input type="checkbox" checked={tickerEnabled} onChange={(e) => { setTickerEnabled(e.target.checked); if (!e.target.checked && clockPosition === 'FOOTER') setClockPosition('TOP_RIGHT'); }} /> Rodapé com texto rolante{tickerEnabled && <textarea className="input-field" value={tickerText} onChange={(e) => setTickerText(e.target.value)} placeholder="Digite o texto que passará no rodapé" required style={{ marginTop: '9px' }} />}</label>
+            <label className="glass-panel" style={{ padding: '14px' }}><input type="checkbox" checked={tickerEnabled} onChange={(e) => { setTickerEnabled(e.target.checked); if (!e.target.checked && clockPosition === 'FOOTER') setClockPosition('TOP_RIGHT'); }} /> Rodapé com texto rolante{tickerEnabled && <textarea className="input-field" value={tickerText} onChange={(e) => setTickerText(e.target.value)} placeholder="Digite o texto personalizado OU cole a URL de um feed RSS (ex: https://g1.globo.com/rss/g1/economia/)" required style={{ marginTop: '9px' }} />}</label>
             <div className="glass-panel" style={{ padding: '14px' }}>
               <label><input type="checkbox" checked={clockEnabled} onChange={(e) => setClockEnabled(e.target.checked)} /> Relógio</label>
               {clockEnabled && <select className="input-field" value={clockPosition} onChange={(e) => setClockPosition(e.target.value)} style={{ marginTop: '9px' }}>
