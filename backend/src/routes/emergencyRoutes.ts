@@ -12,7 +12,7 @@ emergencyRoutes.post('/trigger', async (req: Request, res: Response): Promise<an
   const { title, message, alertType, durationSeconds } = req.body;
   const screenIds = normalizeIds(req.body.screenIds);
   if (!title || !message || screenIds.length === 0) return res.status(400).json({ error: 'Título, mensagem e ao menos uma tela são obrigatórios.' });
-  const screens = await prisma.screen.findMany({ where: { tenantId, createdById: req.auth!.userId, id: { in: screenIds } }, select: { id: true } });
+  const screens = await prisma.screen.findMany({ where: { tenantId, id: { in: screenIds } }, select: { id: true } });
   if (screens.length !== screenIds.length) return res.status(400).json({ error: 'Uma ou mais telas são inválidas.' });
   const alert = await prisma.emergencyAlert.create({
     data: { tenantId, createdById: req.auth!.userId, title, message, alertType: alertType || 'WARNING', durationSeconds: durationSeconds ? parseInt(durationSeconds, 10) : 60, active: true,
@@ -26,12 +26,28 @@ emergencyRoutes.post('/trigger', async (req: Request, res: Response): Promise<an
 emergencyRoutes.post('/clear', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.body.tenantId);
   const screenIds = normalizeIds(req.body.screenIds);
-  if (screenIds.length === 0) return res.status(400).json({ error: 'Selecione ao menos uma tela.' });
-  const screens = await prisma.screen.findMany({ where: { tenantId, createdById: req.auth!.userId, id: { in: screenIds } }, select: { id: true } });
-  if (screens.length !== screenIds.length) return res.status(400).json({ error: 'Uma ou mais telas são inválidas.' });
-  await prisma.emergencyAlert.updateMany({ where: { tenantId, createdById: req.auth!.userId, active: true, targets: { some: { screenId: { in: screenIds } } } }, data: { active: false } });
-  for (const screenId of screenIds) sendCommandToScreen(screenId, { type: 'EMERGENCY_ALERT_CLEARED' });
-  return res.json({ success: true });
+
+  let targetScreenIds = screenIds;
+  if (targetScreenIds.length === 0) {
+    // If no specific screen IDs passed, fetch all screen IDs for this tenant
+    const allScreens = await prisma.screen.findMany({ where: { tenantId }, select: { id: true } });
+    targetScreenIds = allScreens.map((s) => s.id);
+  }
+
+  await prisma.emergencyAlert.updateMany({
+    where: {
+      tenantId,
+      active: true,
+      ...(screenIds.length > 0 ? { targets: { some: { screenId: { in: screenIds } } } } : {})
+    },
+    data: { active: false }
+  });
+
+  for (const screenId of targetScreenIds) {
+    sendCommandToScreen(screenId, { type: 'EMERGENCY_ALERT_CLEARED' });
+  }
+
+  return res.json({ success: true, message: `Alertas encerrados em ${targetScreenIds.length} telas.` });
 });
 
 function normalizeIds(value: unknown): string[] {

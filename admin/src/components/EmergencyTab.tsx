@@ -34,12 +34,54 @@ export const EmergencyTab: React.FC<EmergencyTabProps> = ({ screens, onTriggerEm
           </select>
           <input className="input-field" value={title} onChange={(e) => setTitle(e.target.value)} required />
           <textarea rows={4} className="input-field" value={message} onChange={(e) => setMessage(e.target.value)} required />
-          <div><strong>Telas de destino *</strong><div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
-            {screens.map((screen) => <button type="button" key={screen.id} className={screenIds.includes(screen.id) ? 'btn-primary' : 'btn-secondary'} onClick={() => setScreenIds((ids) => ids.includes(screen.id) ? ids.filter((id) => id !== screen.id) : [...ids, screen.id])}>{screen.name}</button>)}
-          </div>{screenIds.length === 0 && <small style={{ color: '#fca5a5' }}>Selecione ao menos uma tela.</small>}</div>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button disabled={!screenIds.length} type="submit" className="btn-danger"><Siren size={18} /> Disparar alerta</button>
-            <button disabled={!screenIds.length} type="button" className="btn-secondary" onClick={() => void onClearEmergency(screenIds)}>Encerrar nas selecionadas</button>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <strong>Telas de destino *</strong>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                onClick={() => {
+                  if (screenIds.length === screens.length) {
+                    setScreenIds([]);
+                  } else {
+                    setScreenIds(screens.map((s) => s.id));
+                  }
+                }}
+              >
+                {screenIds.length === screens.length ? 'Desmarcar Todas' : 'Selecionar Todas'}
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {screens.map((screen) => (
+                <button
+                  type="button"
+                  key={screen.id}
+                  className={screenIds.includes(screen.id) ? 'btn-primary' : 'btn-secondary'}
+                  onClick={() => setScreenIds((ids) => ids.includes(screen.id) ? ids.filter((id) => id !== screen.id) : [...ids, screen.id])}
+                >
+                  {screen.name}
+                </button>
+              ))}
+            </div>
+            {screenIds.length === 0 && <small style={{ color: '#94a3b8', marginTop: '6px', display: 'block' }}>Selecione ao menos uma tela para disparar, ou encerre em todas.</small>}
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px' }}>
+            <button disabled={!screenIds.length} type="submit" className="btn-danger">
+              <Siren size={18} /> Disparar alerta nas selecionadas
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ color: '#38bdf8', borderColor: 'rgba(56,189,248,0.3)' }}
+              onClick={async () => {
+                await onClearEmergency(screenIds);
+                alert(screenIds.length > 0 ? `Alerta encerrado nas ${screenIds.length} telas selecionadas.` : 'Alerta encerrado em TODAS as telas da conta.');
+              }}
+            >
+              Encerrar Alerta {screenIds.length > 0 ? `(${screenIds.length} selecionada${screenIds.length === 1 ? '' : 's'})` : 'em TODAS as Telas'}
+            </button>
           </div>
         </form>
       </div>
