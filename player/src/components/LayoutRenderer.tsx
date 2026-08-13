@@ -64,7 +64,7 @@ export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
   }, [currentIndex, items.length, currentDuration, currentMedia, activePlaylist?.isLoop]);
 
   if (activeLayout) {
-    return <MultiZoneLayout layout={activeLayout} activeAlert={activeAlert} volume={volume} />;
+    return <MultiZoneLayout layout={activeLayout} activePlaylist={activePlaylist} activeAlert={activeAlert} volume={volume} />;
   }
 
   return (

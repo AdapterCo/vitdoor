@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Clock } from 'lucide-react';
 import { MediaVideo } from './MediaVideo';
 
-export function MultiZoneLayout({ layout, activeAlert, volume = 80 }: { layout: any; activeAlert?: any; volume?: number }) {
+export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 80 }: { layout: any; activePlaylist?: any; activeAlert?: any; volume?: number }) {
   const config = useMemo(() => {
     if (!layout) return null;
     if (layout.canvasConfig && typeof layout.canvasConfig === 'object') {
@@ -22,7 +22,14 @@ export function MultiZoneLayout({ layout, activeAlert, volume = 80 }: { layout: 
 
   return <div style={{ width: '100vw', height: '100vh', background: '#000', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
     <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-      {(config.zones || []).map((zone: any, zoneIndex: number) => <div key={zone.id} style={{ width: `${zone.widthPercent}%`, height: '100%', overflow: 'hidden', borderRight: '1px solid rgba(255,255,255,.08)' }}><ZonePlayer items={zone.items || []} fit={zone.fit || 'CONTAIN'} volume={volume} loop={zone.loop !== false} audioEnabled={typeof zone.audioEnabled === 'boolean' ? zone.audioEnabled : zoneIndex === 0} /></div>)}
+      {(config.zones || []).map((zone: any, zoneIndex: number) => {
+        const zoneItems = (zone.items && zone.items.length > 0) ? zone.items : (activePlaylist?.items || []);
+        return (
+          <div key={zone.id} style={{ width: `${zone.widthPercent}%`, height: '100%', overflow: 'hidden', borderRight: '1px solid rgba(255,255,255,.08)' }}>
+            <ZonePlayer items={zoneItems} fit={zone.fit || 'CONTAIN'} volume={volume} loop={zone.loop !== false} audioEnabled={typeof zone.audioEnabled === 'boolean' ? zone.audioEnabled : zoneIndex === 0} />
+          </div>
+        );
+      })}
     </div>
     {config.ticker?.enabled && <div style={{ height: '64px', flexShrink: 0, background: '#0f172a', borderTop: '2px solid #2563eb', color: '#fff', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
       <div style={{ flex: 1, overflow: 'hidden' }}><div style={{ whiteSpace: 'nowrap', paddingLeft: '100%', animation: 'layout-marquee 28s linear infinite', fontSize: '1.15rem' }}>{config.ticker.text}</div></div>

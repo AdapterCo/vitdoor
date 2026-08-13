@@ -119,16 +119,12 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const playlistProvided = Object.prototype.hasOwnProperty.call(req.body, 'activePlaylistId');
   const layoutProvided = Object.prototype.hasOwnProperty.call(req.body, 'activeLayoutId');
 
-  if (activePlaylistId && activeLayoutId) {
-    return res.status(400).json({ error: 'A tela deve usar uma playlist ou um layout direto, nunca os dois ao mesmo tempo.' });
-  }
-
   if (activePlaylistId) {
-    const playlist = await prisma.playlist.findFirst({ where: { id: activePlaylistId, tenantId: scopedTenantId, createdById: req.auth!.userId } });
+    const playlist = await prisma.playlist.findFirst({ where: { id: activePlaylistId, tenantId: scopedTenantId } });
     if (!playlist) return res.status(400).json({ error: 'Playlist inválida para este cliente.' });
   }
   if (activeLayoutId) {
-    const layout = await prisma.layout.findFirst({ where: { id: activeLayoutId, tenantId: scopedTenantId, createdById: req.auth!.userId } });
+    const layout = await prisma.layout.findFirst({ where: { id: activeLayoutId, tenantId: scopedTenantId } });
     if (!layout) return res.status(400).json({ error: 'Layout inválido para este cliente.' });
   }
 
@@ -140,8 +136,8 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
       groupName,
       orientation,
       volume: volume !== undefined ? parseInt(volume, 10) : undefined,
-      activePlaylistId: playlistProvided ? (activePlaylistId || null) : (layoutProvided && activeLayoutId ? null : undefined),
-      activeLayoutId: layoutProvided ? (activeLayoutId || null) : (playlistProvided && activePlaylistId ? null : undefined),
+      activePlaylistId: playlistProvided ? (activePlaylistId || null) : undefined,
+      activeLayoutId: layoutProvided ? (activeLayoutId || null) : undefined,
       manifestVersion: { increment: 1 }
     },
     include: {

@@ -138,7 +138,7 @@ async function publishLayout(tenantId: string, _userId: string, layout: any, scr
   if (!screenIds.length) return;
   await prisma.screen.updateMany({
     where: { tenantId, id: { in: screenIds } },
-    data: { activeLayoutId: layout.id, activePlaylistId: null }
+    data: { activeLayoutId: layout.id }
   });
   if (notify) {
     await bumpScreenManifestVersions(screenIds);
