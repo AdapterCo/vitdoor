@@ -4,9 +4,9 @@
 >
 > Repositório sugerido: `vitdoor-player-flutter`. O painel web e o backend permanecem no repositório `vitdoor`.
 
-**Versão:** 1.9  
+**Versão:** 2.0  
 **Data:** 13/08/2026  
-**Estado:** especificação oficial; módulo de NFC Dinâmico, Chamador de Senhas, Alertas Emergenciais, CTA/QR Code e Proof-of-Play (API e Backend) concluídos no web/backend, integração Flutter em andamento pelo desenvolvedor app
+**Estado:** especificação oficial; solução para captura de tela (screenshot sem tela escura em vídeo), NFC, Chamador de Senhas, Alertas, QR Code, Proof-of-Play e Relatórios do Anunciante concluídos no web/backend; aplicação Flutter em integração
 
 ## 1. Objetivo
 
@@ -948,6 +948,51 @@ Resposta `201`:
 ```
 
 Retry de comando já concluído retorna `200` e `duplicate: true`. Erros: `400` campo ausente, `401` token inválido, `404` comando não pertence à tela, `409` comando finalizado com falha/expirado, `413` acima de 2 MB e `415` tipo binário inválido. Se a captura falhar, enviar `COMMAND_RESULT` com o mesmo `commandId`, `action: TAKE_SCREENSHOT` e a razão curta.
+
+---
+
+### 15.2 Solução para Captura de Tela sem Ficar Escura / Preta (`SurfaceView` vs `PixelCopy` / `TextureView`)
+
+> **Por que o Screenshot fica 100% Preto/Escuro durante a exibição de Vídeos no Android?**  
+> No Android, os reprodutores de vídeo nativos (como ExoPlayer, `video_player` ou `media_kit`) renderizam os frames de vídeo em uma camada separada acelerada por hardware chamada **`SurfaceView`**. Quando a aplicação tenta tirar um print da tela com métodos convencionais de View (`view.getDrawingCache()` ou `RepaintBoundary` do Flutter), o sistema captura a hierarquia de interface gráfica (textos, QR Code, rodapé), mas a área do vídeo é renderizada como um **buraco preto transparente/escuro**, pois o hardware de vídeo ignora o buffer comum de UI.
+
+#### Como o desenvolvedor Flutter DEVE resolver a imagem preta no Screenshot:
+
+1. **Uso da API Nativa `PixelCopy` (Recomendado para Android 8.0+ / API 26+)**:
+   Em vez de usar `RepaintBoundary` do Flutter no widget raiz, o plugin nativo Android (Kotlin/Java) deve utilizar a API oficial `PixelCopy.request()`, que solicita diretamente à GPU os buffers da janela (`Window`) contendo a fusão da camada gráfica com a camada do vídeo:
+
+   ```kotlin
+   import android.view.PixelCopy
+   import android.graphics.Bitmap
+   import android.os.Handler
+   import android.os.Looper
+
+   fun captureScreenWithVideo(window: Window, callback: (Bitmap?) -> Unit) {
+       val bitmap = Bitmap.createBitmap(window.decorView.width, window.decorView.height, Bitmap.Config.ARGB_8888)
+       PixelCopy.request(
+           window,
+           bitmap,
+           { copyResult ->
+               if (copyResult == PixelCopy.SUCCESS) {
+                   callback(bitmap)
+               } else {
+                   callback(null)
+               }
+           },
+           Handler(Looper.getMainLooper())
+       )
+   }
+   ```
+
+2. **Modo Textura (`TextureView`) no Reprodutor de Vídeo**:
+   Se a captura for realizada dentro do motor do Flutter, o player de vídeo (`video_player` ou `chewie`) deve ser inicializado configurando a renderização via memória de textura (`useTexture: true` ou `TextureView`). Isso disponibiliza o buffer de frames para a pipeline de rasterização do Flutter, permitindo que a imagem seja capturada sem fundo preto.
+
+3. **Compactação e Redimensionamento Antes do Envio**:
+   - Redimensionar o Bitmap capturado para no máximo **1280x720** pixels.
+   - Salvar em formato **JPEG com qualidade 80%**.
+   - Garantir que o tamanho do arquivo não ultrapasse **2 MB** antes de disparar o `POST /api/device/screenshots/{commandId}`.
+
+---
 
 - `SYNC`: implementado;
 - `SET_VOLUME`: implementado;
