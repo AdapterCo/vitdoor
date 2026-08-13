@@ -4,9 +4,9 @@
 >
 > Repositório sugerido: `vitdoor-player-flutter`. O painel web e o backend permanecem no repositório `vitdoor`.
 
-**Versão:** 2.0  
+**Versão:** 2.1  
 **Data:** 13/08/2026  
-**Estado:** especificação oficial; solução para captura de tela (screenshot sem tela escura em vídeo), NFC, Chamador de Senhas, Alertas, QR Code, Proof-of-Play e Relatórios do Anunciante concluídos no web/backend; aplicação Flutter em integração
+**Estado:** especificação oficial; suporte simultâneo a Layout (Estrutura + Ticker/Relógio) e Playlist (Mídias), solução PixelCopy para screenshot sem tela preta, NFC, Chamador de Senhas, Alertas e Proof-of-Play concluídos no backend; aplicativo Android (Kotlin) em integração
 
 ## 1. Objetivo
 
@@ -520,18 +520,21 @@ Quando `cta` é `null` ou `cta.enabled` é `false`, nenhum QR Code é exibido. R
 }
 ```
 
-Contrato de layout v2:
+Contrato de layout v2 (Simultâneo com Playlist):
 
-- `activeLayout` pode ser `null`;
-- quando `activeLayout` estiver preenchido, `activePlaylist` será `null`; layouts usados como itens continuam dentro de `activePlaylist.items[].layout`;
+- `activeLayout` e `activePlaylist` **podem estar preenchidos SIMULTANEAMENTE** no manifesto da tela;
+- **Responsabilidade do `activeLayout`**: Define a divisão física da tela (`preset`: `FULL`, `HALF` ou `70_30`), enquadramento da mídia (`fit`), áudio da zona E os widgets (**`ticker` / rodapé de notícias** e **`clock` / relógio**);
+- **Responsabilidade da `activePlaylist`**: Define a sequência de mídias (vídeos, imagens, RSS) exibidas;
+- **Regra de Renderização das Zonas no Player**:
+  - Para cada zona definida em `activeLayout.canvasConfig.zones`:
+    - Se a zona possuir itens próprios (`zone.items` não vazio), reproduzir os itens específicos da zona;
+    - Se a zona não possuir itens (`zone.items: []`), **reproduzir a sequência de mídias da `activePlaylist.items`** dentro daquela zona;
 - orientação suportada nesta versão: `HORIZONTAL`;
 - `preset`: `FULL`, `HALF` ou `70_30`;
 - `FULL`: zona `main` com 100%; `HALF`: `main` 50% e `side` 50%; `70_30`: `main` 70% e `side` 30%;
 - `fit`: `CONTAIN` (inteira, sem corte), `COVER` (preenche e pode cortar) ou `FILL` (estica);
-- cada zona deve possuir ao menos um item quando criada/publicada pelo painel;
 - `loop` é sempre `true`;
 - no máximo uma zona pode ter `audioEnabled: true`; as demais devem ficar mudas;
-- os itens rodam independentemente dentro da própria zona, na ordem recebida;
 - vídeos avançam pelo término real; imagens e conteúdos estáticos usam `durationSeconds`;
 - `ticker.enabled` é opcional; quando ativo, `text` é obrigatório e limitado a 500 caracteres;
 - `clock.position`: `TOP_LEFT`, `TOP_RIGHT`, `BOTTOM_LEFT`, `BOTTOM_RIGHT` ou `FOOTER`;
