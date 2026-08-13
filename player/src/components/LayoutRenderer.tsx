@@ -3,6 +3,7 @@ import { AlertTriangle, Clock, Newspaper } from 'lucide-react';
 import { MultiZoneLayout } from './MultiZoneLayout';
 import { MediaVideo } from './MediaVideo';
 import { MediaQrCta } from './MediaQrCta';
+import { RssWidget } from './RssWidget';
 
 interface LayoutRendererProps {
   activePlaylist?: any;
@@ -97,70 +98,11 @@ export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
               style={{ width: '100%', height: '100%', border: 'none' }}
             />
           ) : currentMedia.type === 'RSS' ? (
-            /* Dedicated RSS News Display Card */
-            <div style={{
-              width: '100%',
-              height: '100%',
-              background: 'radial-gradient(circle at center, #1e293b 0%, #0f172a 100%)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '60px',
-              color: '#fff',
-              position: 'relative'
-            }}>
-              {/* Badge */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                background: 'rgba(59, 130, 246, 0.2)',
-                border: '1px solid #3b82f6',
-                padding: '10px 24px',
-                borderRadius: '50px',
-                color: '#60a5fa',
-                fontWeight: 700,
-                fontSize: '1.1rem',
-                marginBottom: '30px'
-              }}>
-                <Newspaper size={24} /> {currentMedia.name}
-              </div>
-
-              {/* News Headline Box */}
-              <div style={{
-                background: 'rgba(15, 23, 42, 0.85)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: '24px',
-                padding: '50px 70px',
-                textAlign: 'center',
-                maxWidth: '900px',
-                boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
-              }}>
-                <h2 style={{ fontSize: '2.5rem', fontWeight: 800, color: '#f8fafc', lineHeight: '1.3', marginBottom: '20px' }}>
-                  Mercado Financeiro e Notícias Internacionais em Tempo Real
-                </h2>
-
-                <p style={{ fontSize: '1.3rem', color: '#cbd5e1', lineHeight: '1.6' }}>
-                  Acompanhe as principais atualizações do feed RSS configurado: <strong>{currentMedia.url}</strong>.
-                  Novas manchetes são atualizadas automaticamente.
-                </p>
-
-                <div style={{
-                  marginTop: '30px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(30, 41, 59, 0.9)',
-                  padding: '8px 20px',
-                  borderRadius: '10px',
-                  color: '#94a3b8',
-                  fontSize: '0.95rem'
-                }}>
-                  <Clock size={16} color="#60a5fa" /> Exibindo por: <strong style={{ color: '#fff' }}>{countdown}s</strong> (Limite: {currentDuration}s)
-                </div>
-              </div>
-            </div>
+            <RssWidget
+              mediaName={currentMedia.name}
+              feedUrl={currentMedia.url}
+              durationSeconds={currentDuration}
+            />
           ) : (
             <img
               src={currentMedia.url}
