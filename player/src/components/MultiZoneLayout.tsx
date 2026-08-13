@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Clock } from 'lucide-react';
 import { MediaVideo } from './MediaVideo';
+import { API_BASE } from '../config';
 
 export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 80 }: { layout: any; activePlaylist?: any; activeAlert?: any; volume?: number }) {
   const config = useMemo(() => {
@@ -38,8 +39,8 @@ export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 
 }
 
 function TickerFooter({ tickerText, clockEnabled, clockPosition, time }: { tickerText: string; clockEnabled?: boolean; clockPosition?: string; time: string }) {
-  const [displayText, setDisplayText] = useState(tickerText);
   const isRssUrl = /^https?:\/\//i.test(tickerText.trim());
+  const [displayText, setDisplayText] = useState(isRssUrl ? '🗞️ Carregando últimas notícias em tempo real...' : tickerText);
 
   useEffect(() => {
     if (!isRssUrl) {
@@ -48,18 +49,26 @@ function TickerFooter({ tickerText, clockEnabled, clockPosition, time }: { ticke
     }
 
     let active = true;
+    setDisplayText('🗞️ Carregando últimas notícias em tempo real...');
+
     const fetchRssTicker = async () => {
       try {
-        const res = await fetch(`/api/public/rss?url=${encodeURIComponent(tickerText.trim())}`);
-        if (!res.ok) return;
+        const res = await fetch(`${API_BASE}/public/rss?url=${encodeURIComponent(tickerText.trim())}`);
+        if (!res.ok) {
+          if (active) setDisplayText('🗞️ Plantão de Notícias em Tempo Real');
+          return;
+        }
         const data = await res.json();
         if (active && data.items && data.items.length > 0) {
           const headlines = data.items.map((i: any) => i.title).join('   •   ');
-          const formatted = `🗞️ ${data.title.toUpperCase()}:   ${headlines}`;
+          const formatted = `🗞️ ${(data.title || 'NOTÍCIAS').toUpperCase()}:   ${headlines}`;
           setDisplayText(formatted);
+        } else if (active) {
+          setDisplayText('🗞️ Plantão de Notícias em Tempo Real');
         }
       } catch (err) {
         console.error('Error loading RSS for ticker:', err);
+        if (active) setDisplayText('🗞️ Plantão de Notícias em Tempo Real');
       }
     };
 
