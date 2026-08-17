@@ -14,13 +14,13 @@ export const queueRoutes = Router();
  * Operador digita o PIN (ex: "1234") para acessar a tela do chamador.
  */
 queueRoutes.post('/operator/auth', async (req: Request, res: Response): Promise<any> => {
-  const { pinCode } = req.body;
-  if (!pinCode || typeof pinCode !== 'string') {
-    return res.status(400).json({ error: 'PIN inválido.' });
+  const { pinCode, tenantId } = req.body;
+  if (!pinCode || typeof pinCode !== 'string' || !tenantId) {
+    return res.status(400).json({ error: 'PIN inválido ou tenant ausente.' });
   }
 
   const queue = await prisma.ticketQueue.findFirst({
-    where: { pinCode: pinCode.trim() },
+    where: { pinCode: pinCode.trim(), tenantId },
     include: {
       screen: { select: { id: true, name: true, status: true, lastPing: true } },
       tenant: { select: { status: true } }
@@ -62,17 +62,17 @@ queueRoutes.post('/operator/auth', async (req: Request, res: Response): Promise<
  * Operador clica em "Chamar Próximo"
  */
 queueRoutes.post('/operator/call-next', async (req: Request, res: Response): Promise<any> => {
-  const { pinCode } = req.body;
-  if (!pinCode || typeof pinCode !== 'string') {
-    return res.status(400).json({ error: 'PIN de autenticação obrigatório.' });
+  const { pinCode, tenantId } = req.body;
+  if (!pinCode || typeof pinCode !== 'string' || !tenantId) {
+    return res.status(400).json({ error: 'PIN e tenantId obrigatórios.' });
   }
 
   const queue = await prisma.ticketQueue.findFirst({
-    where: { pinCode: pinCode.trim() },
-    select: { id: true, prefix: true, currentNum: true, deskName: true, screenId: true }
+    where: { pinCode: pinCode.trim(), tenantId },
+    select: { id: true, prefix: true, currentNum: true, deskName: true, screenId: true, tenant: { select: { status: true } } }
   });
 
-  if (!queue) return res.status(401).json({ error: 'PIN inválido.' });
+  if (!queue || queue.tenant.status !== 'ACTIVE') return res.status(401).json({ error: 'PIN inválido ou inativo.' });
 
   const nextNum = queue.currentNum + 1;
   const formattedNum = (queue.prefix ? queue.prefix : '') + String(nextNum).padStart(3, '0');
@@ -119,17 +119,18 @@ queueRoutes.post('/operator/call-next', async (req: Request, res: Response): Pro
  * Operador clica em "Rechamar"
  */
 queueRoutes.post('/operator/recall', async (req: Request, res: Response): Promise<any> => {
-  const { pinCode } = req.body;
-  if (!pinCode || typeof pinCode !== 'string') {
-    return res.status(400).json({ error: 'PIN de autenticação obrigatório.' });
+  const { pinCode, tenantId } = req.body;
+  if (!pinCode || typeof pinCode !== 'string' || !tenantId) {
+    return res.status(400).json({ error: 'PIN e tenantId obrigatórios.' });
   }
 
   const queue = await prisma.ticketQueue.findFirst({
-    where: { pinCode: pinCode.trim() },
-    select: { id: true, prefix: true, currentNum: true, deskName: true, screenId: true }
+    where: { pinCode: pinCode.trim(), tenantId },
+    select: { id: true, prefix: true, currentNum: true, deskName: true, screenId: true, tenant: { select: { status: true } } }
   });
 
-  if (!queue || queue.currentNum === 0) {
+  if (!queue || queue.tenant.status !== 'ACTIVE') return res.status(401).json({ error: 'PIN inválido ou inativo.' });
+  if (queue.currentNum === 0) {
     return res.status(400).json({ error: 'Nenhuma senha chamada ainda.' });
   }
 
@@ -169,17 +170,17 @@ queueRoutes.post('/operator/recall', async (req: Request, res: Response): Promis
  * Operador digita um número específico para chamar (ex: preferencial P005)
  */
 queueRoutes.post('/operator/call-specific', async (req: Request, res: Response): Promise<any> => {
-  const { pinCode, customNumber } = req.body;
-  if (!pinCode || typeof pinCode !== 'string' || !customNumber) {
-    return res.status(400).json({ error: 'PIN e número específico são obrigatórios.' });
+  const { pinCode, tenantId, customNumber } = req.body;
+  if (!pinCode || typeof pinCode !== 'string' || !tenantId || !customNumber) {
+    return res.status(400).json({ error: 'PIN, tenantId e número específico são obrigatórios.' });
   }
 
   const queue = await prisma.ticketQueue.findFirst({
-    where: { pinCode: pinCode.trim() },
-    select: { id: true, deskName: true, screenId: true }
+    where: { pinCode: pinCode.trim(), tenantId },
+    select: { id: true, deskName: true, screenId: true, tenant: { select: { status: true } } }
   });
 
-  if (!queue) return res.status(401).json({ error: 'PIN inválido.' });
+  if (!queue || queue.tenant.status !== 'ACTIVE') return res.status(401).json({ error: 'PIN inválido ou inativo.' });
 
   const formattedNum = String(customNumber).trim().toUpperCase();
 
@@ -216,17 +217,17 @@ queueRoutes.post('/operator/call-specific', async (req: Request, res: Response):
  * Operador zera o contador da fila
  */
 queueRoutes.post('/operator/reset', async (req: Request, res: Response): Promise<any> => {
-  const { pinCode } = req.body;
-  if (!pinCode || typeof pinCode !== 'string') {
-    return res.status(400).json({ error: 'PIN de autenticação obrigatório.' });
+  const { pinCode, tenantId } = req.body;
+  if (!pinCode || typeof pinCode !== 'string' || !tenantId) {
+    return res.status(400).json({ error: 'PIN e tenantId obrigatórios.' });
   }
 
   const queue = await prisma.ticketQueue.findFirst({
-    where: { pinCode: pinCode.trim() },
-    select: { id: true }
+    where: { pinCode: pinCode.trim(), tenantId },
+    select: { id: true, tenant: { select: { status: true } } }
   });
 
-  if (!queue) return res.status(401).json({ error: 'PIN inválido.' });
+  if (!queue || queue.tenant.status !== 'ACTIVE') return res.status(401).json({ error: 'PIN inválido ou inativo.' });
 
   await prisma.ticketQueue.update({
     where: { id: queue.id },
@@ -277,8 +278,8 @@ queueRoutes.post('/admin', authenticate, async (req: Request, res: Response): Pr
 
     const cleanPin = typeof pinCode === 'string' && pinCode.trim() ? pinCode.trim() : Math.floor(1000 + Math.random() * 9000).toString();
 
-    // Check PIN uniqueness
-    const existingPin = await prisma.ticketQueue.findFirst({ where: { pinCode: cleanPin } });
+    // Check PIN uniqueness within tenant
+    const existingPin = await prisma.ticketQueue.findFirst({ where: { pinCode: cleanPin, tenantId } });
     if (existingPin) {
       return res.status(400).json({ error: 'PIN já está em uso por outra fila. Escolha outro código.' });
     }

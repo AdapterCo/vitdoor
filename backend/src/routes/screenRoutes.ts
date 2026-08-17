@@ -18,7 +18,7 @@ function generatePairingCode(): string {
 screenRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const screens = await prisma.screen.findMany({
-    where: { tenantId, createdById: req.auth!.userId },
+    where: { tenantId },
     include: {
       activePlaylist: true,
       activeLayout: true
@@ -50,7 +50,7 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
 
   // Check for default playlist to attach
   const defaultPlaylist = await prisma.playlist.findFirst({
-    where: { tenantId: scopedTenantId, createdById: req.auth!.userId }
+    where: { tenantId: scopedTenantId }
   });
 
   const [tenant, screenCount] = await Promise.all([
@@ -113,7 +113,7 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
 screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const scopedTenantId = tenantScope(req, req.body.tenantId);
-  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, createdById: req.auth!.userId } });
+  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
   const { name, locationName, groupName, orientation, volume, activePlaylistId, activeLayoutId } = req.body;
   const playlistProvided = Object.prototype.hasOwnProperty.call(req.body, 'activePlaylistId');
@@ -156,7 +156,7 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
 screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const scopedTenantId = tenantScope(req, req.body.tenantId);
-  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, createdById: req.auth!.userId } });
+  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
   const action = typeof req.body.action === 'string' ? req.body.action.trim().toUpperCase() : '';
   const payload = normalizeCommandPayload(action, req.body.payload);
@@ -220,14 +220,13 @@ screenRoutes.get('/:id/commands/:commandId', async (req: Request, res: Response)
       commandId: req.params.commandId,
       screenId: req.params.id,
       tenantId: scopedTenantId,
-      createdById: req.auth!.userId,
       status: { in: ['PENDING', 'SENT'] },
       expiresAt: { lte: new Date() }
     },
     data: { status: 'EXPIRED', success: false, message: 'Comando expirado antes da confirmação.', completedAt: new Date() }
   });
   const command = await prisma.remoteCommand.findFirst({
-    where: { commandId: req.params.commandId, screenId: req.params.id, tenantId: scopedTenantId, createdById: req.auth!.userId },
+    where: { commandId: req.params.commandId, screenId: req.params.id, tenantId: scopedTenantId },
     select: { commandId: true, action: true, status: true, success: true, message: true, createdAt: true, expiresAt: true, sentAt: true, completedAt: true }
   });
   if (!command) return res.status(404).json({ error: 'Comando não encontrado.' });
@@ -238,7 +237,7 @@ screenRoutes.get('/:id/commands/:commandId', async (req: Request, res: Response)
 screenRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const scopedTenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, createdById: req.auth!.userId } });
+  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
   await prisma.screen.delete({ where: { id } });
   return res.json({ success: true });

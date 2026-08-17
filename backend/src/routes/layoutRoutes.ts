@@ -11,7 +11,7 @@ layoutRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'DESIGNER')
 layoutRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const layouts = await prisma.layout.findMany({
-    where: { tenantId, createdById: req.auth!.userId },
+    where: { tenantId },
     include: { screens: { select: { id: true, name: true } } },
     orderBy: { updatedAt: 'desc' }
   });
@@ -42,7 +42,7 @@ layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.body.tenantId);
   const existing = await prisma.layout.findFirst({
-    where: { id, tenantId, createdById: req.auth!.userId },
+    where: { id, tenantId },
     include: { screens: { select: { id: true } } }
   });
   if (!existing) return res.status(404).json({ error: 'Layout não encontrado.' });
@@ -68,7 +68,7 @@ layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
 layoutRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const existing = await prisma.layout.findFirst({ where: { id, tenantId, createdById: req.auth!.userId }, include: { screens: { select: { id: true } } } });
+  const existing = await prisma.layout.findFirst({ where: { id, tenantId }, include: { screens: { select: { id: true } } } });
   if (!existing) return res.status(404).json({ error: 'Layout não encontrado.' });
   await prisma.layout.delete({ where: { id } });
   const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
@@ -87,7 +87,7 @@ async function prepareCanvasConfig(tenantId: string, userId: string, value: any)
       : [{ id: 'main', name: 'Área principal', widthPercent: 70 }, { id: 'side', name: 'Área lateral', widthPercent: 30 }];
   if (config.zones.length !== expectedZones.length || config.zones.some((zone: any, index: number) => zone?.id !== expectedZones[index].id)) return null;
   const ids = [...new Set(config.zones.flatMap((zone: any) => Array.isArray(zone.items) ? zone.items.map((item: any) => item?.mediaId) : []).filter((id: any) => typeof id === 'string'))] as string[];
-  const medias = await prisma.media.findMany({ where: { tenantId, createdById: userId, id: { in: ids } } });
+  const medias = await prisma.media.findMany({ where: { tenantId, id: { in: ids } } });
   if (medias.length !== ids.length) return null;
   const byId = new Map(medias.map((media) => [media.id, media]));
   let audioZoneCount = 0;

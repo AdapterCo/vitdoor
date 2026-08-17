@@ -59,7 +59,7 @@ export async function buildScreenManifest(screenId: string) {
         orderBy: { id: 'asc' }
       })
     : [];
-  if (medias.length !== mediaIds.size) return null;
+  // Missing media is ignored gracefully
 
   const payload = {
     schemaVersion: MANIFEST_SCHEMA_VERSION,

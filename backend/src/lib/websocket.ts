@@ -79,8 +79,7 @@ export function initWebSocketServer(server: Server) {
           });
           broadcastToAdmins(
             { type: 'SCREEN_STATUS_CHANGED', screenId: client.screenId, status: 'OFFLINE' },
-            client.tenantId,
-            client.ownerId
+            client.tenantId
           );
         } catch (e) {
           // Screen might have been deleted
@@ -100,7 +99,8 @@ async function handleMessage(client: ConnectedClient, msg: any) {
       let screen = null;
       if (msg.deviceToken) {
         try {
-          const auth = jwt.verify(msg.deviceToken, process.env.JWT_SECRET || 'secret', { algorithms: ['HS256'] }) as any;
+          if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is not configured');
+          const auth = jwt.verify(msg.deviceToken, process.env.JWT_SECRET, { algorithms: ['HS256'] }) as any;
           if (auth.type === 'DEVICE') {
             screen = await prisma.screen.findFirst({ where: {
               id: auth.screenId,
@@ -148,11 +148,11 @@ async function handleMessage(client: ConnectedClient, msg: any) {
         // Send active playlist / content data back to player
         const activePlaylist = screen.activePlaylistId
           ? await prisma.playlist.findUnique({
-            where: { id: screen.activePlaylistId, tenantId: screen.tenantId, createdById: screen.createdById },
+            where: { id: screen.activePlaylistId, tenantId: screen.tenantId },
               include: { items: { include: { media: true, layout: true }, orderBy: { orderIndex: 'asc' } } }
             })
           : await prisma.playlist.findFirst({
-              where: { tenantId: screen.tenantId, createdById: screen.createdById },
+              where: { tenantId: screen.tenantId },
               include: { items: { include: { media: true, layout: true }, orderBy: { orderIndex: 'asc' } } }
             });
 
@@ -161,7 +161,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
           orderBy: { createdAt: 'desc' }
         });
         const activeLayout = screen.activeLayoutId
-          ? await prisma.layout.findFirst({ where: { id: screen.activeLayoutId, tenantId: screen.tenantId, createdById: screen.createdById } })
+          ? await prisma.layout.findFirst({ where: { id: screen.activeLayoutId, tenantId: screen.tenantId } })
           : null;
         const manifest = await buildScreenManifest(screen.id);
 
@@ -181,10 +181,10 @@ async function handleMessage(client: ConnectedClient, msg: any) {
 
         broadcastToAdmins(
           { type: 'SCREEN_STATUS_CHANGED', screenId: screen.id, status: 'ONLINE' },
-          screen.tenantId,
-          screen.createdById || undefined
+          screen.tenantId
         );
       } else {
+        if (client.authTimer) clearTimeout(client.authTimer);
         client.ws.send(JSON.stringify({ type: 'PAIRING_PENDING', pairingCode: msg.pairingCode }));
       }
       break;
@@ -213,8 +213,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
               ...(telemetry.currentMediaName !== undefined ? { currentMediaName: telemetry.currentMediaName } : {})
             }
           },
-          client.tenantId,
-          client.ownerId
+          client.tenantId
         );
       }
       break;
@@ -257,8 +256,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
             imageUrl: msg.imageDataUrl,
             capturedAt: new Date().toISOString()
           },
-          client.tenantId,
-          client.ownerId
+          client.tenantId
         );
       }
       break;
@@ -278,8 +276,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
             success: !!msg.success,
             message
           },
-          client.tenantId,
-          client.ownerId
+          client.tenantId
         );
       }
       break;
@@ -401,12 +398,11 @@ async function completeCommand(screenId: string, commandId: string, success: boo
   });
 }
 
-export function broadcastToAdmins(data: any, tenantId?: string, ownerId?: string) {
+export function broadcastToAdmins(data: any, tenantId?: string) {
   for (const conn of activeConnections) {
     if (
       conn.type === 'ADMIN' &&
       (!tenantId || conn.tenantId === tenantId) &&
-      (!ownerId || conn.ownerId === ownerId) &&
       conn.ws.readyState === WebSocket.OPEN
     ) {
       conn.ws.send(JSON.stringify(data));

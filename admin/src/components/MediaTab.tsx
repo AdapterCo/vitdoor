@@ -438,7 +438,7 @@ function QrCodeModal({ media, onClose, onSave }: { media: any; onClose: () => vo
   // --- PREVIEW QR CODE ---
   const getQrPreviewUrl = (): string => {
     if (mode === 'PROFILE') {
-      return `https://vitdoor.app/r/${media.id}`;
+      return `${window.location.origin}/r/${media.id}`;
     }
     if (directType === 'WHATSAPP') {
       const digits = phone.replace(/\D/g, '');

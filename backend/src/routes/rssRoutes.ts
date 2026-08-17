@@ -27,6 +27,18 @@ rssRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   }
 
   try {
+    const parsedUrl = new URL(feedUrl);
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      return res.status(400).json({ error: 'Apenas HTTP e HTTPS são permitidos.' });
+    }
+    const hostname = parsedUrl.hostname;
+    const isPrivate = /^(localhost|::1|0\.0\.0\.0)$/i.test(hostname) ||
+                      /^(127|10|192\.168|169\.254)\./.test(hostname) ||
+                      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+    if (isPrivate) {
+      return res.status(400).json({ error: 'Acesso a IP interno bloqueado.' });
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 

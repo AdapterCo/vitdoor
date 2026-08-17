@@ -3,7 +3,9 @@ import type { CookieOptions, Request } from 'express';
 export const SESSION_COOKIE_NAME = 'vitdoor_session';
 
 export function getAdminJwtSecret(): string {
-  return process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'secret';
+  const secret = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT secret is not configured');
+  return secret;
 }
 
 export function sessionCookieOptions(): CookieOptions {

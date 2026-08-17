@@ -39,26 +39,26 @@ model Tenant {
 }
 
 model User {
-  id               String     @id @default(uuid())
-  tenantId         String
-  tenant           Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name             String
-  email            String     @unique
-  passwordHash     String
-  role             String     @default("ADMIN_CLIENT") // SUPER_ADMIN, ADMIN_CLIENT, OPERATOR, DESIGNER, VIEWER
-  avatarUrl        String?
-  active           Boolean    @default(true)
-  twoFactorEnabled Boolean    @default(false)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  createdScreens   Screen[]   @relation("ScreenCreator")
-  createdMedias    Media[]    @relation("MediaCreator")
-  createdLayouts   Layout[]   @relation("LayoutCreator")
-  createdPlaylists Playlist[] @relation("PlaylistCreator")
-  createdMediaFolders MediaFolder[] @relation("MediaFolderCreator")
-  createdCampaigns Campaign[] @relation("CampaignCreator")
+  id                     String           @id @default(uuid())
+  tenantId               String
+  tenant                 Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name                   String
+  email                  String           @unique
+  passwordHash           String
+  role                   String           @default("ADMIN_CLIENT") // SUPER_ADMIN, ADMIN_CLIENT, OPERATOR, DESIGNER, VIEWER
+  avatarUrl              String?
+  active                 Boolean          @default(true)
+  twoFactorEnabled       Boolean          @default(false)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  createdScreens         Screen[]         @relation("ScreenCreator")
+  createdMedias          Media[]          @relation("MediaCreator")
+  createdLayouts         Layout[]         @relation("LayoutCreator")
+  createdPlaylists       Playlist[]       @relation("PlaylistCreator")
+  createdMediaFolders    MediaFolder[]    @relation("MediaFolderCreator")
+  createdCampaigns       Campaign[]       @relation("CampaignCreator")
   createdEmergencyAlerts EmergencyAlert[] @relation("EmergencyAlertCreator")
-  createdRemoteCommands RemoteCommand[] @relation("RemoteCommandCreator")
+  createdRemoteCommands  RemoteCommand[]  @relation("RemoteCommandCreator")
 }
 
 model Screen {
@@ -114,6 +114,8 @@ model Screen {
   manifests        ScreenManifest[]
   qrScans          QrScan[]
   ticketQueues     TicketQueue[]
+
+  @@index([tenantId])
 }
 
 model ScreenManifest {
@@ -141,11 +143,11 @@ model PairingSession {
 }
 
 model Media {
-  id              String    @id @default(uuid())
+  id              String       @id @default(uuid())
   tenantId        String
-  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdById     String?
-  createdBy       User?     @relation("MediaCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy       User?        @relation("MediaCreator", fields: [createdById], references: [id], onDelete: SetNull)
   folderId        String?
   folder          MediaFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
   name            String
@@ -153,13 +155,13 @@ model Media {
   url             String
   storagePath     String?
   thumbnailUrl    String?
-  durationSeconds Int       @default(10)
-  sizeBytes       BigInt?   @default(0)
+  durationSeconds Int          @default(10)
+  sizeBytes       BigInt?      @default(0)
   tags            String?
   validUntil      DateTime?
   checksum        String?
   mimeType        String?
-  version         Int       @default(1)
+  version         Int          @default(1)
   ctaJson         String?
 
   createdAt DateTime @default(now())
@@ -167,6 +169,9 @@ model Media {
 
   playlistItems PlaylistItem[]
   qrScans       QrScan[]
+
+  @@index([tenantId, folderId])
+  @@index([tenantId, type])
 }
 
 model MediaFolder {
@@ -180,8 +185,8 @@ model MediaFolder {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([createdById, name])
-  @@index([tenantId, createdById])
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model Layout {
@@ -271,22 +276,25 @@ model ProofOfPlay {
   completed       Boolean  @default(true)
 
   @@unique([screenId, eventId])
+  @@index([tenantId, playedAt])
+  @@index([screenId, playedAt])
+  @@index([tenantId, mediaName, playedAt])
 }
 
 model RemoteCommand {
-  commandId   String   @id
+  commandId   String    @id
   tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   screenId    String
-  screen      Screen   @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  screen      Screen    @relation(fields: [screenId], references: [id], onDelete: Cascade)
   createdById String
-  createdBy   User     @relation("RemoteCommandCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy   User      @relation("RemoteCommandCreator", fields: [createdById], references: [id], onDelete: Cascade)
   action      String
   payloadJson String?
-  status      String   @default("PENDING") // PENDING, SENT, SUCCEEDED, FAILED, EXPIRED
+  status      String    @default("PENDING") // PENDING, SENT, SUCCEEDED, FAILED, EXPIRED
   success     Boolean?
   message     String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
   expiresAt   DateTime
   sentAt      DateTime?
   completedAt DateTime?
@@ -345,7 +353,7 @@ model QrScan {
   media      Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
   screenId   String?
   screen     Screen?  @relation(fields: [screenId], references: [id], onDelete: SetNull)
-  ctaType    String   // WHATSAPP, INSTAGRAM
+  ctaType    String // WHATSAPP, INSTAGRAM
   scanSource String   @default("QR_CODE") // QR_CODE, NFC_TAP
   scannedAt  DateTime @default(now())
   userAgent  String?
@@ -356,20 +364,21 @@ model QrScan {
 }
 
 model TicketQueue {
-  id           String        @id @default(uuid())
-  tenantId     String
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name         String        // ex: "Atendimento Geral", "Açougue", "Consultório 1"
-  prefix       String        @default("") // ex: "A", "P", "C", ou ""
-  currentNum   Int           @default(0)
-  pinCode      String        // PIN único de 4-6 dígitos para acesso do operador (ex: 1234)
-  deskName     String        @default("Guichê 01") // ex: "Consultório 03", "Balcão 02"
-  screenId     String?
-  screen       Screen?       @relation(fields: [screenId], references: [id], onDelete: SetNull)
-  tickets      QueueTicket[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id         String        @id @default(uuid())
+  tenantId   String
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name       String // ex: "Atendimento Geral", "Açougue", "Consultório 1"
+  prefix     String        @default("") // ex: "A", "P", "C", ou ""
+  currentNum Int           @default(0)
+  pinCode    String // PIN único de 4-6 dígitos para acesso do operador (ex: 1234)
+  deskName   String        @default("Guichê 01") // ex: "Consultório 03", "Balcão 02"
+  screenId   String?
+  screen     Screen?       @relation(fields: [screenId], references: [id], onDelete: SetNull)
+  tickets    QueueTicket[]
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
 
+  @@unique([tenantId, pinCode])
   @@index([tenantId])
   @@index([pinCode])
 }
@@ -378,8 +387,8 @@ model QueueTicket {
   id           String      @id @default(uuid())
   queueId      String
   queue        TicketQueue @relation(fields: [queueId], references: [id], onDelete: Cascade)
-  ticketNumber String      // ex: "A042" ou "042"
-  deskName     String      // ex: "Consultório 03"
+  ticketNumber String // ex: "A042" ou "042"
+  deskName     String // ex: "Consultório 03"
   status       String      @default("CALLED") // CALLED, COMPLETED, CANCELLED
   calledAt     DateTime    @default(now())
 

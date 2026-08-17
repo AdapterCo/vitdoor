@@ -162,7 +162,7 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
           include: { items: { include: { media: true }, orderBy: { orderIndex: 'asc' } } }
         })
       : await prisma.playlist.findFirst({
-          where: { tenantId: screen.tenantId, createdById: screen.createdById || undefined },
+          where: { tenantId: screen.tenantId },
           include: { items: { include: { media: true }, orderBy: { orderIndex: 'asc' } } }
         });
 

@@ -102,4 +102,3 @@ volumes:
 networks:
   internal:
     name: vitdoor_network
-    external: true
