@@ -333,6 +333,26 @@ Resposta atual:
   },
   "activePlaylist": null,
   "activeLayout": null,
+  "campaigns": [
+    {
+      "id": "camp-uuid",
+      "name": "Campanha Ofertas Verão",
+      "advertiserName": "Anunciante Exemplo",
+      "startDate": "2026-08-01T00:00:00.000Z",
+      "endDate": "2026-08-31T23:59:59.000Z",
+      "startTime": "08:00",
+      "endTime": "22:00",
+      "daysOfWeek": "1,2,3,4,5",
+      "priority": 2,
+      "maxImpressions": 1000,
+      "playlist": {
+        "id": "pl-camp-uuid",
+        "name": "Playlist Comercial",
+        "isLoop": true,
+        "items": []
+      }
+    }
+  ],
   "assets": [
     {
       "id": "media-id",
@@ -456,6 +476,49 @@ Campos do objeto `cta`:
 > **IMPORTANTE:** o campo `target` contém a URL de destino final (WhatsApp ou Instagram). O player Flutter **não deve gerar o QR Code apontando diretamente para `target`**. Em vez disso, deve construir a URL de rastreamento via o endpoint `/r/:mediaId` — ver seção 26. Usar `target` diretamente ignora todo o rastreamento de conversão.
 
 Quando `cta` é `null` ou `cta.enabled` é `false`, nenhum QR Code é exibido. Respeitar a posição exata informada pelo manifesto e nunca inventar posição padrão.
+
+### 9.3 Contrato e Execução de Campanhas Agendadas (`campaigns`)
+
+**Estado:** `BACKEND_PRONTO` — integração Flutter/Kotlin pendente.
+
+O manifesto entrega a lista de campanhas publicitárias vigentes do cliente no campo `campaigns`. Cada objeto de campanha possui:
+
+```json
+{
+  "id": "uuid-da-campanha",
+  "name": "Campanha Ofertas Verão",
+  "advertiserName": "Coca-Cola Brasil",
+  "startDate": "2026-08-01T00:00:00.000Z",
+  "endDate": "2026-08-31T23:59:59.000Z",
+  "startTime": "08:00",
+  "endTime": "22:00",
+  "daysOfWeek": "1,2,3,4,5",
+  "priority": 2,
+  "maxImpressions": 1000,
+  "playlist": {
+    "id": "uuid-da-playlist",
+    "name": "Playlist Comercial",
+    "isLoop": true,
+    "items": []
+  }
+}
+```
+
+#### Regras de Processamento no Player Android / Flutter:
+
+1. **Download Garantido de Assets**: O gerenciador de download (`VitDoorDownloadService`) deve baixar previamente todos os arquivos do array `assets` do manifesto, incluindo as mídias vinculadas às playlists das campanhas.
+2. **Motor de Seleção Temporal em Tempo Real**:
+   Antes de selecionar a próxima mídia a ser exibida na tela, o Player valida quais campanhas do array `campaigns` estão ativas no exato segundo atual:
+   - **Validade de Data**: Data do dispositivo (`now`) dentro da janela `startDate` e `endDate`.
+   - **Janela de Horário Diário**: Hora atual (HH:mm) entre `startTime` (ex: "08:00") e `endTime` (ex: "22:00").
+   - **Dia da Semana**: Dia atual do dispositivo (`1` = Segunda, `2` = Terça, `3` = Quarta, `4` = Quinta, `5` = Sexta, `6` = Sábado, `0` = Domingo) contido na string `daysOfWeek` (ex: `"1,2,3,4,5"`).
+3. **Regra de Intercalação e Prioridade (`priority`)**:
+   - `priority = 3` (**Urgente / Exclusiva**): Substitui temporariamente a playlist normal da tela, tocando a playlist da campanha de forma exclusiva durante a janela de horário configurada.
+   - `priority = 2` (**Alta**): Intercala 1 mídia da playlist da campanha a cada 2 mídias da playlist comum.
+   - `priority = 1` (**Normal**): Insere a mídia da campanha no final do loop principal.
+4. **Auditoria Proof-of-Play**:
+   Toda exibição de mídia vinda de campanha gera log de auditoria no SQLite local contendo `mediaId`, `mediaName`, `durationPlayedSeconds` e um `eventId` (UUID v4), sendo sincronizada via `POST /api/proof-of-play/log-batch`.
+
 
 
 ### 9.2 Schema canônico de `activeLayout`
