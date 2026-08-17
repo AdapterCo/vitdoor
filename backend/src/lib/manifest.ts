@@ -44,9 +44,32 @@ export async function buildScreenManifest(screenId: string) {
     }
   };
 
+  const activeCampaigns = await prisma.campaign.findMany({
+    where: {
+      tenantId: screen.tenantId,
+      status: 'ACTIVE'
+    },
+    include: {
+      playlist: {
+        include: {
+          items: {
+            include: { media: true, layout: true },
+            orderBy: { orderIndex: 'asc' }
+          }
+        }
+      }
+    }
+  });
+
   for (const item of screen.activePlaylist?.items || []) {
     if (item.mediaId) mediaIds.add(item.mediaId);
     collectLayoutMedia(item.layout);
+  }
+  for (const campaign of activeCampaigns) {
+    for (const item of campaign.playlist?.items || []) {
+      if (item.mediaId) mediaIds.add(item.mediaId);
+      collectLayoutMedia(item.layout);
+    }
   }
   collectLayoutMedia(screen.activeLayout);
 
@@ -71,6 +94,19 @@ export async function buildScreenManifest(screenId: string) {
     },
     activePlaylist: playlistDto(screen.activePlaylist, true),
     activeLayout: playerLayoutDto(screen.activeLayout),
+    campaigns: activeCampaigns.map((c) => ({
+      id: c.id,
+      name: c.name,
+      advertiserName: c.advertiserName,
+      startDate: c.startDate.toISOString(),
+      endDate: c.endDate.toISOString(),
+      startTime: c.startTime,
+      endTime: c.endTime,
+      daysOfWeek: c.daysOfWeek,
+      priority: c.priority,
+      maxImpressions: c.maxImpressions,
+      playlist: playlistDto(c.playlist, true)
+    })),
     assets: medias.map((media) => playerMediaDto(media))
   };
 

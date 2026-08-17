@@ -364,6 +364,12 @@ export function App() {
     loadTenantData(activeTenant.id);
   };
 
+  const handleDeleteCampaign = async (id: string) => {
+    if (!activeTenant) return;
+    await apiFetch(`/campaigns/${id}?tenantId=${activeTenant.id}`, { method: 'DELETE' });
+    loadTenantData(activeTenant.id);
+  };
+
   const handleTriggerEmergency = async (title: string, message: string, alertType: string, screenIds: string[]) => {
     if (!activeTenant) return;
     await apiFetch('/emergency/trigger', {
@@ -525,6 +531,7 @@ export function App() {
             campaigns={campaigns}
             playlists={playlists}
             onCreateCampaign={handleCreateCampaign}
+            onDeleteCampaign={handleDeleteCampaign}
           />
         )}
 
