@@ -2,9 +2,21 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
 import { campaignDto } from '../lib/dto.js';
+import { bumpOwnerManifestVersions } from '../lib/manifest.js';
+import { sendManifestToScreen } from '../lib/websocket.js';
 
 export const campaignRoutes = Router();
 campaignRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'DESIGNER'));
+
+function parseStartDate(val: string): Date {
+  if (!val) return new Date();
+  return new Date(val.includes('T') ? val : `${val}T00:00:00.000Z`);
+}
+
+function parseEndDate(val: string): Date {
+  if (!val) return new Date();
+  return new Date(val.includes('T') ? val : `${val}T23:59:59.999Z`);
+}
 
 campaignRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
@@ -36,8 +48,8 @@ campaignRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
       name,
       advertiserName,
       playlistId,
-      startDate: new Date(startDate),
-      endDate: new Date(endDate),
+      startDate: parseStartDate(startDate),
+      endDate: parseEndDate(endDate),
       daysOfWeek: daysOfWeek || '1,2,3,4,5,6,0',
       startTime: startTime || '00:00',
       endTime: endTime || '23:59',
@@ -46,6 +58,9 @@ campaignRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
       status: 'ACTIVE'
     }
   });
+
+  const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
+  for (const screenId of affectedIds) await sendManifestToScreen(screenId, true);
 
   return res.json(campaignDto(campaign));
 });
@@ -69,8 +84,8 @@ campaignRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => 
       name: name || existing.name,
       advertiserName: advertiserName !== undefined ? advertiserName : existing.advertiserName,
       playlistId: playlistId !== undefined ? (playlistId || null) : existing.playlistId,
-      startDate: startDate ? new Date(startDate) : existing.startDate,
-      endDate: endDate ? new Date(endDate) : existing.endDate,
+      startDate: startDate ? parseStartDate(startDate) : existing.startDate,
+      endDate: endDate ? parseEndDate(endDate) : existing.endDate,
       daysOfWeek: daysOfWeek || existing.daysOfWeek,
       startTime: startTime || existing.startTime,
       endTime: endTime || existing.endTime,
@@ -81,6 +96,9 @@ campaignRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => 
     include: { playlist: true }
   });
 
+  const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
+  for (const screenId of affectedIds) await sendManifestToScreen(screenId, true);
+
   return res.json(campaignDto(campaign));
 });
 
@@ -90,5 +108,9 @@ campaignRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> 
   const existing = await prisma.campaign.findFirst({ where: { id, tenantId } });
   if (!existing) return res.status(404).json({ error: 'Campanha não encontrada.' });
   await prisma.campaign.delete({ where: { id } });
+
+  const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
+  for (const screenId of affectedIds) await sendManifestToScreen(screenId, true);
+
   return res.json({ success: true });
 });
