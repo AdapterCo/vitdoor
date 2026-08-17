@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { UploadCloud, Image, Film, Globe, Rss, Trash2, Save, Plus, Folder, FolderPlus, Pencil, QrCode, X, ExternalLink, Share2 } from 'lucide-react';
+import { UploadCloud, Image, Film, Globe, Trash2, Save, Plus, Folder, FolderPlus, Pencil, QrCode, X, ExternalLink, Share2 } from 'lucide-react';
 
 interface MediaTabProps {
   medias: any[];
@@ -27,7 +27,7 @@ export const MediaTab: React.FC<MediaTabProps> = ({
 }) => {
   const [isWidgetModalOpen, setIsWidgetModalOpen] = useState(false);
   const [widgetName, setWidgetName] = useState('');
-  const [widgetType, setWidgetType] = useState('RSS');
+  const [widgetType, setWidgetType] = useState('WEB_PAGE');
   const [widgetUrl, setWidgetUrl] = useState('');
   const [duration, setDuration] = useState(15);
   const [durationDrafts, setDurationDrafts] = useState<Record<string, number>>({});
@@ -40,12 +40,8 @@ export const MediaTab: React.FC<MediaTabProps> = ({
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      let detectedDuration = 10;
-      if (file.type.startsWith('video/') || file.type.startsWith('audio/')) {
-        detectedDuration = await readMediaDuration(file);
-      }
       setUploading(true);
-      await onUploadFile(file, file.name, detectedDuration, 'Geral', selectedFolder !== 'ALL' && selectedFolder !== 'ROOT' ? selectedFolder : null);
+      await onUploadFile(file, file.name.replace(/\.[^/.]+$/, ''), 15, 'Geral', selectedFolder !== 'ALL' && selectedFolder !== 'ROOT' ? selectedFolder : null);
       setUploading(false);
       e.target.value = '';
     }
@@ -56,7 +52,7 @@ export const MediaTab: React.FC<MediaTabProps> = ({
     if (!widgetName || !widgetUrl) return;
     onCreateWidget({
       name: widgetName,
-      type: widgetType,
+      type: 'WEB_PAGE',
       url: widgetUrl,
       durationSeconds: duration,
       tags: 'Widget',
@@ -76,18 +72,18 @@ export const MediaTab: React.FC<MediaTabProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Header & Actions */}
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>Biblioteca de Mídias</h2>
           <p style={{ color: '#94a3b8', fontSize: '0.95rem' }}>
-            Envie vídeos MP4/WEBM, imagens, áudios e crie conteúdos dinâmicos, como RSS e páginas web.
+            Envie vídeos MP4/WEBM, imagens, áudios e crie páginas web dinâmicas.
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: '12px' }}>
           <button className="btn-secondary" onClick={() => setIsWidgetModalOpen(true)}>
-            <Rss size={18} /> Conteúdo Dinâmico / RSS Widget
+            <Globe size={18} /> Adicionar Página Web
           </button>
 
           <label className="btn-primary" style={{ cursor: 'pointer' }}>
@@ -305,18 +301,18 @@ export const MediaTab: React.FC<MediaTabProps> = ({
         }}>
           <div className="glass-panel" style={{ width: '450px', padding: '30px' }}>
             <h3 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '8px', color: '#fff' }}>
-              Adicionar Widget Dinâmico
+              Adicionar Página Web
             </h3>
             <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '20px' }}>
-              Integre feeds RSS de notícias ou páginas web autorizadas.
+              Exiba sites, portais ou dashboards web na programação da tela.
             </p>
 
             <form onSubmit={handleWidgetSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>Nome do Widget *</label>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>Nome da Página *</label>
                 <input
                   type="text"
-                  placeholder="Ex: Feed Notícias G1"
+                  placeholder="Ex: Site da Empresa / Dashboard"
                   className="input-field"
                   value={widgetName}
                   onChange={(e) => setWidgetName(e.target.value)}
@@ -325,22 +321,10 @@ export const MediaTab: React.FC<MediaTabProps> = ({
               </div>
 
               <div>
-                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>Tipo de Widget</label>
-                <select
-                  className="input-field"
-                  value={widgetType}
-                  onChange={(e) => setWidgetType(e.target.value)}
-                >
-                  <option value="RSS">Feed RSS de Notícias</option>
-                  <option value="WEB_PAGE">Página da Internet (URL)</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>URL / Fonte de Dados *</label>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>URL da Página *</label>
                 <input
                   type="url"
-                  placeholder="Ex: https://g1.globo.com/rss/g1/"
+                  placeholder="Ex: https://empresa.com.br"
                   className="input-field"
                   value={widgetUrl}
                   onChange={(e) => setWidgetUrl(e.target.value)}

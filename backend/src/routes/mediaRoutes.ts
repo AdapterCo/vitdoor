@@ -168,14 +168,14 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
   }
 });
 
-// Create dynamic widget media (RSS, Clock, Custom Web URL)
+// Create dynamic widget media (Custom Web URL)
 mediaRoutes.post('/widget', async (req: Request, res: Response): Promise<any> => {
   const { tenantId: requestedTenantId, name, type, url, durationSeconds, tags, folderId: requestedFolderId } = req.body;
   const tenantId = tenantScope(req, requestedTenantId);
   if (!name || !url) {
     return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
   }
-  if (!['RSS', 'WEB_PAGE'].includes(type)) return res.status(400).json({ error: 'Tipo dinâmico inválido. Use RSS ou WEB_PAGE.' });
+  if (type !== 'WEB_PAGE') return res.status(400).json({ error: 'Tipo dinâmico inválido. Use WEB_PAGE.' });
 
   const duration = durationSeconds ? parseInt(durationSeconds, 10) : 15;
   const folderId = await validateFolder(tenantId, req.auth!.userId, requestedFolderId);
@@ -187,8 +187,8 @@ mediaRoutes.post('/widget', async (req: Request, res: Response): Promise<any> =>
       createdById: req.auth!.userId,
       folderId,
       name,
-      type,
-      mimeType: type === 'RSS' ? 'application/rss+xml' : 'text/html',
+      type: 'WEB_PAGE',
+      mimeType: 'text/html',
       url,
       durationSeconds: duration,
       tags: tags || 'Widget'

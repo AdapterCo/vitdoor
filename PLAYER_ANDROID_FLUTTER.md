@@ -599,11 +599,7 @@ Contrato de layout v2 (Simultâneo com Playlist):
 - `loop` é sempre `true`;
 - no máximo uma zona pode ter `audioEnabled: true`; as demais devem ficar mudas;
 - vídeos avançam pelo término real; imagens e conteúdos estáticos usam `durationSeconds`;
-- **Suporte a Notícias Dinâmicas no Rodapé (`ticker.text` / `ticker.parsedText`)**:
-  - **Uso do `parsedText` (Pré-processado pela VPS)**: O manifesto JSON entregue pela VPS em `activeLayout.canvasConfig.ticker` agora inclui a propriedade `parsedText` já montada com as manchetes limpas (ex: `"🗞️ ECONOMIA:   Irmãos paranaenses superam crises e faturam milhões com logística no Brasil   •   Após três recomeços, irmãos empresários criam negócio de mobilidade milionário..."`). Se `ticker.parsedText` existir no manifesto, o player deve exibi-lo diretamente no letreiro (*marquee*), dispensando chamadas adicionais;
-  - **Caso de Fallback (sem `parsedText`)**:
-    - Se `ticker.parsedText` não existir e `ticker.text` for uma URL de Feed RSS (iniciando com `http://` ou `https://`, ex: `https://www.gazetadopovo.com.br/feed/rss/economia.xml`), o player deve realizar a chamada HTTP `GET {API_BASE}/public/rss?url={ticker.text}` para receber o JSON das manchetes (`{ title, items: [{ title }] }`) e concatenar as manchetes com ` • `;
-    - Se `ticker.text` for texto comum (ex: `"Ofertas válidas enquanto durarem os estoques"`), exibir o texto em animação de letreiro (*marquee*);
+- `ticker.enabled` é opcional; quando ativo, `text` é o texto personalizado a ser exibido em animação de letreiro (*marquee*) no rodapé (ex: `"Ofertas válidas enquanto durarem os estoques"`);
 - `clock.position`: `TOP_LEFT`, `TOP_RIGHT`, `BOTTOM_LEFT`, `BOTTOM_RIGHT` ou `FOOTER`;
 - `FOOTER` só é válido quando o ticker está ativo;
 - data/hora vêm do relógio real do Android;

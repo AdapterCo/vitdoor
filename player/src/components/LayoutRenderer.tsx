@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Clock, Newspaper } from 'lucide-react';
+import { AlertTriangle, Clock } from 'lucide-react';
 import { MultiZoneLayout } from './MultiZoneLayout';
 import { MediaVideo } from './MediaVideo';
 import { MediaQrCta } from './MediaQrCta';
-import { RssWidget } from './RssWidget';
 
 interface LayoutRendererProps {
   activePlaylist?: any;
@@ -96,12 +95,6 @@ export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
               referrerPolicy="no-referrer"
               style={{ width: '100%', height: '100%', border: 'none' }}
-            />
-          ) : currentMedia.type === 'RSS' ? (
-            <RssWidget
-              mediaName={currentMedia.name}
-              feedUrl={currentMedia.url}
-              durationSeconds={currentDuration}
             />
           ) : (
             <img

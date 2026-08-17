@@ -86,10 +86,8 @@ app.use('/api/tenants', authenticate, tenantRoutes);
 app.use('/api/qr-scans', authenticate, qrStatsRoutes);
 app.use('/api/queues', queueRoutes); // handles both /operator (public with PIN) and /admin (authed)
 import { publicReportRoutes } from './routes/publicReportRoutes.js';
-import { rssRoutes } from './routes/rssRoutes.js';
 
 app.use('/api/public/report', publicReportRoutes);
-app.use('/api/public/rss', rssRoutes);
 app.use('/r', qrRoutes); // public QR redirect — no auth
 
 app.get('/api/health', async (_req, res) => {

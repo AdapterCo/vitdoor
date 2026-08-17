@@ -1,7 +1,6 @@
 import { createHash } from 'crypto';
 import { prisma } from './prisma.js';
 import { playerLayoutDto, playlistDto, playerMediaDto } from './dto.js';
-import { fetchRssFeed } from '../routes/rssRoutes.js';
 
 export const MANIFEST_SCHEMA_VERSION = 1;
 
@@ -113,24 +112,6 @@ export async function buildScreenManifest(screenId: string) {
     : [];
   // Missing media is ignored gracefully
 
-  const activeLayoutObj = playerLayoutDto(screen.activeLayout);
-  if (activeLayoutObj?.canvasConfig?.ticker?.enabled && activeLayoutObj.canvasConfig.ticker.text) {
-    const text = activeLayoutObj.canvasConfig.ticker.text.trim();
-    if (/^https?:\/\//i.test(text) || (text.includes('.') && (text.includes('rss') || text.includes('feed') || text.includes('.xml') || text.includes('/xml') || text.includes('gazeta') || text.includes('globo') || text.includes('folha') || text.includes('uol')))) {
-      try {
-        const rssData = await fetchRssFeed(text);
-        if (rssData && Array.isArray(rssData.items) && rssData.items.length > 0) {
-          const headlines = rssData.items.map((i: any) => i.title).join('   •   ');
-          activeLayoutObj.canvasConfig.ticker.parsedText = `🗞️ ${(rssData.title || 'NOTÍCIAS').toUpperCase()}:   ${headlines}`;
-          activeLayoutObj.canvasConfig.ticker.rssHeadlines = headlines;
-          activeLayoutObj.canvasConfig.ticker.rssTitle = rssData.title;
-        }
-      } catch {
-        // Fallback gracefully
-      }
-    }
-  }
-
   const payload = {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     version: screen.manifestVersion,
@@ -140,7 +121,7 @@ export async function buildScreenManifest(screenId: string) {
       volume: screen.volume
     },
     activePlaylist: playlistDto(screen.activePlaylist, true),
-    activeLayout: activeLayoutObj,
+    activeLayout: playerLayoutDto(screen.activeLayout),
     campaigns: activeCampaigns.map((c) => ({
       id: c.id,
       name: c.name,
