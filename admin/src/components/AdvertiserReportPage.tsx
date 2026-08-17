@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Download, Globe, QrCode, ShieldCheck, Smartphone, TrendingUp, Tv, Wifi, Clock, ArrowLeft, ExternalLink } from 'lucide-react';
+import { API_BASE } from '../config';
 
 interface Props {
   mediaId: string;
@@ -14,7 +15,7 @@ export const AdvertiserReportPage: React.FC<Props> = ({ mediaId }) => {
     const fetchReport = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/public/report/media/${mediaId}?days=30`);
+        const res = await fetch(`${API_BASE}/public/report/media/${mediaId}?days=30`);
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: 'Relatório não encontrado.' }));
           throw new Error(err.error || 'Não foi possível carregar o relatório.');

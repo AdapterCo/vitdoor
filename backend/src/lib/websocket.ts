@@ -17,9 +17,25 @@ interface ConnectedClient {
   messageWindowStartedAt: number;
   messagesInWindow: number;
   sessionToken?: string;
+  isAlive: boolean;
 }
 
 const activeConnections = new Set<ConnectedClient>();
+
+// Ping/Pong heartbeat interval to keep Cloudflare WS connections alive (30s)
+const heartbeatInterval = setInterval(() => {
+  for (const client of activeConnections) {
+    if (client.isAlive === false) {
+      activeConnections.delete(client);
+      client.ws.terminate();
+    } else {
+      client.isAlive = false;
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.ping();
+      }
+    }
+  }
+}, 30_000);
 
 export function cleanCode(code?: string): string {
   return (code || '').trim().replace(/[\s-]/g, '').toUpperCase();
@@ -34,8 +50,14 @@ export function initWebSocketServer(server: Server) {
       type: 'PLAYER',
       messageWindowStartedAt: Date.now(),
       messagesInWindow: 0,
-      sessionToken: readCookie(request.headers.cookie, SESSION_COOKIE_NAME)
+      sessionToken: readCookie(request.headers.cookie, SESSION_COOKIE_NAME),
+      isAlive: true
     };
+
+    ws.on('pong', () => {
+      client.isAlive = true;
+    });
+
     client.authTimer = setTimeout(() => {
       if (!client.screenId && !client.ownerId && ws.readyState === WebSocket.OPEN) {
         ws.close(1008, 'Authentication timeout');
@@ -44,6 +66,7 @@ export function initWebSocketServer(server: Server) {
     activeConnections.add(client);
 
     ws.on('message', async (data: string) => {
+      client.isAlive = true;
       const now = Date.now();
       if (now - client.messageWindowStartedAt >= 60_000) {
         client.messageWindowStartedAt = now;
@@ -87,6 +110,25 @@ export function initWebSocketServer(server: Server) {
       }
     });
   });
+
+  const heartbeatInterval = setInterval(() => {
+    for (const client of activeConnections) {
+      if (client.isAlive === false) {
+        client.ws.terminate();
+        activeConnections.delete(client);
+      } else {
+        client.isAlive = false;
+        client.ws.ping();
+      }
+    }
+  }, 30_000);
+
+  wss.on('close', () => {
+    clearInterval(heartbeatInterval);
+  });
+
+  process.on('SIGTERM', () => clearInterval(heartbeatInterval));
+  process.on('SIGINT', () => clearInterval(heartbeatInterval));
 
   console.log('⚡ Gateway WebSocket Server ativo em /ws');
 }

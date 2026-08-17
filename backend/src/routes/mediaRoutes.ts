@@ -4,8 +4,11 @@ import { prisma } from '../lib/prisma.js';
 import { deleteStoredFile, purgePublicUrl, saveFile } from '../lib/storage.js';
 import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
 import { detectMediaDuration } from '../lib/mediaMetadata.js';
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
 import { createHash, randomUUID } from 'crypto';
-import { fileTypeFromBuffer } from 'file-type';
+import { fileTypeFromFile } from 'file-type';
 import { mediaDto, mediaFolderDto } from '../lib/dto.js';
 import { parseWhatsAppTarget, normalizeInstagramTarget, normalizeGenericUrl, isValidPhone, buildWhatsAppWebUrl } from '../lib/ctaHelpers.js';
 import { bumpOwnerManifestVersions } from '../lib/manifest.js';
@@ -13,8 +16,17 @@ import { sendManifestToScreen } from '../lib/websocket.js';
 
 export const mediaRoutes = Router();
 mediaRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'DESIGNER'));
+
+const tmpUploadDir = path.join(os.tmpdir(), 'vitdoor_tmp_uploads');
+if (!fs.existsSync(tmpUploadDir)) {
+  fs.mkdirSync(tmpUploadDir, { recursive: true });
+}
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, tmpUploadDir),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${randomUUID()}-${file.originalname}`)
+  }),
   limits: { fileSize: 256 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, callback) => {
     const allowed = file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/') || file.mimetype === 'application/pdf' || file.mimetype === 'application/octet-stream';
@@ -79,12 +91,13 @@ mediaRoutes.delete('/folders/:id', async (req: Request, res: Response): Promise<
 
 // Upload media file
 mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Response): Promise<any> => {
-  const tenantId = tenantScope(req, req.body.tenantId as string | undefined);
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
   }
 
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  try {
+    const tenantId = tenantScope(req, req.body.tenantId as string | undefined);
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
   if (!tenant) {
     return res.status(400).json({ error: 'Cliente/Tenant não encontrado.' });
   }
@@ -96,7 +109,7 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
     return res.status(413).json({ error: 'Limite de armazenamento contratado atingido.' });
   }
 
-  const detectedFileType = await fileTypeFromBuffer(req.file.buffer);
+  const detectedFileType = await fileTypeFromFile(req.file.path);
   const mime = detectedFileType?.mime || '';
   const allowedDetectedType = mime.startsWith('video/') || mime.startsWith('image/') || mime.startsWith('audio/') || mime === 'application/pdf';
   if (!allowedDetectedType) {
@@ -109,11 +122,20 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
   else if (mime.includes('pdf')) type = 'PDF';
 
   const mediaId = randomUUID();
-  const checksum = createHash('sha256').update(req.file.buffer).digest('hex');
+  
+  const hash = createHash('sha256');
+  const stream = fs.createReadStream(req.file.path);
+  for await (const chunk of stream) hash.update(chunk);
+  const checksum = hash.digest('hex');
+
   const { url, storagePath } = await saveFile(req.file, tenantId, mediaId);
-  const detectedDuration = (type === 'VIDEO' || type === 'AUDIO')
-    ? detectMediaDuration(req.file.buffer, mime)
-    : null;
+  
+  let detectedDuration = null;
+  if (type === 'VIDEO' || type === 'AUDIO') {
+    const fileBuffer = await fs.promises.readFile(req.file.path);
+    detectedDuration = detectMediaDuration(fileBuffer, mime);
+  }
+  
   const requestedDuration = parseInt(req.body.durationSeconds, 10);
   const duration = detectedDuration || (Number.isFinite(requestedDuration) && requestedDuration > 0 ? requestedDuration : 10);
 
@@ -138,6 +160,12 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
   });
 
   return res.json(mediaDto(media));
+
+  } finally {
+    if (req.file && req.file.path) {
+      await fs.promises.unlink(req.file.path).catch(() => {});
+    }
+  }
 });
 
 // Create dynamic widget media (RSS, Clock, Custom Web URL)

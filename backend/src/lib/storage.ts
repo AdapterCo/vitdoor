@@ -40,13 +40,16 @@ export async function saveFile(file: Express.Multer.File, tenantId: string, medi
   const filename = `${Date.now()}-${safeName || 'media'}`;
   const objectKey = `tenants/${tenantId}/media/${mediaId}/${filename}`;
   
+  const bodyData = file.buffer || (file.path ? fs.createReadStream(file.path) : null);
+  if (!bodyData) throw new Error('Dados do arquivo de mídia inválidos.');
+
   if (s3Client && process.env.R2_BUCKET_NAME) {
     try {
       await s3Client.send(
         new PutObjectCommand({
           Bucket: process.env.R2_BUCKET_NAME,
           Key: objectKey,
-          Body: file.buffer,
+          Body: bodyData,
           ContentType: file.mimetype,
           ContentDisposition: 'inline',
           CacheControl: 'public, max-age=31536000, immutable'
@@ -68,7 +71,11 @@ export async function saveFile(file: Express.Multer.File, tenantId: string, medi
 
   // Local storage fallback
   const localFilePath = path.join(uploadDir, filename);
-  fs.writeFileSync(localFilePath, file.buffer);
+  if (file.buffer) {
+    fs.writeFileSync(localFilePath, file.buffer);
+  } else if (file.path) {
+    fs.copyFileSync(file.path, localFilePath);
+  }
   const publicBaseUrl = (process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 4000}`).replace(/\/$/, '');
   const url = `${publicBaseUrl}/uploads/${encodeURIComponent(filename)}`;
   return { url, storagePath: filename };

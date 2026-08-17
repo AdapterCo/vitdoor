@@ -81,7 +81,11 @@ export const PlaylistsTab: React.FC<Props> = ({ playlists, medias, folders = [],
                 <div><h3>{playlist.name}</h3><span style={{ color: '#94a3b8', fontSize: '.8rem' }}>{playlist.description || 'Sem descrição'}</span></div>
                 <div style={{ display: 'flex', gap: '7px' }}>
                   <button className="btn-secondary" style={{ padding: '7px' }} onClick={() => edit(playlist)} title="Editar"><Pencil size={15} /></button>
-                  <button className="btn-danger" style={{ padding: '7px' }} onClick={() => onDeletePlaylist(playlist.id)} title="Excluir"><Trash2 size={15} /></button>
+                  <button className="btn-danger" style={{ padding: '7px' }} onClick={() => {
+                    if (window.confirm(`Tem certeza que deseja excluir a playlist "${playlist.name}"?`)) {
+                      onDeletePlaylist(playlist.id);
+                    }
+                  }} title="Excluir"><Trash2 size={15} /></button>
                 </div>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', color: '#60a5fa', fontSize: '.82rem' }}>

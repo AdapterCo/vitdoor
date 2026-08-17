@@ -190,7 +190,11 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                       className="btn-danger"
                       style={{ padding: '6px 10px' }}
                       title="Excluir Tela"
-                      onClick={() => onDeleteScreen(screen.id)}
+                      onClick={() => {
+                        if (window.confirm(`Tem certeza que deseja remover a tela "${screen.name}"?`)) {
+                          onDeleteScreen(screen.id);
+                        }
+                      }}
                     >
                       <Trash2 size={14} />
                     </button>
