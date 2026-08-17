@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, tenantScope } from '../middleware/auth.js';
 import { authenticateDevice } from '../middleware/deviceAuth.js';
+import { bumpOwnerManifestVersions } from '../lib/manifest.js';
+import { sendManifestToScreen } from '../lib/websocket.js';
 
 export const proofOfPlayRoutes = Router();
 
@@ -43,6 +45,10 @@ proofOfPlayRoutes.post('/log-batch', authenticateDevice, async (req: Request, re
       data: uniqueItems.map((item) => ({ ...item, tenantId: req.deviceAuth!.tenantId })),
       skipDuplicates: true
     });
+    
+    // Check if any campaign reached its maxImpressions limit
+    void checkAndExpireCampaigns(req.deviceAuth!.tenantId).catch(() => {});
+
     return res.json({
       received: items.length,
       accepted: created.count,
@@ -55,6 +61,38 @@ proofOfPlayRoutes.post('/log-batch', authenticateDevice, async (req: Request, re
     return res.status(500).json({ error: 'Não foi possível persistir o lote de proof-of-play.' });
   }
 });
+
+async function checkAndExpireCampaigns(tenantId: string) {
+  const activeCampaigns = await prisma.campaign.findMany({
+    where: { tenantId, status: 'ACTIVE', maxImpressions: { not: null } },
+    include: { playlist: { include: { items: { include: { media: true } } } } }
+  });
+
+  let expiredAny = false;
+  for (const campaign of activeCampaigns) {
+    if (!campaign.maxImpressions || campaign.maxImpressions <= 0) continue;
+    const mediaNames = campaign.playlist?.items
+      .map((i) => i.media?.name)
+      .filter((n): n is string => typeof n === 'string' && n.length > 0) || [];
+
+    if (mediaNames.length > 0) {
+      const count = await prisma.proofOfPlay.count({
+        where: { tenantId, mediaName: { in: mediaNames } }
+      });
+      if (count >= campaign.maxImpressions) {
+        await prisma.campaign.update({ where: { id: campaign.id }, data: { status: 'EXPIRED' } });
+        expiredAny = true;
+      }
+    }
+  }
+
+  if (expiredAny) {
+    const affectedIds = await bumpOwnerManifestVersions(tenantId);
+    for (const screenId of affectedIds) {
+      await sendManifestToScreen(screenId, true);
+    }
+  }
+}
 
 function normalizeProofEvent(value: any) {
   let eventId = typeof value?.eventId === 'string' ? value.eventId.trim().toLowerCase() : '';

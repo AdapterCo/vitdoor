@@ -44,7 +44,7 @@ export async function buildScreenManifest(screenId: string) {
     }
   };
 
-  const activeCampaigns = await prisma.campaign.findMany({
+  const rawCampaigns = await prisma.campaign.findMany({
     where: {
       tenantId: screen.tenantId,
       status: 'ACTIVE'
@@ -60,6 +60,30 @@ export async function buildScreenManifest(screenId: string) {
       }
     }
   });
+
+  const activeCampaigns: typeof rawCampaigns = [];
+  for (const campaign of rawCampaigns) {
+    if (campaign.maxImpressions && campaign.maxImpressions > 0) {
+      const mediaNames = campaign.playlist?.items
+        .map((i) => i.media?.name)
+        .filter((n): n is string => typeof n === 'string' && n.length > 0) || [];
+
+      if (mediaNames.length > 0) {
+        const count = await prisma.proofOfPlay.count({
+          where: { tenantId: screen.tenantId, mediaName: { in: mediaNames } }
+        });
+
+        if (count >= campaign.maxImpressions) {
+          await prisma.campaign.update({
+            where: { id: campaign.id },
+            data: { status: 'EXPIRED' }
+          }).catch(() => {});
+          continue;
+        }
+      }
+    }
+    activeCampaigns.push(campaign);
+  }
 
   for (const item of screen.activePlaylist?.items || []) {
     if (item.mediaId) mediaIds.add(item.mediaId);

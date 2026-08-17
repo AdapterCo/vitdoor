@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, CheckCircle2, Trash2, Pencil, Clock, Calendar } from 'lucide-react';
+import { Plus, CheckCircle2, Trash2, Pencil, Clock, Calendar, Pause, Play } from 'lucide-react';
 
 interface CampaignsTabProps {
   campaigns: any[];
@@ -32,6 +32,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
   const [name, setName] = useState('');
   const [advertiserName, setAdvertiserName] = useState('');
   const [playlistId, setPlaylistId] = useState('');
+  const [status, setStatus] = useState('ACTIVE');
   
   // Today's date YYYY-MM-DD
   const todayStr = new Date().toISOString().split('T')[0];
@@ -52,6 +53,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
     setName('');
     setAdvertiserName('');
     setPlaylistId('');
+    setStatus('ACTIVE');
     setStartDate(todayStr);
     setEndDate(nextMonthStr);
     setStartTime('00:00');
@@ -67,6 +69,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
     setName(c.name || '');
     setAdvertiserName(c.advertiserName || '');
     setPlaylistId(c.playlistId || c.playlist?.id || '');
+    setStatus(c.status || 'ACTIVE');
     setStartDate(c.startDate ? c.startDate.slice(0, 10) : todayStr);
     setEndDate(c.endDate ? c.endDate.slice(0, 10) : nextMonthStr);
     setStartTime(c.startTime || '00:00');
@@ -94,6 +97,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
       name,
       advertiserName,
       playlistId: playlistId || null,
+      status,
       startDate,
       endDate,
       startTime: startTime || '00:00',
@@ -112,11 +116,17 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
     setIsModalOpen(false);
   };
 
-  const getCampaignStatus = (startStr: string, endStr: string) => {
+  const getCampaignStatus = (c: any) => {
+    if (c.status === 'INACTIVE' || c.status === 'PAUSED') {
+      return { label: 'PAUSADA', class: 'badge-warning' };
+    }
+    if (c.status === 'EXPIRED') {
+      return { label: 'EXPIRADA', class: 'badge-warning' };
+    }
     const now = new Date();
     const todayZero = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const start = new Date(startStr);
-    const end = new Date(endStr);
+    const start = new Date(c.startDate);
+    const end = new Date(c.endDate);
     end.setHours(23, 59, 59, 999);
 
     if (todayZero < start) {
@@ -177,7 +187,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
               </tr>
             ) : (
               campaigns.map((c) => {
-                const status = getCampaignStatus(c.startDate, c.endDate);
+                const statusInfo = getCampaignStatus(c);
                 return (
                   <tr key={c.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', fontSize: '0.9rem' }}>
                     <td style={{ padding: '16px 12px', fontWeight: 600, color: '#fff' }}>{c.name}</td>
@@ -207,12 +217,24 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
                       </span>
                     </td>
                     <td style={{ padding: '16px 12px' }}>
-                      <span className={`badge ${status.class}`}>
-                        {status.label}
+                      <span className={`badge ${statusInfo.class}`}>
+                        {statusInfo.label}
                       </span>
                     </td>
                     <td style={{ padding: '16px 12px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        {onUpdateCampaign && (
+                          <button
+                            className={c.status === 'ACTIVE' ? 'btn-secondary' : 'btn-primary'}
+                            style={{ padding: '6px 10px' }}
+                            title={c.status === 'ACTIVE' ? 'Pausar Campanha' : 'Ativar Campanha'}
+                            onClick={() => {
+                              onUpdateCampaign(c.id, { status: c.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' });
+                            }}
+                          >
+                            {c.status === 'ACTIVE' ? <Pause size={14} /> : <Play size={14} />}
+                          </button>
+                        )}
                         <button
                           className="btn-secondary"
                           style={{ padding: '6px 10px' }}
@@ -300,6 +322,18 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
                   {playlists.map((pl) => (
                     <option key={pl.id} value={pl.id}>{pl.name}</option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>Status da Campanha</label>
+                <select
+                  className="input-field"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
+                  <option value="ACTIVE">🟢 Ativa (Permitir exibição nas telas)</option>
+                  <option value="INACTIVE">⏸️ Pausada (Interromper veiculação)</option>
                 </select>
               </div>
 
