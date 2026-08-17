@@ -50,6 +50,40 @@ campaignRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
   return res.json(campaignDto(campaign));
 });
 
+campaignRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
+  const { id } = req.params;
+  const { tenantId: requestedTenantId, name, advertiserName, playlistId, startDate, endDate, daysOfWeek, startTime, endTime, priority, maxImpressions, status } = req.body;
+  const tenantId = tenantScope(req, requestedTenantId);
+
+  const existing = await prisma.campaign.findFirst({ where: { id, tenantId } });
+  if (!existing) return res.status(404).json({ error: 'Campanha não encontrada.' });
+
+  if (playlistId) {
+    const playlist = await prisma.playlist.findFirst({ where: { id: playlistId, tenantId } });
+    if (!playlist) return res.status(400).json({ error: 'Playlist inválida para este cliente.' });
+  }
+
+  const campaign = await prisma.campaign.update({
+    where: { id },
+    data: {
+      name: name || existing.name,
+      advertiserName: advertiserName !== undefined ? advertiserName : existing.advertiserName,
+      playlistId: playlistId !== undefined ? (playlistId || null) : existing.playlistId,
+      startDate: startDate ? new Date(startDate) : existing.startDate,
+      endDate: endDate ? new Date(endDate) : existing.endDate,
+      daysOfWeek: daysOfWeek || existing.daysOfWeek,
+      startTime: startTime || existing.startTime,
+      endTime: endTime || existing.endTime,
+      priority: priority ? parseInt(priority, 10) : existing.priority,
+      maxImpressions: maxImpressions !== undefined ? (maxImpressions ? parseInt(maxImpressions, 10) : null) : existing.maxImpressions,
+      status: status || existing.status
+    },
+    include: { playlist: true }
+  });
+
+  return res.json(campaignDto(campaign));
+});
+
 campaignRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);

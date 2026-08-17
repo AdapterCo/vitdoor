@@ -364,6 +364,22 @@ export function App() {
     loadTenantData(activeTenant.id);
   };
 
+  const handleUpdateCampaign = async (id: string, campaignData: any) => {
+    if (!activeTenant) return false;
+    const response = await apiFetch(`/campaigns/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...campaignData, tenantId: activeTenant.id })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Falha ao atualizar campanha.' }));
+      alert(error.error);
+      return false;
+    }
+    await loadTenantData(activeTenant.id);
+    return true;
+  };
+
   const handleDeleteCampaign = async (id: string) => {
     if (!activeTenant) return;
     await apiFetch(`/campaigns/${id}?tenantId=${activeTenant.id}`, { method: 'DELETE' });
@@ -531,6 +547,7 @@ export function App() {
             campaigns={campaigns}
             playlists={playlists}
             onCreateCampaign={handleCreateCampaign}
+            onUpdateCampaign={handleUpdateCampaign}
             onDeleteCampaign={handleDeleteCampaign}
           />
         )}

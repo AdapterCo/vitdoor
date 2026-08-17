@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Plus, CheckCircle2, Trash2, Clock, Calendar, ShieldAlert } from 'lucide-react';
+import { Plus, CheckCircle2, Trash2, Pencil, Clock, Calendar } from 'lucide-react';
 
 interface CampaignsTabProps {
   campaigns: any[];
   playlists: any[];
   onCreateCampaign: (data: any) => void;
+  onUpdateCampaign?: (id: string, data: any) => void;
   onDeleteCampaign?: (id: string) => void;
 }
 
@@ -22,9 +23,12 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
   campaigns,
   playlists,
   onCreateCampaign,
+  onUpdateCampaign,
   onDeleteCampaign
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingCampaign, setEditingCampaign] = useState<any | null>(null);
+
   const [name, setName] = useState('');
   const [advertiserName, setAdvertiserName] = useState('');
   const [playlistId, setPlaylistId] = useState('');
@@ -43,6 +47,36 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
   const [priority, setPriority] = useState('1');
   const [maxImpressions, setMaxImpressions] = useState('');
 
+  const openNewModal = () => {
+    setEditingCampaign(null);
+    setName('');
+    setAdvertiserName('');
+    setPlaylistId('');
+    setStartDate(todayStr);
+    setEndDate(nextMonthStr);
+    setStartTime('00:00');
+    setEndTime('23:59');
+    setSelectedDays(['1', '2', '3', '4', '5', '6', '0']);
+    setPriority('1');
+    setMaxImpressions('');
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (c: any) => {
+    setEditingCampaign(c);
+    setName(c.name || '');
+    setAdvertiserName(c.advertiserName || '');
+    setPlaylistId(c.playlistId || c.playlist?.id || '');
+    setStartDate(c.startDate ? c.startDate.slice(0, 10) : todayStr);
+    setEndDate(c.endDate ? c.endDate.slice(0, 10) : nextMonthStr);
+    setStartTime(c.startTime || '00:00');
+    setEndTime(c.endTime || '23:59');
+    setSelectedDays(c.daysOfWeek ? c.daysOfWeek.split(',') : ['1', '2', '3', '4', '5', '6', '0']);
+    setPriority(String(c.priority || 1));
+    setMaxImpressions(c.maxImpressions ? String(c.maxImpressions) : '');
+    setIsModalOpen(true);
+  };
+
   const toggleDay = (dayId: string) => {
     if (selectedDays.includes(dayId)) {
       if (selectedDays.length === 1) return; // Must have at least 1 day
@@ -52,11 +86,11 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
     }
   };
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !startDate || !endDate) return;
 
-    onCreateCampaign({
+    const payload = {
       name,
       advertiserName,
       playlistId: playlistId || null,
@@ -67,17 +101,14 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
       daysOfWeek: selectedDays.join(','),
       priority: parseInt(priority, 10) || 1,
       maxImpressions: maxImpressions ? parseInt(maxImpressions, 10) : undefined
-    });
+    };
 
-    // Reset
-    setName('');
-    setAdvertiserName('');
-    setPlaylistId('');
-    setStartTime('00:00');
-    setEndTime('23:59');
-    setSelectedDays(['1', '2', '3', '4', '5', '6', '0']);
-    setPriority('1');
-    setMaxImpressions('');
+    if (editingCampaign && onUpdateCampaign) {
+      onUpdateCampaign(editingCampaign.id, payload);
+    } else {
+      onCreateCampaign(payload);
+    }
+
     setIsModalOpen(false);
   };
 
@@ -117,7 +148,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
           </p>
         </div>
 
-        <button className="btn-primary" onClick={() => setIsModalOpen(true)}>
+        <button className="btn-primary" onClick={openNewModal}>
           <Plus size={18} /> Nova Campanha
         </button>
       </div>
@@ -181,20 +212,30 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
                       </span>
                     </td>
                     <td style={{ padding: '16px 12px', textAlign: 'right' }}>
-                      {onDeleteCampaign && (
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                         <button
-                          className="btn-danger"
+                          className="btn-secondary"
                           style={{ padding: '6px 10px' }}
-                          title="Excluir Campanha"
-                          onClick={() => {
-                            if (window.confirm(`Deseja excluir a campanha "${c.name}"?`)) {
-                              onDeleteCampaign(c.id);
-                            }
-                          }}
+                          title="Editar Campanha"
+                          onClick={() => openEditModal(c)}
                         >
-                          <Trash2 size={14} />
+                          <Pencil size={14} />
                         </button>
-                      )}
+                        {onDeleteCampaign && (
+                          <button
+                            className="btn-danger"
+                            style={{ padding: '6px 10px' }}
+                            title="Excluir Campanha"
+                            onClick={() => {
+                              if (window.confirm(`Deseja excluir a campanha "${c.name}"?`)) {
+                                onDeleteCampaign(c.id);
+                              }
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -218,13 +259,13 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
         }}>
           <div className="glass-panel" style={{ width: '540px', maxWidth: '92vw', padding: '30px', maxHeight: '90vh', overflowY: 'auto' }}>
             <h3 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '8px', color: '#fff' }}>
-              Nova Campanha Publicitária
+              {editingCampaign ? 'Editar Campanha Publicitária' : 'Nova Campanha Publicitária'}
             </h3>
             <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '20px' }}>
               Configure a validade, restrição de horário diário e dias de exibição em tela.
             </p>
 
-            <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>Nome da Campanha *</label>
                 <input
