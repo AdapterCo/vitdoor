@@ -71,7 +71,7 @@ deviceRoutes.post('/screenshots/:commandId', screenshotRateLimiter, authenticate
     commandId: command.commandId,
     imageUrl: stored.url,
     capturedAt: capturedAt.toISOString()
-  }, req.deviceAuth!.tenantId, command.createdById);
+  }, req.deviceAuth!.tenantId);
   // A URL anterior é mantida nesta versão por compatibilidade legada; a limpeza
   // completa será feita por rotina de retenção de screenshots no R2.
   void previousScreenshotUrl;
