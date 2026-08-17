@@ -77,7 +77,11 @@ async function checkAndExpireCampaigns(tenantId: string) {
 
     if (mediaNames.length > 0) {
       const count = await prisma.proofOfPlay.count({
-        where: { tenantId, mediaName: { in: mediaNames } }
+        where: {
+          tenantId,
+          mediaName: { in: mediaNames },
+          playedAt: { gte: campaign.createdAt }
+        }
       });
       if (count >= campaign.maxImpressions) {
         await prisma.campaign.update({ where: { id: campaign.id }, data: { status: 'EXPIRED' } });

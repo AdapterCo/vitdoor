@@ -70,7 +70,11 @@ export async function buildScreenManifest(screenId: string) {
 
       if (mediaNames.length > 0) {
         const count = await prisma.proofOfPlay.count({
-          where: { tenantId: screen.tenantId, mediaName: { in: mediaNames } }
+          where: {
+            tenantId: screen.tenantId,
+            mediaName: { in: mediaNames },
+            playedAt: { gte: campaign.createdAt }
+          }
         });
 
         if (count >= campaign.maxImpressions) {
