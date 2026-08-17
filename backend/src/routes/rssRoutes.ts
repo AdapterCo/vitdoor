@@ -21,28 +21,39 @@ rssRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
     feedUrl = `https://${feedUrl}`;
   }
 
-  const cached = feedCache.get(feedUrl);
+  const data = await fetchRssFeed(feedUrl);
+  if (!data) {
+    return res.status(502).json({
+      error: 'Não foi possível carregar as notícias deste feed RSS.',
+      details: 'Falha na conexão com o servidor de notícias.'
+    });
+  }
+
+  return res.json(data);
+});
+
+export async function fetchRssFeed(feedUrl: string) {
+  let url = feedUrl.trim();
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+
+  const cached = feedCache.get(url);
   if (cached && (Date.now() - cached.timestamp) < CACHE_TTL_MS) {
-    return res.json(cached.data);
+    return cached.data;
   }
 
   try {
-    const parsedUrl = new URL(feedUrl);
-    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-      return res.status(400).json({ error: 'Apenas HTTP e HTTPS são permitidos.' });
-    }
+    const parsedUrl = new URL(url);
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) return null;
     const hostname = parsedUrl.hostname;
     const isPrivate = /^(localhost|::1|0\.0\.0\.0)$/i.test(hostname) ||
                       /^(127|10|192\.168|169\.254)\./.test(hostname) ||
                       /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
-    if (isPrivate) {
-      return res.status(400).json({ error: 'Acesso a IP interno bloqueado.' });
-    }
+    if (isPrivate) return null;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
-    const response = await fetch(feedUrl, {
+    const response = await fetch(url, {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) VitDoor-RSS-Reader/2.0',
@@ -51,13 +62,9 @@ rssRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
     });
     clearTimeout(timeout);
 
-    if (!response.ok) {
-      throw new Error(`Servidor de notícias retornou HTTP ${response.status}`);
-    }
+    if (!response.ok) return null;
 
     const buffer = await response.arrayBuffer();
-
-    // Detect encoding from Content-Type or XML header
     const contentType = response.headers.get('content-type') || '';
     let charset = 'utf-8';
     if (/iso-8859-1|latin1/i.test(contentType)) {
@@ -72,18 +79,14 @@ rssRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
 
     const decoder = new TextDecoder(charset);
     const xmlText = decoder.decode(buffer);
-
     const parsedFeed = parseRssXml(xmlText);
 
-    feedCache.set(feedUrl, { timestamp: Date.now(), data: parsedFeed });
-    return res.json(parsedFeed);
-  } catch (err: any) {
-    return res.status(502).json({
-      error: 'Não foi possível carregar as notícias deste feed RSS.',
-      details: err.message || 'Falha na conexão com o servidor de notícias.'
-    });
+    feedCache.set(url, { timestamp: Date.now(), data: parsedFeed });
+    return parsedFeed;
+  } catch {
+    return null;
   }
-});
+}
 
 function parseRssXml(xml: string) {
   const cleanXml = xml.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');

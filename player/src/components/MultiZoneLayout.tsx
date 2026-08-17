@@ -32,7 +32,7 @@ export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 
         );
       })}
     </div>
-    {config.ticker?.enabled && <TickerFooter tickerText={config.ticker.text} clockEnabled={config.clock?.enabled} clockPosition={config.clock?.position} time={time} />}
+    {config.ticker?.enabled && <TickerFooter tickerText={config.ticker.text} parsedText={config.ticker.parsedText} clockEnabled={config.clock?.enabled} clockPosition={config.clock?.position} time={time} />}
     {config.clock?.enabled && config.clock.position !== 'FOOTER' && <div style={{ position: 'absolute', ...clockPositionStyle(config.clock.position), zIndex: 20 }}><ClockDisplay time={time} /></div>}
     {activeAlert?.active && <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'rgba(185,28,28,.96)', color: '#fff', display: 'grid', placeItems: 'center', textAlign: 'center', padding: '40px' }}><div><h1 style={{ fontSize: '3.5rem' }}>{activeAlert.title}</h1><p style={{ fontSize: '2rem' }}>{activeAlert.message}</p></div></div>}
   </div>;
@@ -41,30 +41,31 @@ export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 
 function extractRssUrl(input: string): string | null {
   const str = input.trim();
   if (/^https?:\/\//i.test(str)) return str;
-  if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}(\/.*)?$/i.test(str) && (str.includes('rss') || str.includes('feed') || str.includes('.xml') || str.includes('/xml') || str.includes('folha') || str.includes('g1') || str.includes('uol'))) {
+  if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}(\/.*)?$/i.test(str) && (str.includes('/') || str.includes('.'))) {
     return `https://${str}`;
   }
   return null;
 }
 
-function TickerFooter({ tickerText, clockEnabled, clockPosition, time }: { tickerText: string; clockEnabled?: boolean; clockPosition?: string; time: string }) {
+function TickerFooter({ tickerText, parsedText, clockEnabled, clockPosition, time }: { tickerText: string; parsedText?: string; clockEnabled?: boolean; clockPosition?: string; time: string }) {
   const targetRssUrl = extractRssUrl(tickerText);
-  const [displayText, setDisplayText] = useState(targetRssUrl ? '🗞️ Carregando notícias da Folha / Feed...' : tickerText);
+  const [displayText, setDisplayText] = useState(parsedText || (targetRssUrl ? '🗞️ Carregando notícias em tempo real...' : tickerText));
 
   useEffect(() => {
+    if (parsedText) {
+      setDisplayText(parsedText);
+    }
     if (!targetRssUrl) {
-      setDisplayText(tickerText);
+      if (!parsedText) setDisplayText(tickerText);
       return;
     }
 
     let active = true;
-    setDisplayText('🗞️ Carregando notícias em tempo real...');
-
     const fetchRssTicker = async () => {
       try {
         const res = await fetch(`${API_BASE}/public/rss?url=${encodeURIComponent(targetRssUrl)}`);
         if (!res.ok) {
-          if (active) setDisplayText(`🗞️ Notícias em Tempo Real (${targetRssUrl})`);
+          if (active && !parsedText) setDisplayText('🗞️ Plantão de Notícias em Tempo Real');
           return;
         }
         const data = await res.json();
@@ -72,12 +73,9 @@ function TickerFooter({ tickerText, clockEnabled, clockPosition, time }: { ticke
           const headlines = data.items.map((i: any) => i.title).join('   •   ');
           const formatted = `🗞️ ${(data.title || 'NOTÍCIAS').toUpperCase()}:   ${headlines}`;
           setDisplayText(formatted);
-        } else if (active) {
-          setDisplayText('🗞️ Plantão de Notícias em Tempo Real');
         }
       } catch (err) {
         console.error('Error loading RSS for ticker:', err);
-        if (active) setDisplayText('🗞️ Plantão de Notícias em Tempo Real');
       }
     };
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Newspaper, Clock } from 'lucide-react';
+import { API_BASE } from '../config';
 
 interface RssWidgetProps {
   mediaName: string;
@@ -17,7 +18,7 @@ export const RssWidget: React.FC<RssWidgetProps> = ({ mediaName, feedUrl, durati
     const loadRss = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/public/rss?url=${encodeURIComponent(feedUrl)}`);
+        const res = await fetch(`${API_BASE}/public/rss?url=${encodeURIComponent(feedUrl)}`);
         if (!res.ok) throw new Error('Falha ao carregar notícias.');
         const data = await res.json();
         if (active && data.items && data.items.length > 0) {
