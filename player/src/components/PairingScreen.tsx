@@ -9,8 +9,8 @@ interface PairingScreenProps {
 export const PairingScreen: React.FC<PairingScreenProps> = ({ pairingCode, isConnected }) => (
   <div style={{ width: '100vw', height: '100vh', color: '#fff', padding: '40px', display: 'grid', placeItems: 'center', background: 'radial-gradient(circle at center, #1e293b 0%, #0f172a 100%)' }}>
     <div style={{ width: 'min(700px, 100%)', textAlign: 'center' }}>
-      <div style={{ display: 'inline-flex', gap: '12px', alignItems: 'center', marginBottom: '28px' }}>
-        <Tv size={30} color="#3b82f6" /><strong style={{ fontSize: '1.25rem' }}>VITDOOR · PLAYER DE MÍDIA INDOOR</strong>
+      <div style={{ display: 'inline-flex', background: '#ffffff', padding: '10px 24px', borderRadius: '16px', marginBottom: '28px' }}>
+        <img src="/logo.png" alt="VitDoor Logo" style={{ height: '48px', objectFit: 'contain' }} />
       </div>
       <div style={{ padding: '42px 54px', borderRadius: '24px', background: 'rgba(15,23,42,.88)', border: '1px solid rgba(59,130,246,.35)', boxShadow: '0 25px 60px rgba(0,0,0,.45)' }}>
         <p style={{ color: '#94a3b8' }}>Código de ativação deste dispositivo</p>

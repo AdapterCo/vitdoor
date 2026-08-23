@@ -32,7 +32,9 @@ export function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
   return (
     <div className="login-page">
       <form className="login-card glass-panel" onSubmit={submit}>
-        <div className="login-brand"><Tv2 size={30} /><div><strong>VitDoor</strong><span>Gestão de mídia indoor</span></div></div>
+        <div style={{ textAlign: 'center', marginBottom: '20px', background: '#ffffff', padding: '12px 24px', borderRadius: '16px', display: 'inline-block', margin: '0 auto 20px auto' }}>
+          <img src="/logo.png" alt="VitDoor Logo" style={{ height: '52px', objectFit: 'contain' }} />
+        </div>
         <div><h1>Acesse seu painel</h1><p>Administre clientes, totens, telas e conteúdos com segurança.</p></div>
         <label>E-mail<div className="login-input"><Mail size={18} /><input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required /></div></label>
         <label>Senha<div className="login-input"><LockKeyhole size={18} /><input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div></label>

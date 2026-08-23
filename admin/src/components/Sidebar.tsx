@@ -51,25 +51,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, tenan
       {/* Brand Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        padding: '0 12px 24px 12px',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: '8px',
+        padding: '0 12px 20px 12px',
         borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
       }}>
         <div style={{
-          background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-          padding: '10px',
-          borderRadius: '12px',
+          background: '#ffffff',
+          padding: '6px 12px',
+          borderRadius: '10px',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center'
+          justifyContent: 'center',
+          width: '100%'
         }}>
-          <Tv2 size={24} color="#fff" />
+          <img src="/logo.png" alt="VitDoor Logo" style={{ height: '36px', objectFit: 'contain' }} />
         </div>
-        <div>
-          <h1 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.5px' }}>
-            VitDoor
-          </h1>
+        <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '0.75rem', color: '#60a5fa', fontWeight: 600, textTransform: 'uppercase' }}>
             {tenantName || 'Mídia Indoor SaaS'}
           </span>
