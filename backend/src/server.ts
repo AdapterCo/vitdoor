@@ -25,6 +25,7 @@ import { assertStorageConfiguration } from './lib/storage.js';
 import { qrRoutes } from './routes/qrRoutes.js';
 import { qrStatsRoutes } from './routes/qrStatsRoutes.js';
 import { queueRoutes } from './routes/queueRoutes.js';
+import { startRssRefreshJob } from './lib/rssJob.js';
 import {
   apiRateLimiter,
   loginRateLimiter,
@@ -122,6 +123,7 @@ initWebSocketServer(server);
 
 server.listen(PORT, () => {
   console.log(`VitDoor Backend Server rodando na porta ${PORT}`);
+  startRssRefreshJob();
 });
 
 async function shutdown(signal: string) {

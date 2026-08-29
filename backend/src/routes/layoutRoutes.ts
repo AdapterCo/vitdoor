@@ -4,6 +4,7 @@ import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
 import { sendManifestToScreen } from '../lib/websocket.js';
 import { layoutDto } from '../lib/dto.js';
 import { bumpOwnerManifestVersions, bumpScreenManifestVersions } from '../lib/manifest.js';
+import { assertSafeFeedUrl, refreshFeed } from '../lib/rssService.js';
 
 export const layoutRoutes = Router();
 layoutRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'DESIGNER'));
@@ -34,6 +35,7 @@ layoutRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
       canvasConfigJson: safeConfig, isTemplate: !!isTemplate
     }
   });
+  refreshTickerFeeds(safeConfig);
   await publishLayout(tenantId, req.auth!.userId, layout, screenIds);
   return res.status(201).json(layoutDto(layout));
 });
@@ -57,6 +59,7 @@ layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
     where: { id },
     data: { name, description, orientation, canvasConfigJson: safeConfig }
   });
+  refreshTickerFeeds(safeConfig);
   const removed = existing.screens.map((screen) => screen.id).filter((screenId) => !screenIds.includes(screenId));
   await prisma.screen.updateMany({ where: { tenantId, activeLayoutId: id, id: { notIn: screenIds } }, data: { activeLayoutId: null } });
   await publishLayout(tenantId, req.auth!.userId, layout, screenIds, false);
@@ -106,21 +109,63 @@ async function prepareCanvasConfig(tenantId: string, userId: string, value: any)
     zones.push({ ...expectedZones[index], fit, loop: true, audioEnabled, items });
   }
   if (audioZoneCount > 1) return null;
-  const tickerEnabled = config.ticker?.enabled === true;
-  const tickerText = typeof config.ticker?.text === 'string' ? config.ticker.text.trim().slice(0, 500) : '';
-  if (tickerEnabled && !tickerText) return null;
+  const ticker = buildTicker(config.ticker);
+  if (!ticker) return null;
   const clockEnabled = config.clock?.enabled === true;
   const clockPosition = ['TOP_LEFT', 'TOP_RIGHT', 'BOTTOM_LEFT', 'BOTTOM_RIGHT', 'FOOTER'].includes(config.clock?.position)
     ? config.clock.position
     : 'TOP_RIGHT';
-  if (clockEnabled && clockPosition === 'FOOTER' && !tickerEnabled) return null;
+  if (clockEnabled && clockPosition === 'FOOTER' && !ticker.enabled) return null;
   return JSON.stringify({
     version: 2,
     preset: config.preset,
     zones,
-    ticker: { enabled: tickerEnabled, text: tickerEnabled ? tickerText : '' },
+    ticker,
     clock: { enabled: clockEnabled, position: clockPosition }
   });
+}
+
+type TickerConfig =
+  | { enabled: false }
+  | { enabled: true; mode: 'STATIC'; text: string; themes: [] }
+  | { enabled: true; mode: 'RSS'; text: ''; themes: { label: string; url: string }[] };
+
+/** Normaliza e valida o rodapé. Retorna null (layout rejeitado) em config inválida. */
+function buildTicker(raw: any): TickerConfig | null {
+  if (raw?.enabled !== true) return { enabled: false };
+  const mode = raw?.mode === 'RSS' ? 'RSS' : 'STATIC';
+  if (mode === 'STATIC') {
+    const text = typeof raw?.text === 'string' ? raw.text.trim().slice(0, 500) : '';
+    if (!text) return null;
+    return { enabled: true, mode: 'STATIC', text, themes: [] };
+  }
+  const rawThemes = Array.isArray(raw?.themes) ? raw.themes : [];
+  if (rawThemes.length < 1 || rawThemes.length > 6) return null;
+  const themes: { label: string; url: string }[] = [];
+  for (const theme of rawThemes) {
+    const label = typeof theme?.label === 'string' ? theme.label.trim().slice(0, 30) : '';
+    if (!label) return null;
+    let url: string;
+    try {
+      url = assertSafeFeedUrl(String(theme?.url || ''));
+    } catch {
+      return null;
+    }
+    themes.push({ label, url });
+  }
+  return { enabled: true, mode: 'RSS', text: '', themes };
+}
+
+/** Dispara a primeira carga dos feeds recém-configurados sem bloquear a resposta. */
+function refreshTickerFeeds(configJson: string): void {
+  try {
+    const config = JSON.parse(configJson);
+    for (const theme of config?.ticker?.themes ?? []) {
+      if (typeof theme?.url === 'string') void refreshFeed(theme.url);
+    }
+  } catch {
+    // configJson vem de prepareCanvasConfig e sempre é JSON válido
+  }
 }
 
 async function validateScreens(tenantId: string, _userId: string, screenIds: string[]): Promise<boolean> {

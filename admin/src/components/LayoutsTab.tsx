@@ -26,13 +26,15 @@ export const LayoutsTab: React.FC<Props> = ({ layouts, screens, onCreateLayout, 
   const [screenIds, setScreenIds] = useState<string[]>([]);
   const [tickerEnabled, setTickerEnabled] = useState(false);
   const [tickerText, setTickerText] = useState('');
+  const [tickerMode, setTickerMode] = useState<'STATIC' | 'RSS'>('STATIC');
+  const [tickerThemes, setTickerThemes] = useState<{ label: string; url: string }[]>([]);
   const [clockEnabled, setClockEnabled] = useState(false);
   const [clockPosition, setClockPosition] = useState('TOP_RIGHT');
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
     setEditingId(null); setName(''); setPreset('70_30'); setZoneFit({ main: 'CONTAIN', side: 'CONTAIN' }); setZoneAudio({ main: true, side: false }); setScreenIds([]);
-    setTickerEnabled(false); setTickerText(''); setClockEnabled(false); setClockPosition('TOP_RIGHT');
+    setTickerEnabled(false); setTickerText(''); setTickerMode('STATIC'); setTickerThemes([]); setClockEnabled(false); setClockPosition('TOP_RIGHT');
   };
   const create = () => { reset(); setOpen(true); };
   const edit = (layout: any) => {
@@ -43,6 +45,8 @@ export const LayoutsTab: React.FC<Props> = ({ layouts, screens, onCreateLayout, 
     setZoneAudio(Object.fromEntries((config.zones || []).map((zone: any, index: number) => [zone.id, typeof zone.audioEnabled === 'boolean' ? zone.audioEnabled : index === 0])));
     setScreenIds((layout.screens || []).map((screen: any) => screen.id));
     setTickerEnabled(!!config.ticker?.enabled); setTickerText(config.ticker?.text || '');
+    setTickerMode(config.ticker?.mode === 'RSS' ? 'RSS' : 'STATIC');
+    setTickerThemes(Array.isArray(config.ticker?.themes) ? config.ticker.themes.map((theme: any) => ({ label: theme.label || '', url: theme.url || '' })) : []);
     setClockEnabled(!!config.clock?.enabled); setClockPosition(config.clock?.position || 'TOP_RIGHT');
     setOpen(true);
   };
@@ -59,11 +63,21 @@ export const LayoutsTab: React.FC<Props> = ({ layouts, screens, onCreateLayout, 
       alert('Ative o rodapé para posicionar o relógio junto ao texto.');
       return;
     }
+    const validThemes = tickerThemes.map((theme) => ({ label: theme.label.trim(), url: theme.url.trim() })).filter((theme) => theme.label && theme.url);
+    if (tickerEnabled && tickerMode === 'RSS' && validThemes.length === 0) {
+      alert('Adicione ao menos um tema com nome e URL (https) para o rodapé RSS.');
+      return;
+    }
+    const ticker = !tickerEnabled
+      ? { enabled: false }
+      : tickerMode === 'RSS'
+        ? { enabled: true, mode: 'RSS', themes: validThemes }
+        : { enabled: true, mode: 'STATIC', text: tickerText };
     const data = {
       name, orientation: 'HORIZONTAL', screenIds,
       canvasConfigJson: {
         version: 2, preset, zones,
-        ticker: { enabled: tickerEnabled, text: tickerText },
+        ticker,
         clock: { enabled: clockEnabled, position: clockPosition }
       }
     };
@@ -85,7 +99,7 @@ export const LayoutsTab: React.FC<Props> = ({ layouts, screens, onCreateLayout, 
           return <div key={layout.id} className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><div><h3>{layout.name}</h3><span style={{ color: '#60a5fa', fontSize: '.8rem' }}>{config.preset === 'FULL' ? 'Tela inteira' : config.preset === 'HALF' ? '50 / 50' : '70 / 30'}</span></div><div style={{ display: 'flex', gap: '7px' }}><button className="btn-secondary" style={{ padding: '7px' }} onClick={() => edit(layout)}><Pencil size={15} /></button><button className="btn-danger" style={{ padding: '7px' }} onClick={() => onDeleteLayout(layout.id)} title="Excluir"><Trash2 size={15} /></button></div></div>
             {(config.zones || []).map((zone: any) => <div key={zone.id} style={{ padding: '9px', background: 'rgba(255,255,255,.035)', borderRadius: '8px', fontSize: '.8rem' }}><strong>{zone.name} ({zone.widthPercent}%)</strong><div style={{ color: '#60a5fa', marginTop: '3px' }}>Enquadramento: {fitLabel(zone.fit)} · Audio: {zone.audioEnabled ? 'Ativo' : 'Desativado'}</div></div>)}
-            <div style={{ color: '#94a3b8', fontSize: '.8rem' }}>Rodapé: {config.ticker?.enabled ? config.ticker.text : 'desativado'} · Relógio: {config.clock?.enabled ? clockPositionLabel(config.clock.position) : 'desativado'}</div>
+            <div style={{ color: '#94a3b8', fontSize: '.8rem' }}>Rodapé: {config.ticker?.enabled ? (config.ticker.mode === 'RSS' ? `RSS — ${(config.ticker.themes || []).map((theme: any) => theme.label).join(', ')}` : config.ticker.text) : 'desativado'} · Relógio: {config.clock?.enabled ? clockPositionLabel(config.clock.position) : 'desativado'}</div>
             <div style={{ color: '#94a3b8', fontSize: '.8rem' }}>Telas: {layout.screens?.length ? layout.screens.map((screen: any) => screen.name).join(', ') : 'não publicado'}</div>
           </div>;
         })}
@@ -112,7 +126,26 @@ export const LayoutsTab: React.FC<Props> = ({ layouts, screens, onCreateLayout, 
             </label>
           </div>)}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '12px' }}>
-            <label className="glass-panel" style={{ padding: '14px' }}><input type="checkbox" checked={tickerEnabled} onChange={(e) => { setTickerEnabled(e.target.checked); if (!e.target.checked && clockPosition === 'FOOTER') setClockPosition('TOP_RIGHT'); }} /> Rodapé com texto rolante{tickerEnabled && <textarea className="input-field" value={tickerText} onChange={(e) => setTickerText(e.target.value)} placeholder="Digite o texto personalizado para o rodapé (ex: Bem-vindo! Ofertas válidas hoje)..." required style={{ marginTop: '9px' }} />}</label>
+            <div className="glass-panel" style={{ padding: '14px' }}>
+              <label><input type="checkbox" checked={tickerEnabled} onChange={(e) => { setTickerEnabled(e.target.checked); if (!e.target.checked && clockPosition === 'FOOTER') setClockPosition('TOP_RIGHT'); }} /> Rodapé rolante</label>
+              {tickerEnabled && <>
+                <div style={{ display: 'flex', gap: '8px', margin: '10px 0' }}>
+                  <button type="button" className={tickerMode === 'STATIC' ? 'btn-primary' : 'btn-secondary'} onClick={() => setTickerMode('STATIC')}>Texto fixo</button>
+                  <button type="button" className={tickerMode === 'RSS' ? 'btn-primary' : 'btn-secondary'} onClick={() => setTickerMode('RSS')}>Feed RSS</button>
+                </div>
+                {tickerMode === 'STATIC'
+                  ? <textarea className="input-field" value={tickerText} onChange={(e) => setTickerText(e.target.value)} placeholder="Texto personalizado do rodapé (ex: Bem-vindo! Ofertas válidas hoje)..." required />
+                  : <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <span style={{ color: '#64748b', fontSize: '.78rem' }}>Cada tema é um feed RSS (https). No player os temas se revezam aleatoriamente, um por vez.</span>
+                      {tickerThemes.map((theme, index) => <div key={index} style={{ display: 'flex', gap: '6px' }}>
+                        <input className="input-field" style={{ flex: '0 0 130px' }} value={theme.label} placeholder="Tema" onChange={(e) => setTickerThemes((list) => list.map((item, i) => i === index ? { ...item, label: e.target.value } : item))} />
+                        <input className="input-field" style={{ flex: 1 }} value={theme.url} placeholder="https://site.com/feed.xml" onChange={(e) => setTickerThemes((list) => list.map((item, i) => i === index ? { ...item, url: e.target.value } : item))} />
+                        <button type="button" className="btn-danger" style={{ padding: '6px 10px' }} onClick={() => setTickerThemes((list) => list.filter((_, i) => i !== index))}>×</button>
+                      </div>)}
+                      {tickerThemes.length < 6 && <button type="button" className="btn-secondary" onClick={() => setTickerThemes((list) => [...list, { label: '', url: '' }])}>+ Adicionar tema</button>}
+                    </div>}
+              </>}
+            </div>
             <div className="glass-panel" style={{ padding: '14px' }}>
               <label><input type="checkbox" checked={clockEnabled} onChange={(e) => setClockEnabled(e.target.checked)} /> Relógio</label>
               {clockEnabled && <select className="input-field" value={clockPosition} onChange={(e) => setClockPosition(e.target.value)} style={{ marginTop: '9px' }}>

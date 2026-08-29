@@ -574,6 +574,7 @@ O manifesto entrega a lista de campanhas publicitárias vigentes do cliente no c
     ],
     "ticker": {
       "enabled": true,
+      "mode": "STATIC",
       "text": "Ofertas válidas enquanto durarem os estoques"
     },
     "clock": {
@@ -603,7 +604,9 @@ Contrato de layout v2 (Simultâneo com Playlist):
 - `loop` é sempre `true`;
 - no máximo uma zona pode ter `audioEnabled: true`; as demais devem ficar mudas;
 - vídeos avançam pelo término real; imagens e conteúdos estáticos usam `durationSeconds`;
-- `ticker.enabled` é opcional; quando ativo, `text` é o texto personalizado a ser exibido em animação de letreiro (*marquee*) no rodapé (ex: `"Ofertas válidas enquanto durarem os estoques"`);
+- `ticker.enabled` é opcional. Quando ativo, `ticker.mode` define a fonte do texto:
+  - `"STATIC"` (padrão; ausência de `mode` também é STATIC): `ticker.text` é uma string fixa exibida em *marquee* contínuo em loop, como hoje;
+  - `"RSS"`: `ticker.themes` é uma lista de temas já resolvidos pelo backend — `[{ "label": "Economia", "items": ["manchete 1", "manchete 2", ...] }]`. A URL do feed **nunca** é enviada ao player. Ver seção 9.6 para o rodízio;
 - `clock.position`: `TOP_LEFT`, `TOP_RIGHT`, `BOTTOM_LEFT`, `BOTTOM_RIGHT` ou `FOOTER`;
 - `FOOTER` só é válido quando o ticker está ativo;
 - data/hora vêm do relógio real do Android;
@@ -703,6 +706,55 @@ fun applyOrientation(rotationRoot: View, parent: FrameLayout, orientation: Strin
 - [ ] Layout `70_30` em `270` → as duas zonas aparecem como faixas horizontais empilhadas (giradas junto), preenchendo a tela.
 - [ ] Overlay de emergência e overlay de senha (fila) aparecem girados corretamente junto com o conteúdo.
 - [ ] Reboot da TV Box com orientação `270` salva → volta já girado, sem flash em paisagem.
+
+### 9.6 Rodapé de notícias RSS — rodízio de temas
+
+**Estado:** `BACKEND_PRONTO` — implementação Kotlin pendente.
+
+#### Ponta a ponta (o backend resolve, o player só exibe)
+
+1. **Painel** (editor de layout): o rodapé tem dois modos — "Texto fixo" e "Feed RSS". No modo RSS o operador adiciona de 1 a 6 **temas**, cada um com um rótulo (`label`, até 30 chars) e uma **URL de feed RSS** (`https://` obrigatório).
+2. **Backend valida** ao salvar: só `https`, bloqueia `localhost`, `*.local`, `*.internal`, IPs privados/loopback/link-local e `169.254.169.254`. URL inválida → o layout é rejeitado (HTTP 400).
+3. **Job no backend** (a cada 15 min + 1x no boot): baixa cada feed distinto em uso (`fetch` timeout 8 s, máx 2 MB), parseia RSS 2.0 / RDF / Atom, extrai **somente o `<title>`** de cada item, limpa (desembrulha `CDATA`, decodifica entidades, remove tags HTML, colapsa espaços), corta em 200 chars, remove duplicatas, guarda até 20 por feed num cache em memória.
+4. Quando as manchetes de um feed mudam → o backend incrementa `manifestVersion` das telas cujo `activeLayout` usa aquele feed e emite `MANIFEST_UPDATED`.
+5. **Manifesto** (`GET /api/device/manifest` e `PAIRING_SUCCESS`): o `ticker` do `activeLayout.canvasConfig` vem **já resolvido**:
+
+```json
+"ticker": {
+  "enabled": true,
+  "mode": "RSS",
+  "themes": [
+    { "label": "Economia", "items": [
+      "Treze gigantes nacionais perdem quase todo o valor de mercado na Bolsa",
+      "Governo e Congresso discutem orçamento"
+    ] },
+    { "label": "Esportes", "items": ["..."] }
+  ]
+}
+```
+
+- A URL do feed **nunca** aparece no manifesto.
+- Tema cujo feed ainda não resolveu (ou está fora do ar) é **omitido** do array.
+- Se **nenhum** tema resolveu e o layout tem um `ticker.text` de fallback, o manifesto entrega `{ "enabled": true, "mode": "STATIC", "text": "..." }`. Se não houver fallback, `{ "enabled": false }` — o player esconde o rodapé.
+
+#### Rodízio no player (Kotlin)
+
+- Ao montar o rodapé, sortear um tema aleatório de `themes`.
+- Exibir o `label` do tema (destaque, ex.: cor de acento) seguido da manchete atual, rolando da direita para a esquerda (marquee) **uma vez**.
+- Ao terminar a rolagem de uma manchete, ir para a próxima manchete **do mesmo tema**.
+- Quando as manchetes do tema se esgotam (todas exibidas uma vez), **sortear um novo tema** — diferente do anterior quando houver mais de um — e recomeçar.
+- Duração da rolagem proporcional ao tamanho do texto (sugestão: `clamp(comprimento / 6, 14 s, 40 s)`).
+- `RESIZE`/reaplicação: ao receber `MANIFEST_UPDATED`, substituir a lista de temas; se os índices correntes saírem de faixa, sortear tema novo e reiniciar do primeiro item.
+- Nunca buscar o feed no dispositivo. Nunca exibir a URL.
+
+#### Checklist de teste na TV Box real
+
+- [ ] Layout RSS com 2+ temas (ex.: feed de economia + feed de esportes da Gazeta do Povo) → rodapé alterna temas, mostra o rótulo, sem repetir o mesmo tema duas vezes seguidas.
+- [ ] Manchetes aparecem limpas — sem `<![CDATA[`, sem tags HTML, com acentos corretos.
+- [ ] Feed fora do ar no boot → aquele tema some do rodízio; os demais rodam normalmente.
+- [ ] Todos os feeds fora do ar + `text` de fallback configurado → rodapé mostra o texto fixo.
+- [ ] Publicar nova versão do feed (ou aguardar 15 min) → o rodapé atualiza sem reiniciar o app (via `MANIFEST_UPDATED`).
+- [ ] Rodapé RSS só aparece quando há `activeLayout` (telas só com playlist não têm rodapé).
 
 ## 10. Banco e arquivos locais
 

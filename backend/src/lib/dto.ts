@@ -1,3 +1,5 @@
+import { getFeedItems } from './rssService.js';
+
 export function tenantDto(tenant: any) {
   return pick(tenant, ['id', 'name', 'slug', 'logoUrl', 'brandColor', 'maxScreens', 'unlimitedScreens', 'maxStorageMb', 'status', 'createdAt', 'updatedAt', '_count']);
 }
@@ -37,10 +39,25 @@ export function playerLayoutDto(layout: any) {
   if (!layout) return null;
   let canvasConfig: any = null;
   try { canvasConfig = JSON.parse(layout.canvasConfigJson); } catch { canvasConfig = null; }
+  if (canvasConfig && canvasConfig.ticker) canvasConfig.ticker = resolvePlayerTicker(canvasConfig.ticker);
   return {
     ...pick(layout, ['id', 'name', 'description', 'orientation', 'updatedAt']),
     canvasConfig
   };
+}
+
+/** Rodapé entregue ao player: no modo RSS vira lista de manchetes por tema e a URL do feed nunca é exposta. */
+function resolvePlayerTicker(ticker: any) {
+  if (ticker?.enabled !== true) return { enabled: false };
+  if (ticker.mode === 'RSS') {
+    const themes = (Array.isArray(ticker.themes) ? ticker.themes : [])
+      .map((theme: any) => ({ label: String(theme?.label || ''), items: getFeedItems(String(theme?.url || '')) }))
+      .filter((theme: any) => theme.label && theme.items.length > 0);
+    if (themes.length > 0) return { enabled: true, mode: 'RSS', themes };
+    const fallback = typeof ticker.text === 'string' ? ticker.text.trim() : '';
+    return fallback ? { enabled: true, mode: 'STATIC', text: fallback } : { enabled: false };
+  }
+  return { enabled: true, mode: 'STATIC', text: String(ticker.text || '') };
 }
 
 export function playlistDto(playlist: any, forPlayer = false) {

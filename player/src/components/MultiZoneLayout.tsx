@@ -46,23 +46,69 @@ export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 
           );
         })}
       </div>
-      {config.ticker?.enabled && <TickerFooter tickerText={config.ticker.text} clockEnabled={config.clock?.enabled} clockPosition={config.clock?.position} time={time} />}
+      {config.ticker?.enabled && <TickerFooter ticker={config.ticker} clockEnabled={config.clock?.enabled} clockPosition={config.clock?.position} time={time} />}
       {config.clock?.enabled && config.clock.position !== 'FOOTER' && <div style={{ position: 'absolute', ...clockPositionStyle(config.clock.position), zIndex: 20 }}><ClockDisplay time={time} /></div>}
       {activeAlert?.active && <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'rgba(185,28,28,.96)', color: '#fff', display: 'grid', placeItems: 'center', textAlign: 'center', padding: '40px' }}><div><h1 style={{ fontSize: '3.5rem' }}>{activeAlert.title}</h1><p style={{ fontSize: '2rem' }}>{activeAlert.message}</p></div></div>}
     </div>
   );
 }
 
-function TickerFooter({ tickerText, clockEnabled, clockPosition, time }: { tickerText: string; clockEnabled?: boolean; clockPosition?: string; time: string }) {
+const TICKER_FOOTER_STYLE: React.CSSProperties = { height: '64px', flexShrink: 0, background: '#0f172a', borderTop: '2px solid #2563eb', color: '#fff', display: 'flex', alignItems: 'center', overflow: 'hidden' };
+const TICKER_TRACK_STYLE: React.CSSProperties = { whiteSpace: 'nowrap', paddingLeft: '100%', fontSize: '1.2rem', fontWeight: 600 };
+const TICKER_KEYFRAMES = '@keyframes layout-marquee{from{transform:translateX(0)}to{transform:translateX(-100%)}}';
+
+function TickerFooter({ ticker, clockEnabled, clockPosition, time }: { ticker: any; clockEnabled?: boolean; clockPosition?: string; time: string }) {
+  const themes: { label: string; items: string[] }[] = ticker?.mode === 'RSS' && Array.isArray(ticker.themes) ? ticker.themes : [];
+  const clock = clockEnabled && clockPosition === 'FOOTER' ? <ClockDisplay time={time} footer /> : null;
+
+  if (themes.length > 0) return <RssTicker themes={themes} clock={clock} />;
+
   return (
-    <div style={{ height: '64px', flexShrink: 0, background: '#0f172a', borderTop: '2px solid #2563eb', color: '#fff', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+    <div style={TICKER_FOOTER_STYLE}>
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        <div style={{ whiteSpace: 'nowrap', paddingLeft: '100%', animation: 'layout-marquee 35s linear infinite', fontSize: '1.2rem', fontWeight: 600 }}>
-          {tickerText}
+        <div style={{ ...TICKER_TRACK_STYLE, animation: 'layout-marquee 35s linear infinite' }}>{ticker?.text || ''}</div>
+      </div>
+      {clock}
+      <style>{TICKER_KEYFRAMES}</style>
+    </div>
+  );
+}
+
+/** Rodízio de temas RSS: sorteia um tema, passa todas as manchetes dele uma vez, depois sorteia outro. */
+function RssTicker({ themes, clock }: { themes: { label: string; items: string[] }[]; clock: React.ReactNode }) {
+  const [themeIndex, setThemeIndex] = useState(() => Math.floor(Math.random() * themes.length));
+  const [itemIndex, setItemIndex] = useState(0);
+  const [cycle, setCycle] = useState(0);
+
+  const theme = themes[themeIndex % themes.length];
+  const items = theme?.items || [];
+  const safeItemIndex = itemIndex < items.length ? itemIndex : 0;
+  const current = items[safeItemIndex] || '';
+
+  const advance = () => {
+    if (safeItemIndex + 1 < items.length) {
+      setItemIndex(safeItemIndex + 1);
+    } else {
+      let next = Math.floor(Math.random() * themes.length);
+      if (themes.length > 1 && next === themeIndex % themes.length) next = (next + 1) % themes.length;
+      setThemeIndex(next);
+      setItemIndex(0);
+    }
+    setCycle((value) => value + 1);
+  };
+
+  if (!current) return null;
+  const seconds = Math.min(40, Math.max(14, Math.round(current.length / 6)));
+
+  return (
+    <div style={TICKER_FOOTER_STYLE}>
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div key={cycle} onAnimationEnd={advance} style={{ ...TICKER_TRACK_STYLE, animation: `layout-marquee ${seconds}s linear` }}>
+          <span style={{ color: '#38bdf8', fontWeight: 800, marginRight: '16px' }}>{theme.label}</span>{current}
         </div>
       </div>
-      {clockEnabled && clockPosition === 'FOOTER' && <ClockDisplay time={time} footer />}
-      <style>{`@keyframes layout-marquee{from{transform:translateX(0)}to{transform:translateX(-100%)}}`}</style>
+      {clock}
+      <style>{TICKER_KEYFRAMES}</style>
     </div>
   );
 }
