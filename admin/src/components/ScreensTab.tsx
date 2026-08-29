@@ -30,7 +30,6 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
   const [groupName, setGroupName] = useState('Geral');
   const [orientation, setOrientation] = useState('HORIZONTAL');
   const [volumeDrafts, setVolumeDrafts] = useState<Record<string, string>>({});
-  const [copiedTagId, setCopiedTagId] = useState<string | null>(null);
   const [nfcModalScreen, setNfcModalScreen] = useState<any | null>(null);
 
   // Edit screen modal state
@@ -197,7 +196,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                       className="btn-secondary"
                       style={{ padding: '6px 10px' }}
                       title="Link da Tag NFC para o Totem"
-                      onClick={() => setCopiedTagId(screen.id)}
+                      onClick={() => setNfcModalScreen(screen)}
                     >
                       <Radio size={14} color="#38bdf8" />
                     </button>
