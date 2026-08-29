@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tv, Volume2, Camera, RefreshCw, Power, Trash2, Plus, Sliders, CheckCircle2, Radio, Copy, Check, X } from 'lucide-react';
+import { Tv, Volume2, Camera, RefreshCw, Power, Trash2, Plus, Sliders, CheckCircle2, Radio, Copy, Check, X, Pencil } from 'lucide-react';
 
 interface ScreensTabProps {
   screens: any[];
@@ -27,10 +27,18 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
   const [pairingCode, setPairingCode] = useState('');
   const [name, setName] = useState('');
   const [locationName, setLocationName] = useState('');
-  const [groupName, setGroupName] = useState('Recepção');
+  const [groupName, setGroupName] = useState('Geral');
   const [orientation, setOrientation] = useState('HORIZONTAL');
   const [volumeDrafts, setVolumeDrafts] = useState<Record<string, string>>({});
+  const [copiedTagId, setCopiedTagId] = useState<string | null>(null);
   const [nfcModalScreen, setNfcModalScreen] = useState<any | null>(null);
+
+  // Edit screen modal state
+  const [editingScreen, setEditingScreen] = useState<any | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editLocationName, setEditLocationName] = useState('');
+  const [editGroupName, setEditGroupName] = useState('');
+  const [editOrientation, setEditOrientation] = useState('HORIZONTAL');
 
   const handlePairSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,8 +112,23 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                   <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Grupo: {screen.groupName}</span>
                 </td>
 
-                <td style={{ padding: '16px 12px', color: '#cbd5e1' }}>
-                  {screen.orientation === 'HORIZONTAL' ? 'Horizontal (16:9)' : 'Vertical (9:16)'}
+                <td style={{ padding: '16px 12px' }}>
+                  <select
+                    value={screen.orientation || 'HORIZONTAL'}
+                    onChange={(e) => onUpdateScreen(screen.id, { orientation: e.target.value })}
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.9)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      color: '#fff',
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.85rem',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="HORIZONTAL">Horizontal (16:9)</option>
+                    <option value="VERTICAL">Vertical (9:16)</option>
+                  </select>
                 </td>
 
                 <td style={{ padding: '16px 12px' }}>
@@ -157,8 +180,22 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                     <button
                       className="btn-secondary"
                       style={{ padding: '6px 10px' }}
+                      title="Editar Tela"
+                      onClick={() => {
+                        setEditingScreen(screen);
+                        setEditName(screen.name);
+                        setEditLocationName(screen.locationName || '');
+                        setEditGroupName(screen.groupName || 'Geral');
+                        setEditOrientation(screen.orientation || 'HORIZONTAL');
+                      }}
+                    >
+                      <Pencil size={14} color="#a855f7" />
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      style={{ padding: '6px 10px' }}
                       title="Link da Tag NFC para o Totem"
-                      onClick={() => setNfcModalScreen(screen)}
+                      onClick={() => setCopiedTagId(screen.id)}
                     >
                       <Radio size={14} color="#38bdf8" />
                     </button>
@@ -349,6 +386,92 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
             <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '12px 16px', borderRadius: '12px', fontSize: '0.8rem', color: '#94a3b8' }}>
               💡 <strong>Dica de Gravação:</strong> No seu celular, instale o aplicativo gratuito <em>NFC Tools</em>, escolha "Escrever" &gt; "Adicionar registro" &gt; "URL" e cole o link acima. Em seguida, encoste no adesivo NFC!
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Screen Modal */}
+      {editingScreen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div className="glass-panel" style={{ width: '450px', padding: '30px' }}>
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '8px', color: '#fff' }}>
+              Editar Configurações da Tela
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '20px' }}>
+              Altere o nome, localização, grupo e orientação de exibição desta tela.
+            </p>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              onUpdateScreen(editingScreen.id, {
+                name: editName,
+                locationName: editLocationName,
+                groupName: editGroupName,
+                orientation: editOrientation
+              });
+              setEditingScreen(null);
+            }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>Nome da Tela *</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>Local / Endereço</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editLocationName}
+                  onChange={(e) => setEditLocationName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>Grupo</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editGroupName}
+                  onChange={(e) => setEditGroupName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>Orientação da Tela *</label>
+                <select
+                  className="input-field"
+                  value={editOrientation}
+                  onChange={(e) => setEditOrientation(e.target.value)}
+                >
+                  <option value="HORIZONTAL">Horizontal (16:9 - TV Deitada)</option>
+                  <option value="VERTICAL">Vertical (9:16 - Totem em Pé)</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px' }}>
+                <button type="button" className="btn-secondary" onClick={() => setEditingScreen(null)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn-primary">
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
