@@ -126,8 +126,10 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                       outline: 'none'
                     }}
                   >
-                    <option value="HORIZONTAL">Horizontal (16:9)</option>
-                    <option value="VERTICAL">Vertical (9:16)</option>
+                    <option value="HORIZONTAL">Horizontal (0° Padrão 16:9)</option>
+                    <option value="90">Girar 90° Horário (Totem Vertical)</option>
+                    <option value="180">Invertido (180° Ponta-Cabeça)</option>
+                    <option value="VERTICAL">Vertical / 270° (Totem Vertical 9:16)</option>
                   </select>
                 </td>
 
@@ -305,8 +307,10 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                   value={orientation}
                   onChange={(e) => setOrientation(e.target.value)}
                 >
-                  <option value="HORIZONTAL">Horizontal (16:9)</option>
-                  <option value="VERTICAL">Vertical (9:16)</option>
+                  <option value="HORIZONTAL">Horizontal (0° Padrão 16:9)</option>
+                  <option value="90">Girar 90° Horário (Totem Vertical)</option>
+                  <option value="180">Invertido (180° Ponta-Cabeça)</option>
+                  <option value="VERTICAL">Vertical / 270° (Totem Vertical 9:16)</option>
                 </select>
               </div>
 
@@ -458,8 +462,10 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                   value={editOrientation}
                   onChange={(e) => setEditOrientation(e.target.value)}
                 >
-                  <option value="HORIZONTAL">Horizontal (16:9 - TV Deitada)</option>
-                  <option value="VERTICAL">Vertical (9:16 - Totem em Pé)</option>
+                  <option value="HORIZONTAL">Horizontal (0° Padrão 16:9)</option>
+                  <option value="90">Girar 90° Horário (Totem Vertical)</option>
+                  <option value="180">Invertido (180° Ponta-Cabeça)</option>
+                  <option value="VERTICAL">Vertical / 270° (Totem Vertical 9:16)</option>
                 </select>
               </div>
 

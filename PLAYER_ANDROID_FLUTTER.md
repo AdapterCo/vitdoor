@@ -626,6 +626,12 @@ O Flutter deve rejeitar `schemaVersion` ou `canvasConfig.version` desconhecida, 
       - `COVER`: Expande a mídia até preencher toda a largura da tela (cortando topo e base se necessário);
       - `FILL`: Estica a mídia para preencher 100% do container.
 
+### 9.5 Rotação de Viewport por Software (0°, 90°, 180°, 270°)
+
+- **Suporte a Rotação de Hardware e Software sem dependência do OS da TV Box**:
+  - Quando o usuário selecionar no painel a orientação `"90"`, `"180"`, `"270"` ou `"VERTICAL"`, o aplicativo Player aplica a rotação diretamente na viewport de renderização (`transform: rotate(deg)` com dimensões `width: 100vh` e `height: 100vw`);
+  - Esse mecanismo garante que a programação gire em 90°, 180° ou 270° via software do player, preenchendo 100% da tela da TV independente de a TV Box ter suporte a girar a tela nas configurações do Android.
+
 ## 10. Banco e arquivos locais
 
 Tabelas/entidades mínimas:

@@ -6,6 +6,52 @@ import { QueueTicketOverlay } from './components/QueueTicketOverlay';
 import { setCache, getCache, addProofLog, getAllProofLogs, clearProofLogs } from './services/storageService';
 import { API_BASE, getWebSocketUrl } from './config';
 
+function getRotationStyle(orientation?: string): React.CSSProperties {
+  const norm = (orientation || 'HORIZONTAL').toString().toUpperCase();
+  if (norm === '90' || norm === 'ROTATE_90') {
+    return {
+      position: 'fixed',
+      top: '50%',
+      left: '50%',
+      width: '100vh',
+      height: '100vw',
+      transform: 'translate(-50%, -50%) rotate(90deg)',
+      transformOrigin: 'center center',
+      overflow: 'hidden',
+      background: '#000'
+    };
+  }
+  if (norm === '270' || norm === 'ROTATE_270' || norm === 'VERTICAL') {
+    return {
+      position: 'fixed',
+      top: '50%',
+      left: '50%',
+      width: '100vh',
+      height: '100vw',
+      transform: 'translate(-50%, -50%) rotate(270deg)',
+      transformOrigin: 'center center',
+      overflow: 'hidden',
+      background: '#000'
+    };
+  }
+  if (norm === '180' || norm === 'ROTATE_180') {
+    return {
+      width: '100vw',
+      height: '100vh',
+      transform: 'rotate(180deg)',
+      transformOrigin: 'center center',
+      overflow: 'hidden',
+      background: '#000'
+    };
+  }
+  return {
+    width: '100vw',
+    height: '100vh',
+    overflow: 'hidden',
+    background: '#000'
+  };
+}
+
 export function App() {
   const [pairingCode, setPairingCode] = useState<string>('--- ---');
   const [pairingId, setPairingId] = useState<string>('');
@@ -269,7 +315,7 @@ export function App() {
   };
 
   return (
-    <div ref={containerRef} style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+    <div ref={containerRef} style={getRotationStyle(screenInfo?.orientation || activeLayout?.orientation)}>
       {suspended ? (
         <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#020617', color: '#94a3b8', textAlign: 'center' }}><div><h1 style={{ color: '#fff' }}>Dispositivo temporariamente indisponível</h1><p>Entre em contato com o responsável pela conta.</p></div></div>
       ) : !paired ? (
