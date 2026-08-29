@@ -228,7 +228,8 @@ Resposta pareada:
   "status": "PAIRED",
   "deviceToken": "jwt-do-dispositivo",
   "screenId": "uuid",
-  "screenName": "Totem Entrada"
+  "screenName": "Totem Entrada",
+  "screenOrientation": "HORIZONTAL"
 }
 ```
 
@@ -592,7 +593,10 @@ Contrato de layout v2 (Simultâneo com Playlist):
   - Para cada zona definida em `activeLayout.canvasConfig.zones`:
     - Se a zona possuir itens próprios (`zone.items` não vazio), reproduzir os itens específicos da zona;
     - Se a zona não possuir itens (`zone.items: []`), **reproduzir a sequência de mídias da `activePlaylist.items`** dentro daquela zona;
-- orientação suportada nesta versão: `HORIZONTAL`;
+- **Suporte a Orientação da Tela (`screen.orientation` / `screenOrientation`)**:
+  - Valores suportados: `"HORIZONTAL"` (modo paisagem 16:9) e `"VERTICAL"` (modo totem/retrato 9:16);
+  - **Aplicação da Orientação no Android**: Ao receber a orientação no pareamento ou manifesto, o app Android (Kotlin/Flutter) deve travar a rotação da Activity via `SystemChrome.setPreferredOrientations` (`[DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]` para `"VERTICAL"` e `[DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]` para `"HORIZONTAL"`);
+  - **Renderização Multizona em Modo Vertical**: Quando a orientação for `"VERTICAL"`, o container de zonas deve empilhar as zonas verticalmente (`flexDirection: column`, `width: 100%`, `height` proporcional) em vez da distribuição horizontal lateral;
 - `preset`: `FULL`, `HALF` ou `70_30`;
 - `FULL`: zona `main` com 100%; `HALF`: `main` 50% e `side` 50%; `70_30`: `main` 70% e `side` 30%;
 - `fit`: `CONTAIN` (inteira, sem corte), `COVER` (preenche e pode cortar) ou `FILL` (estica);
