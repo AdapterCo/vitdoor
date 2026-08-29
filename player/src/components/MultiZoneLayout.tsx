@@ -3,7 +3,7 @@ import { Clock } from 'lucide-react';
 import { MediaVideo } from './MediaVideo';
 import { API_BASE } from '../config';
 
-export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 80 }: { layout: any; activePlaylist?: any; activeAlert?: any; volume?: number }) {
+export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 80, orientation = 'HORIZONTAL' }: { layout: any; activePlaylist?: any; activeAlert?: any; volume?: number; orientation?: string }) {
   const config = useMemo(() => {
     if (!layout) return null;
     if (layout.canvasConfig && typeof layout.canvasConfig === 'object') {
@@ -14,28 +14,43 @@ export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 
     }
     return null;
   }, [layout?.id, layout?.canvasConfig, layout?.canvasConfigJson]);
+
   const [time, setTime] = useState('');
   useEffect(() => {
     const update = () => setTime(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
     update(); const timer = setInterval(update, 1000); return () => clearInterval(timer);
   }, []);
+
   if (!config) return <div style={{ width: '100vw', height: '100vh', background: '#000', color: '#fff', display: 'grid', placeItems: 'center' }}>Layout inválido</div>;
 
-  return <div style={{ width: '100vw', height: '100vh', background: '#000', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
-    <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-      {(config.zones || []).map((zone: any, zoneIndex: number) => {
-        const zoneItems = (zone.items && zone.items.length > 0) ? zone.items : (activePlaylist?.items || []);
-        return (
-          <div key={zone.id} style={{ width: `${zone.widthPercent}%`, height: '100%', overflow: 'hidden', borderRight: '1px solid rgba(255,255,255,.08)' }}>
-            <ZonePlayer items={zoneItems} fit={zone.fit || 'CONTAIN'} volume={volume} loop={zone.loop !== false} audioEnabled={typeof zone.audioEnabled === 'boolean' ? zone.audioEnabled : zoneIndex === 0} />
-          </div>
-        );
-      })}
+  const isVertical = orientation === 'VERTICAL' || orientation === 'PORTRAIT' || layout?.orientation === 'VERTICAL' || config?.orientation === 'VERTICAL';
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', background: '#000', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: isVertical ? 'column' : 'row' }}>
+        {(config.zones || []).map((zone: any, zoneIndex: number) => {
+          const zoneItems = (zone.items && zone.items.length > 0) ? zone.items : (activePlaylist?.items || []);
+          return (
+            <div
+              key={zone.id}
+              style={{
+                width: isVertical ? '100%' : `${zone.widthPercent}%`,
+                height: isVertical ? `${zone.heightPercent || zone.widthPercent}%` : '100%',
+                overflow: 'hidden',
+                borderBottom: isVertical ? '1px solid rgba(255,255,255,.08)' : undefined,
+                borderRight: isVertical ? undefined : '1px solid rgba(255,255,255,.08)'
+              }}
+            >
+              <ZonePlayer items={zoneItems} fit={zone.fit || 'CONTAIN'} volume={volume} loop={zone.loop !== false} audioEnabled={typeof zone.audioEnabled === 'boolean' ? zone.audioEnabled : zoneIndex === 0} />
+            </div>
+          );
+        })}
+      </div>
+      {config.ticker?.enabled && <TickerFooter tickerText={config.ticker.text} clockEnabled={config.clock?.enabled} clockPosition={config.clock?.position} time={time} />}
+      {config.clock?.enabled && config.clock.position !== 'FOOTER' && <div style={{ position: 'absolute', ...clockPositionStyle(config.clock.position), zIndex: 20 }}><ClockDisplay time={time} /></div>}
+      {activeAlert?.active && <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'rgba(185,28,28,.96)', color: '#fff', display: 'grid', placeItems: 'center', textAlign: 'center', padding: '40px' }}><div><h1 style={{ fontSize: '3.5rem' }}>{activeAlert.title}</h1><p style={{ fontSize: '2rem' }}>{activeAlert.message}</p></div></div>}
     </div>
-    {config.ticker?.enabled && <TickerFooter tickerText={config.ticker.text} clockEnabled={config.clock?.enabled} clockPosition={config.clock?.position} time={time} />}
-    {config.clock?.enabled && config.clock.position !== 'FOOTER' && <div style={{ position: 'absolute', ...clockPositionStyle(config.clock.position), zIndex: 20 }}><ClockDisplay time={time} /></div>}
-    {activeAlert?.active && <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'rgba(185,28,28,.96)', color: '#fff', display: 'grid', placeItems: 'center', textAlign: 'center', padding: '40px' }}><div><h1 style={{ fontSize: '3.5rem' }}>{activeAlert.title}</h1><p style={{ fontSize: '2rem' }}>{activeAlert.message}</p></div></div>}
-  </div>;
+  );
 }
 
 function TickerFooter({ tickerText, clockEnabled, clockPosition, time }: { tickerText: string; clockEnabled?: boolean; clockPosition?: string; time: string }) {

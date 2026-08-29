@@ -11,6 +11,7 @@ interface LayoutRendererProps {
   onMediaChanged?: (mediaName: string) => void;
   volume?: number;
   screenId?: string;
+  orientation?: string;
 }
 
 export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
@@ -19,7 +20,8 @@ export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
   activeAlert,
   onMediaChanged,
   volume = 80,
-  screenId
+  screenId,
+  orientation = 'HORIZONTAL'
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [countdown, setCountdown] = useState(15);
@@ -64,7 +66,7 @@ export const LayoutRenderer: React.FC<LayoutRendererProps> = ({
   }, [currentIndex, items.length, currentDuration, currentMedia, activePlaylist?.isLoop]);
 
   if (activeLayout) {
-    return <MultiZoneLayout layout={activeLayout} activePlaylist={activePlaylist} activeAlert={activeAlert} volume={volume} />;
+    return <MultiZoneLayout layout={activeLayout} activePlaylist={activePlaylist} activeAlert={activeAlert} volume={volume} orientation={orientation} />;
   }
 
   return (

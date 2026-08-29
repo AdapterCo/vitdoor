@@ -72,7 +72,7 @@ export function App() {
       const result = await response.json();
       if (result.status === 'PAIRED') {
         localStorage.setItem('vitdoor_device_token', result.deviceToken);
-        const info = { id: result.screenId, name: result.screenName };
+        const info = { id: result.screenId, name: result.screenName, orientation: result.screenOrientation || 'HORIZONTAL' };
         setScreenInfo(info);
         await setCache('screenInfo', info);
         setPaired(true);
@@ -123,7 +123,11 @@ export function App() {
 
           if (msg.type === 'PAIRING_SUCCESS' || msg.type === 'PAIRING_CONFIRMED') {
             setSuspended(false);
-            const info = { id: msg.screenId, name: msg.screenName || 'TV Mídia Indoor' };
+            const info = {
+              id: msg.screenId,
+              name: msg.screenName || 'TV Mídia Indoor',
+              orientation: msg.orientation || msg.screenOrientation || 'HORIZONTAL'
+            };
             setScreenInfo(info);
             await setCache('screenInfo', info);
 
@@ -278,6 +282,7 @@ export function App() {
             activeAlert={activeAlert}
             volume={volume}
             screenId={screenInfo?.id}
+            orientation={screenInfo?.orientation || activeLayout?.orientation || 'HORIZONTAL'}
             onMediaChanged={handleMediaChanged}
           />
           <QueueTicketOverlay ticket={calledTicket} />
