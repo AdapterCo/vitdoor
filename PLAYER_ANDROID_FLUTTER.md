@@ -613,6 +613,19 @@ Contrato de layout v2 (Simultâneo com Playlist):
 
 O Flutter deve rejeitar `schemaVersion` ou `canvasConfig.version` desconhecida, manter a última versão ativa e registrar diagnóstico. Não tentar inferir presets, zonas, enumerações ou valores ausentes.
 
+### 9.4 Tratamento de Resolução HDMI e Rotação em TV Boxes / Smart TVs
+
+- **Comportamento do Sinal HDMI em Smart TVs (ex: Samsung UN32J4300AG)**:
+  - A porta HDMI de uma TV convencional negocia o sinal de entrada via protocolo EDID fixo em **1920x1080 @ 60Hz** (ou 1366x768 / 720p). O hardware da placa principal da TV não aceita negociar resolução de entrada nativa em **1080x1920 (retrato)** via cabo HDMI.
+  - **Uso da TV em Modo Totem (Instalação em Pé / Vertical)**:
+    - A TV deve ser fixada **fisicamente na parede/suporte girada em 90° (em pé)**;
+    - Ao ajustar a rotação do TV Box para **270°** (ou **90°**), a imagem emitida pelo TV Box que fica "de lado" quando a TV está na mesa passa a **preencher 100% da tela em 1080x1920 perfeitamente em pé** quando a TV estiver instalada no suporte de totem;
+  - **Uso da TV em Modo Paisagem (Instalação Deitada / Horizontal)**:
+    - Se a TV estiver instalada deitada (horizontal) e for exibida uma mídia ou layout vertical (9:16), o player deve aplicar o enquadramento configurado via atributo `fit`:
+      - `CONTAIN`: Exibe a mídia centralizada mantendo proporção original com barras laterais (*pillarbox*);
+      - `COVER`: Expande a mídia até preencher toda a largura da tela (cortando topo e base se necessário);
+      - `FILL`: Estica a mídia para preencher 100% do container.
+
 ## 10. Banco e arquivos locais
 
 Tabelas/entidades mínimas:
