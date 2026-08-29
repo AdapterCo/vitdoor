@@ -268,7 +268,7 @@ Aviso atual de programação:
 - `PAIRING_SUCCESS` / `PAIRING_CONFIRMED`: identidade, volume, orientação, conteúdo de compatibilidade do simulador e `manifestVersion`/`manifestChecksum` disponíveis;
 - `PAIRING_PENDING`: ativação ainda não confirmada;
 - `DEVICE_AUTH_FAILED`: apagar credencial inválida e voltar à ativação;
-- `MANIFEST_UPDATED`: existe nova programação; contém somente `manifestVersion`, `manifestChecksum` e `forceReload`, exigindo busca autenticada por HTTPS;
+- `MANIFEST_UPDATED`: existe nova versão; contém `manifestVersion`, `manifestChecksum`, `forceReload` e (quando originado de um comando `SYNC`) `commandId`/`createdAt`/`expiresAt`. Exige rebusca autenticada de `GET /api/device/manifest`; ao aplicar, **reaplicar também `screen.orientation` e `screen.volume`** (ver seção 9.5), não só a programação;
 - `CONTENT_UPDATED`: mensagem legada exclusiva do simulador web; não usar como fonte de programação no aplicativo Flutter;
 - `SET_VOLUME`: aplicar volume indicado;
 - `REBOOT`: reiniciar o aplicativo de forma controlada;
@@ -593,10 +593,10 @@ Contrato de layout v2 (Simultâneo com Playlist):
   - Para cada zona definida em `activeLayout.canvasConfig.zones`:
     - Se a zona possuir itens próprios (`zone.items` não vazio), reproduzir os itens específicos da zona;
     - Se a zona não possuir itens (`zone.items: []`), **reproduzir a sequência de mídias da `activePlaylist.items`** dentro daquela zona;
-- **Suporte a Orientação da Tela (`screen.orientation` / `screenOrientation`)**:
-  - Valores suportados: `"HORIZONTAL"` (modo paisagem 16:9) e `"VERTICAL"` (modo totem/retrato 9:16);
-  - **Aplicação da Orientação no Android**: Ao receber a orientação no pareamento ou manifesto, o app Android (Kotlin/Flutter) deve travar a rotação da Activity via `SystemChrome.setPreferredOrientations` (`[DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]` para `"VERTICAL"` e `[DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]` para `"HORIZONTAL"`);
-  - **Renderização Multizona em Modo Vertical**: Quando a orientação for `"VERTICAL"`, o container de zonas deve empilhar as zonas verticalmente (`flexDirection: column`, `width: 100%`, `height` proporcional) em vez da distribuição horizontal lateral;
+- **Suporte a Orientação da Tela (`screen.orientation`)**:
+  - Valores canônicos entregues pelo backend: `"HORIZONTAL"`, `"90"`, `"180"`, `"270"` e `"VERTICAL"`. Tratar `"VERTICAL"` como sinônimo de `"270"`;
+  - A orientação é aplicada por **rotação de viewport por software** — ver seção 9.5. A Activity permanece sempre em landscape (o EDID HDMI está travado em 1920×1080);
+  - **O layout multizona é sempre diagramado na horizontal** e gira junto com a viewport. O app **não** reempilha zonas por conta própria a partir da orientação (isso causaria rotação dupla quando `screen.orientation` for `"270"`/`"VERTICAL"`);
 - `preset`: `FULL`, `HALF` ou `70_30`;
 - `FULL`: zona `main` com 100%; `HALF`: `main` 50% e `side` 50%; `70_30`: `main` 70% e `side` 30%;
 - `fit`: `CONTAIN` (inteira, sem corte), `COVER` (preenche e pode cortar) ou `FILL` (estica);
@@ -613,24 +613,96 @@ Contrato de layout v2 (Simultâneo com Playlist):
 
 O Flutter deve rejeitar `schemaVersion` ou `canvasConfig.version` desconhecida, manter a última versão ativa e registrar diagnóstico. Não tentar inferir presets, zonas, enumerações ou valores ausentes.
 
-### 9.4 Tratamento de Resolução HDMI e Rotação em TV Boxes / Smart TVs
+### 9.4 Tratamento de Resolução HDMI e cenários de montagem
 
-- **Comportamento do Sinal HDMI em Smart TVs (ex: Samsung UN32J4300AG)**:
-  - A porta HDMI de uma TV convencional negocia o sinal de entrada via protocolo EDID fixo em **1920x1080 @ 60Hz** (ou 1366x768 / 720p). O hardware da placa principal da TV não aceita negociar resolução de entrada nativa em **1080x1920 (retrato)** via cabo HDMI.
-  - **Uso da TV em Modo Totem (Instalação em Pé / Vertical)**:
-    - A TV deve ser fixada **fisicamente na parede/suporte girada em 90° (em pé)**;
-    - Ao ajustar a rotação do TV Box para **270°** (ou **90°**), a imagem emitida pelo TV Box que fica "de lado" quando a TV está na mesa passa a **preencher 100% da tela em 1080x1920 perfeitamente em pé** quando a TV estiver instalada no suporte de totem;
-  - **Uso da TV em Modo Paisagem (Instalação Deitada / Horizontal)**:
-    - Se a TV estiver instalada deitada (horizontal) e for exibida uma mídia ou layout vertical (9:16), o player deve aplicar o enquadramento configurado via atributo `fit`:
-      - `CONTAIN`: Exibe a mídia centralizada mantendo proporção original com barras laterais (*pillarbox*);
-      - `COVER`: Expande a mídia até preencher toda a largura da tela (cortando topo e base se necessário);
-      - `FILL`: Estica a mídia para preencher 100% do container.
+- **Comportamento do sinal HDMI em Smart TVs (ex.: Samsung UN32J4300AG)**:
+  - A porta HDMI de uma TV convencional negocia o sinal de entrada via EDID fixo em **1920×1080 @ 60Hz** (ou 1366×768 / 720p). O hardware da TV **não** aceita entrada nativa **1080×1920 (retrato)** via cabo HDMI.
+  - Portanto a saída do TV Box é **sempre 1920×1080 (paisagem)**. Retrato é obtido **girando a árvore de views por software** (seção 9.5) + **girando a TV fisicamente** no suporte.
+- **Cenários de montagem** (referência: foto real — TV Samsung deitada exibindo mídia retrato 9:16 com faixas laterais):
 
-### 9.5 Rotação de Viewport por Software (0°, 90°, 180°, 270°)
+  | Montagem física da TV | `screen.orientation` no painel | Resultado esperado |
+  |---|---|---|
+  | Em pé (totem), girada 90° horário no suporte | `"270"` ou `"VERTICAL"` | canvas lógico 1080×1920 em pé; mídia 9:16 com `fit=COVER` **preenche 100%** |
+  | Em pé, girada 90° anti-horário | `"90"` | idem |
+  | Deitada (paisagem) | `"HORIZONTAL"` | mídia 16:9 preenche; mídia 9:16 → aplica `fit` (ver abaixo) |
+  | Deitada, instalação invertida (teto) | `"180"` | conteúdo de cabeça para baixo é corrigido |
 
-- **Suporte a Rotação de Hardware e Software sem dependência do OS da TV Box**:
-  - Quando o usuário selecionar no painel a orientação `"90"`, `"180"`, `"270"` ou `"VERTICAL"`, o aplicativo Player aplica a rotação diretamente na viewport de renderização (`transform: rotate(deg)` com dimensões `width: 100vh` e `height: 100vw`);
-  - Esse mecanismo garante que a programação gire em 90°, 180° ou 270° via software do player, preenchendo 100% da tela da TV independente de a TV Box ter suporte a girar a tela nas configurações do Android.
+- **Mídia/layout 9:16 numa TV deitada (`HORIZONTAL`)** — o player aplica o `fit` da zona:
+  - `CONTAIN`: mídia centralizada, proporção preservada, barras laterais (*pillarbox*) — **este é o caso da foto**;
+  - `COVER`: preenche toda a área cortando topo e base;
+  - `FILL`: estica para preencher 100%.
+  - Para **preencher a tela nesse cenário** só há: (a) montar a TV em pé e usar `"270"`; (b) manter deitada e usar `fit=COVER` (aceitando corte) ou trocar por mídia 16:9.
+
+### 9.5 Rotação de Viewport por Software (Kotlin nativo) — `0` / `90` / `180` / `270` / `VERTICAL`
+
+**Estado:** `CONTRATO_BACKEND_PRONTO` — implementação Kotlin pendente.
+
+#### Contrato
+
+- `GET /api/device/manifest` → `screen.orientation` ∈ `"HORIZONTAL" | "90" | "180" | "270" | "VERTICAL"`.
+- `"VERTICAL"` é **idêntico** a `"270"`.
+- A mesma orientação chega também em `PAIRING_SUCCESS` (`orientation` / `screenOrientation`).
+- Ao receber `MANIFEST_UPDATED` no WebSocket, o app **rebusca o manifesto** e **reaplica a orientação em tempo real**, sem recriar a `Activity` e sem destruir o ExoPlayer.
+
+#### Princípio
+
+A `Activity` fica **sempre landscape** (`android:screenOrientation="landscape"` / `SENSOR_LANDSCAPE` desabilitado). A saída HDMI continua 1920×1080. A rotação é feita **na árvore de views**, num **único container raiz** (`rotationRoot`) que embrulha *todo* o conteúdo visível: player de mídia, container de zonas do layout, overlay de emergência, overlay de senha (fila) e o QR/CTA.
+
+#### Dimensionamento (regra crítica)
+
+Seja `screenW` × `screenH` = tamanho real da view raiz (tipicamente 1920 × 1080).
+
+```kotlin
+fun applyOrientation(rotationRoot: View, parent: FrameLayout, orientation: String) {
+    val deg = when (orientation) {
+        "90"  -> 90f
+        "180" -> 180f
+        "270", "VERTICAL" -> 270f
+        else  -> 0f            // "HORIZONTAL" e qualquer valor desconhecido
+    }
+    val rotated = deg == 90f || deg == 270f
+    val screenW = parent.width
+    val screenH = parent.height
+
+    rotationRoot.layoutParams = FrameLayout.LayoutParams(
+        if (rotated) screenH else screenW,   // largura do canvas lógico
+        if (rotated) screenW else screenH,   // altura  do canvas lógico
+        Gravity.CENTER
+    )
+    rotationRoot.pivotX = (if (rotated) screenH else screenW) / 2f
+    rotationRoot.pivotY = (if (rotated) screenW else screenH) / 2f
+    rotationRoot.rotation = deg
+    rotationRoot.requestLayout()
+}
+```
+
+- Com `Gravity.CENTER` + pivô no centro da própria view, um canvas 1080×1920 girado 90°/270° tem sua *bounding box* de volta em 1920×1080 → **cobre a tela inteira**. Não é necessário `translationX/Y`.
+- **TODOS os filhos de `rotationRoot` devem usar `match_parent`** (ou `0dp` + peso), **nunca** dimensões fixas em px da tela física nem frações de `screenW/screenH`. Se um filho assumir 1920×1080 dentro de um canvas 1080×1920, o conteúdo é diagramado em paisagem, transborda e é recortado — **este foi exatamente o defeito observado** ("gira 270° mas a mídia não preenche").
+- Reaplicar em `MANIFEST_UPDATED` chamando a mesma função; opcionalmente animar com `rotationRoot.animate().rotation(deg)`.
+
+#### Enquadramento da mídia dentro do canvas girado
+
+| `fit` da zona | Imagem (`ImageView.scaleType`) | Vídeo (Media3 `AspectRatioFrameLayout` / `PlayerView` `resize_mode`) |
+|---|---|---|
+| `CONTAIN` | `FIT_CENTER` | `RESIZE_MODE_FIT` |
+| `COVER` | `CENTER_CROP` | `RESIZE_MODE_ZOOM` |
+| `FILL` | `FIT_XY` | `RESIZE_MODE_FILL` |
+
+- **Playlist simples** (item sem `layout`, sem campo `fit`): o padrão do produto é **`COVER`** — preenche o canvas. Num totem vertical (`"270"`) com mídia 9:16 isso resulta em preenchimento perfeito, sem barras.
+- Cliente que quiser barras (pillarbox) deve usar um Layout com zona `fit: CONTAIN`.
+
+#### Checklist de teste na TV Box real (obrigatório antes de marcar como concluído)
+
+- [ ] `HORIZONTAL` + imagem 16:9 → preenche, sem barras.
+- [ ] `HORIZONTAL` + imagem 9:16 + zona `fit=CONTAIN` → pillarbox lateral centralizado.
+- [ ] `HORIZONTAL` + imagem 9:16 + zona `fit=COVER` → preenche cortando topo/base.
+- [ ] `270` (TV em pé) + imagem 9:16 em playlist simples → **preenche 100% em pé, upright**.
+- [ ] `90` (TV em pé) + vídeo 9:16 → preenche 100%, áudio na zona correta, avanço no fim do vídeo sem travar.
+- [ ] `180` + qualquer conteúdo → imagem invertida corretamente.
+- [ ] Trocar a orientação no painel com o player rodando → gira em menos de 5 s **sem reiniciar o app** (via `MANIFEST_UPDATED`).
+- [ ] Layout `70_30` em `270` → as duas zonas aparecem como faixas horizontais empilhadas (giradas junto), preenchendo a tela.
+- [ ] Overlay de emergência e overlay de senha (fila) aparecem girados corretamente junto com o conteúdo.
+- [ ] Reboot da TV Box com orientação `270` salva → volta já girado, sem flash em paisagem.
 
 ## 10. Banco e arquivos locais
 
