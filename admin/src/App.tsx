@@ -235,7 +235,7 @@ export function App() {
     }
   };
 
-  const handleUpdatePlayerApp = async (payload: { apkUrl: string; version: string; checksum: string; screenIds?: string[] }) => {
+  const handleUpdatePlayerApp = async (payload: { apkUrl: string; version: string; checksum?: string; screenIds?: string[] }) => {
     const response = await apiFetch('/screens/fleet/update-app', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

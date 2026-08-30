@@ -273,7 +273,7 @@ Aviso atual de programação:
 - `SET_VOLUME`: aplicar volume indicado;
 - `REBOOT`: reiniciar o aplicativo de forma controlada;
 - `TAKE_SCREENSHOT`: capturar e responder, quando suportado;
-- `UPDATE_APP`: baixar, validar (SHA-256) e instalar um novo APK do player — ver seção 15.2;
+- `UPDATE_APP`: baixar e instalar um novo APK do player (checksum SHA-256 opcional) — ver seção 15.3;
 - `TICKET_CALLED`: chamada de senha em tempo real; exibir overlay, tocar chime e pronunciar síntese de voz (TTS) — ver seção 27;
 - `EMERGENCY_ALERT_TRIGGERED`: sobrepor alerta destinado à tela;
 - `EMERGENCY_ALERT_CLEARED`: remover alerta;
@@ -1248,12 +1248,14 @@ Screenshot de Flutter não captura necessariamente uma superfície Media3/Platfo
 }
 ```
 
+`checksum` é **opcional** e pode não vir na mensagem.
+
 Garantias do backend (o app pode confiar):
 - `apkUrl` sempre `https://` e sempre no host do domínio de mídia (R2) ou da API oficial — nunca um host arbitrário;
-- `checksum` sempre presente, 64 hex minúsculos (SHA-256 do APK);
+- `checksum`, quando presente, é 64 hex minúsculos (SHA-256 do APK);
 - `version` sempre no formato `x.y.z`.
 
-O app deve, mesmo assim, **validar o checksum antes de instalar** e abortar se não bater.
+Quando `checksum` vier, o app valida antes de instalar e aborta se não bater. Sem `checksum`, a integridade fica por conta do HTTPS do R2 e da verificação de assinatura do próprio Android (que recusa APK assinado com outra chave).
 
 #### Resposta do player (mensagem terminal única)
 
@@ -1280,9 +1282,9 @@ Em falha (`success: false`), `message` descreve a causa (link quebrado, checksum
 
 - [ ] `UPDATE_APP` por `ADMIN_CLIENT`/`OPERATOR` → recusado (403).
 - [ ] `apkUrl` com host fora do R2, sem `.apk`, ou `http://` → recusado (400).
-- [ ] `checksum` ausente ou com menos de 64 hex → recusado (400).
+- [ ] `checksum` presente mas com menos de 64 hex → recusado (400); ausente → aceito normalmente.
 - [ ] APK correto → TV Box baixa, valida, instala, reinicia sozinha e volta pareada tocando a mesma programação.
-- [ ] APK com checksum errado → app aborta, `COMMAND_RESULT` `success:false`, painel mostra a falha, versão anterior continua rodando.
+- [ ] Com `checksum` informado e errado → app aborta, `COMMAND_RESULT` `success:false`, painel mostra a falha, versão anterior continua rodando.
 - [ ] Tela offline no envio → comando `PENDING`; ao reconectar recebe o `UPDATE_APP` e executa.
 - [ ] "Atualizar frota" → todas as telas pareadas recebem; painel informa `delivered`/`pending`.
 

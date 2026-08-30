@@ -535,7 +535,7 @@ Estados:
 | Inicialização automática | PENDENTE | Android |
 | Modo quiosque | PENDENTE | Android |
 | ExoPlayer / Media3 | PENDENTE | Android |
-| Atualização remota do app | PARCIAL | Comando `UPDATE_APP` (WebSocket) e painel do master implementados; APK hospedado no R2, checksum SHA-256 obrigatório, host restrito. Execução no app Android (Kotlin) feita pelo time do player |
+| Atualização remota do app | PARCIAL | Comando `UPDATE_APP` (WebSocket) e painel do master implementados; APK hospedado no R2 (host restrito, HTTPS), checksum SHA-256 opcional. Execução no app Android (Kotlin) feita pelo time do player |
 | Assinatura e distribuição APK | PARCIAL | Política definida para Play App Signing, Managed Google Play e EMM; CI, conta organizacional e frota ainda não configurados |
 | Comandos remotos idempotentes | PARCIAL | Backend persiste `commandId`, status, resultado e `expiresAt`; entrega inclui tela, criação e validade, enquanto a execução idempotente depende do Flutter |
 | Deploy em VPS | CONCLUÍDO | Compose, gateway, migrações, volumes e healthchecks operando na VPS de homologação |

@@ -307,14 +307,14 @@ function normalizeCommandPayload(action: string, value: any): { valid: boolean; 
     const version = typeof value?.version === 'string' ? value.version.trim() : '';
     const checksum = typeof value?.checksum === 'string' ? value.checksum.trim().toLowerCase() : '';
     if (!/^\d+\.\d+\.\d+$/.test(version)) return { valid: false, error: 'Versão do app deve estar no formato x.y.z.' };
-    if (!/^[a-f0-9]{64}$/.test(checksum)) return { valid: false, error: 'Checksum SHA-256 (64 caracteres hex) é obrigatório.' };
+    if (checksum && !/^[a-f0-9]{64}$/.test(checksum)) return { valid: false, error: 'Se informado, o checksum deve ser um SHA-256 (64 caracteres hex).' };
     let apkUrl: string;
     try {
       apkUrl = assertAllowedApkUrl(typeof value?.apkUrl === 'string' ? value.apkUrl.trim() : '');
     } catch (error) {
       return { valid: false, error: (error as Error).message };
     }
-    return { valid: true, value: { apkUrl, version, checksum } };
+    return { valid: true, value: { apkUrl, version, ...(checksum ? { checksum } : {}) } };
   }
   if (value !== undefined && value !== null && (typeof value !== 'object' || Object.keys(value).length > 0)) {
     return { valid: false, error: `O comando ${action} não aceita payload.` };

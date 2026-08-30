@@ -9,7 +9,7 @@ interface ScreensTabProps {
   onUpdateScreen: (screenId: string, data: any) => void;
   onRemoteCommand: (screenId: string, action: string, payload?: any) => void;
   onDeleteScreen: (screenId: string) => void;
-  onUpdatePlayerApp: (payload: { apkUrl: string; version: string; checksum: string; screenIds?: string[] }) => Promise<void>;
+  onUpdatePlayerApp: (payload: { apkUrl: string; version: string; checksum?: string; screenIds?: string[] }) => Promise<void>;
   onGetFleetCount: () => Promise<number>;
   userRole?: string;
   isPairModalOpen: boolean;
@@ -64,7 +64,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
     const apkUrl = otaApkUrl.trim();
     const checksum = otaChecksum.trim().toLowerCase();
     if (!/^\d+\.\d+\.\d+$/.test(version)) { alert('Versão deve estar no formato x.y.z.'); return; }
-    if (!/^[a-f0-9]{64}$/.test(checksum)) { alert('Informe o checksum SHA-256 (64 caracteres hex).'); return; }
+    if (checksum && !/^[a-f0-9]{64}$/.test(checksum)) { alert('Se informar o checksum, use um SHA-256 (64 caracteres hex).'); return; }
     if (otaTarget === 'SELECTED' && otaSelectedIds.length === 0) { alert('Selecione ao menos uma tela.'); return; }
     const scope = otaTarget === 'FLEET'
       ? `TODAS as telas pareadas do sistema (todos os clientes)${fleetCount != null ? ` — ${fleetCount} tela(s)` : ''}`
@@ -72,7 +72,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
     if (!window.confirm(`Enviar atualização do app para a versão ${version} em ${scope}? As TV Boxes vão baixar e instalar o novo APK.`)) return;
     setOtaSending(true);
     try {
-      await onUpdatePlayerApp({ apkUrl, version, checksum, ...(otaTarget === 'SELECTED' ? { screenIds: otaSelectedIds } : {}) });
+      await onUpdatePlayerApp({ apkUrl, version, ...(checksum ? { checksum } : {}), ...(otaTarget === 'SELECTED' ? { screenIds: otaSelectedIds } : {}) });
       setOtaOpen(false);
       setOtaVersion(''); setOtaApkUrl(''); setOtaChecksum(''); setOtaSelectedIds([]); setOtaTarget('SELECTED');
     } finally {
@@ -535,7 +535,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
           <div className="glass-panel" style={{ width: 'min(560px, 100%)', maxHeight: '92vh', overflowY: 'auto', padding: '28px' }}>
             <h3 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '6px', color: '#fff' }}>Atualizar app do Player</h3>
             <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '18px' }}>
-              As TV Boxes vão baixar o APK, validar o checksum SHA-256 e instalar. O APK precisa estar hospedado no domínio de mídia do VitDoor (R2).
+              As TV Boxes vão baixar o APK do R2 (HTTPS) e instalar. O APK precisa estar hospedado no domínio de mídia do VitDoor. O checksum SHA-256 é opcional — o Android já recusa APK assinado com outra chave.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -545,8 +545,8 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
               <label style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>URL do APK
                 <input className="input-field" value={otaApkUrl} onChange={(e) => setOtaApkUrl(e.target.value)} placeholder="https://media.vitdoor.com.br/player/vitdoor-player-v2.3.0.apk" style={{ marginTop: '4px' }} />
               </label>
-              <label style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>Checksum SHA-256
-                <input className="input-field" value={otaChecksum} onChange={(e) => setOtaChecksum(e.target.value)} placeholder="64 caracteres hexadecimais" style={{ marginTop: '4px' }} />
+              <label style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>Checksum SHA-256 (opcional)
+                <input className="input-field" value={otaChecksum} onChange={(e) => setOtaChecksum(e.target.value)} placeholder="deixe em branco para não validar" style={{ marginTop: '4px' }} />
               </label>
 
               <div style={{ marginTop: '4px' }}>
