@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { sendCommandToScreen, sendManifestToScreen, cleanCode } from '../lib/websocket.js';
-import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
+import { sendCommandToScreen, sendManifestToScreen, cleanCode, formatCommandForDevice } from '../lib/websocket.js';
+import { requireMutationRoles, requireSuperAdmin, tenantScope } from '../middleware/auth.js';
 import { layoutDto, playlistDto, screenDto } from '../lib/dto.js';
 import { randomUUID } from 'crypto';
 
@@ -159,6 +159,9 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
   const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
   const action = typeof req.body.action === 'string' ? req.body.action.trim().toUpperCase() : '';
+  if (action === 'UPDATE_APP' && req.auth?.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ error: 'Apenas o administrador da plataforma pode atualizar o app do player.' });
+  }
   const payload = normalizeCommandPayload(action, req.body.payload);
   if (!payload.valid) return res.status(400).json({ error: payload.error });
   const commandId = randomUUID();
@@ -184,14 +187,7 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
       expiresAt: command.expiresAt
     });
   } else {
-    sent = sendCommandToScreen(id, {
-      type: action,
-      commandId,
-      deviceId: id,
-      createdAt: command.createdAt.toISOString(),
-      expiresAt: command.expiresAt.toISOString(),
-      ...(payload.value ? { payload: payload.value } : {})
-    });
+    sent = sendCommandToScreen(id, formatCommandForDevice(action, commandId, id, command.createdAt, command.expiresAt, payload.value));
   }
 
   if (action === 'SET_VOLUME') {
@@ -210,6 +206,55 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
     createdAt: command.createdAt,
     expiresAt: command.expiresAt,
     message: sent ? `Comando ${action} entregue ao dispositivo; aguardando confirmação.` : 'Dispositivo offline; comando persistido para entrega posterior.'
+  });
+});
+
+// Atualização remota do app do player — exclusivo do administrador da plataforma.
+screenRoutes.post('/fleet/update-app', requireSuperAdmin, async (req: Request, res: Response): Promise<any> => {
+  const payload = normalizeCommandPayload('UPDATE_APP', req.body);
+  if (!payload.valid) return res.status(400).json({ error: payload.error });
+
+  const screenIds: string[] | null = Array.isArray(req.body.screenIds)
+    ? [...new Set((req.body.screenIds as unknown[]).filter((value): value is string => typeof value === 'string' && value.length > 0))]
+    : null;
+
+  const screens = await prisma.screen.findMany({
+    where: { paired: true, ...(screenIds ? { id: { in: screenIds } } : {}) },
+    select: { id: true, tenantId: true }
+  });
+  if (!screens.length) return res.status(400).json({ error: 'Nenhuma tela pareada encontrada para atualizar.' });
+
+  const createdAt = new Date();
+  const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60_000);
+  const commands = screens.map((screen) => ({
+    commandId: randomUUID(),
+    tenantId: screen.tenantId,
+    screenId: screen.id,
+    createdById: req.auth!.userId,
+    action: 'UPDATE_APP',
+    payloadJson: JSON.stringify(payload.value),
+    createdAt,
+    expiresAt
+  }));
+  await prisma.remoteCommand.createMany({ data: commands });
+
+  const deliveredIds: string[] = [];
+  for (const command of commands) {
+    const sent = sendCommandToScreen(
+      command.screenId,
+      formatCommandForDevice('UPDATE_APP', command.commandId, command.screenId, createdAt, expiresAt, payload.value)
+    );
+    if (sent) deliveredIds.push(command.commandId);
+  }
+  if (deliveredIds.length) {
+    await prisma.remoteCommand.updateMany({ where: { commandId: { in: deliveredIds } }, data: { status: 'SENT', sentAt: new Date() } });
+  }
+
+  return res.status(202).json({
+    version: payload.value.version,
+    total: commands.length,
+    delivered: deliveredIds.length,
+    pending: commands.length - deliveredIds.length
   });
 });
 
@@ -244,16 +289,54 @@ screenRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> =>
 });
 
 function normalizeCommandPayload(action: string, value: any): { valid: boolean; value?: any; error?: string } {
-  if (!['SYNC', 'TAKE_SCREENSHOT', 'SET_VOLUME', 'REBOOT'].includes(action)) {
-    return { valid: false, error: 'Ação inválida. Use SYNC, TAKE_SCREENSHOT, SET_VOLUME ou REBOOT.' };
+  if (!['SYNC', 'TAKE_SCREENSHOT', 'SET_VOLUME', 'REBOOT', 'UPDATE_APP'].includes(action)) {
+    return { valid: false, error: 'Ação inválida. Use SYNC, TAKE_SCREENSHOT, SET_VOLUME, REBOOT ou UPDATE_APP.' };
   }
   if (action === 'SET_VOLUME') {
     const volume = Number(value?.volume);
     if (!Number.isInteger(volume) || volume < 0 || volume > 100) return { valid: false, error: 'Volume deve ser um inteiro entre 0 e 100.' };
     return { valid: true, value: { volume } };
   }
+  if (action === 'UPDATE_APP') {
+    const version = typeof value?.version === 'string' ? value.version.trim() : '';
+    const checksum = typeof value?.checksum === 'string' ? value.checksum.trim().toLowerCase() : '';
+    if (!/^\d+\.\d+\.\d+$/.test(version)) return { valid: false, error: 'Versão do app deve estar no formato x.y.z.' };
+    if (!/^[a-f0-9]{64}$/.test(checksum)) return { valid: false, error: 'Checksum SHA-256 (64 caracteres hex) é obrigatório.' };
+    let apkUrl: string;
+    try {
+      apkUrl = assertAllowedApkUrl(typeof value?.apkUrl === 'string' ? value.apkUrl.trim() : '');
+    } catch (error) {
+      return { valid: false, error: (error as Error).message };
+    }
+    return { valid: true, value: { apkUrl, version, checksum } };
+  }
   if (value !== undefined && value !== null && (typeof value !== 'object' || Object.keys(value).length > 0)) {
     return { valid: false, error: `O comando ${action} não aceita payload.` };
   }
   return { valid: true };
+}
+
+/** A URL do APK precisa ser HTTPS e estar no domínio de mídia/API oficial do VitDoor. */
+function assertAllowedApkUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('URL do APK inválida.');
+  }
+  if (url.protocol !== 'https:') throw new Error('A URL do APK deve usar HTTPS.');
+  const allowedHosts = [process.env.R2_PUBLIC_URL, process.env.PUBLIC_BASE_URL]
+    .map((value) => {
+      try {
+        return value ? new URL(value).host : '';
+      } catch {
+        return '';
+      }
+    })
+    .filter(Boolean);
+  if (!allowedHosts.includes(url.host)) {
+    throw new Error('Host do APK não autorizado. Hospede o arquivo no domínio de mídia do VitDoor (R2).');
+  }
+  if (!url.pathname.toLowerCase().endsWith('.apk')) throw new Error('A URL deve apontar para um arquivo .apk.');
+  return url.toString();
 }

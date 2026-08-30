@@ -340,6 +340,27 @@ export function isScreenOnline(screenId?: string | null): boolean {
   return false;
 }
 
+/** Monta a mensagem de comando para o dispositivo. UPDATE_APP entrega os campos
+ *  (apkUrl/version/checksum) no topo; os demais comandos usam `payload` aninhado. */
+export function formatCommandForDevice(
+  action: string,
+  commandId: string,
+  deviceId: string,
+  createdAt: Date,
+  expiresAt: Date,
+  payload?: any
+): Record<string, any> {
+  const base = {
+    type: action,
+    commandId,
+    deviceId,
+    createdAt: createdAt.toISOString(),
+    expiresAt: expiresAt.toISOString()
+  };
+  if (action === 'UPDATE_APP' && payload) return { ...base, ...payload };
+  return payload ? { ...base, payload } : base;
+}
+
 export function sendCommandToScreen(screenId: string, command: any) {
   for (const conn of activeConnections) {
     if (conn.type === 'PLAYER' && conn.screenId === screenId && conn.ws.readyState === WebSocket.OPEN) {
@@ -410,14 +431,9 @@ async function deliverPendingCommands(client: ConnectedClient): Promise<void> {
     } else {
       let payload: any;
       try { payload = command.payloadJson ? JSON.parse(command.payloadJson) : undefined; } catch { payload = undefined; }
-      client.ws.send(JSON.stringify({
-        type: command.action,
-        commandId: command.commandId,
-        deviceId: client.screenId,
-        createdAt: command.createdAt.toISOString(),
-        expiresAt: command.expiresAt.toISOString(),
-        ...(payload ? { payload } : {})
-      }));
+      client.ws.send(JSON.stringify(
+        formatCommandForDevice(command.action, command.commandId, client.screenId, command.createdAt, command.expiresAt, payload)
+      ));
     }
     await prisma.remoteCommand.update({ where: { commandId: command.commandId }, data: { status: 'SENT', sentAt: new Date() } });
   }

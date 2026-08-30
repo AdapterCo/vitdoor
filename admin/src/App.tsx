@@ -31,6 +31,7 @@ export function App() {
   const [qrStats, setQrStats] = useState<any>(null);
   const [activeTenant, setActiveTenant] = useState<any>(null);
   const [isPairModalOpen, setIsPairModalOpen] = useState(false);
+  const [updateResults, setUpdateResults] = useState<{ id: string; screenId: string; success: boolean; message: string; at: number }[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -140,7 +141,14 @@ export function App() {
               prev.map((s) => (s.id === data.screenId ? { ...s, ...data.telemetry, status: 'ONLINE' } : s))
             );
           } else if (data.type === 'COMMAND_RESULT') {
-            console.info('Comando remoto concluído:', data);
+            if (data.action === 'UPDATE_APP') {
+              setUpdateResults((prev) => [
+                { id: `${data.commandId}-${Date.now()}`, screenId: data.screenId, success: !!data.success, message: data.message || '', at: Date.now() },
+                ...prev
+              ].slice(0, 20));
+            } else {
+              console.info('Comando remoto concluído:', data);
+            }
           }
         } catch (e) {
           console.error('Error parsing admin websocket message:', e);
@@ -159,6 +167,15 @@ export function App() {
       if (ws) ws.close();
     };
   }, [activeTenant?.id, user?.id]);
+
+  // Expira os avisos de atualização do player após ~20s.
+  useEffect(() => {
+    if (updateResults.length === 0) return;
+    const timer = setInterval(() => {
+      setUpdateResults((prev) => prev.filter((result) => Date.now() - result.at < 20_000));
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [updateResults.length]);
 
   // Actions
   const handlePairScreen = async (data: any) => {
@@ -206,6 +223,20 @@ export function App() {
   const handleDeleteScreen = async (screenId: string) => {
     await apiFetch(`/screens/${screenId}?tenantId=${activeTenant.id}`, { method: 'DELETE' });
     loadTenantData(activeTenant.id);
+  };
+
+  const handleUpdatePlayerApp = async (payload: { apkUrl: string; version: string; checksum: string; screenIds?: string[] }) => {
+    const response = await apiFetch('/screens/fleet/update-app', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      alert(result.error || 'Não foi possível enviar a atualização.');
+      return;
+    }
+    alert(`Atualização v${result.version} enviada: ${result.delivered} tela(s) online, ${result.pending} pendente(s) para quando reconectarem.`);
   };
 
   const handleUploadFile = async (file: File, name: string, durationSeconds: number, tags: string, folderId?: string | null) => {
@@ -499,6 +530,8 @@ export function App() {
             onUpdateScreen={handleUpdateScreen}
             onRemoteCommand={handleRemoteCommand}
             onDeleteScreen={handleDeleteScreen}
+            onUpdatePlayerApp={handleUpdatePlayerApp}
+            userRole={user.role}
             isPairModalOpen={isPairModalOpen}
             setIsPairModalOpen={setIsPairModalOpen}
           />
@@ -577,6 +610,17 @@ export function App() {
           />
         )}
       </main>
+
+      {updateResults.length > 0 && (
+        <div style={{ position: 'fixed', right: 16, bottom: 16, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 3000, maxWidth: 380 }}>
+          {updateResults.map((result) => (
+            <div key={result.id} style={{ background: result.success ? 'rgba(22,101,52,.95)' : 'rgba(153,27,27,.95)', color: '#fff', padding: '10px 14px', borderRadius: 10, fontSize: '.8rem', lineHeight: 1.4 }}>
+              <strong>{result.success ? 'Atualização OK' : 'Falha na atualização'}</strong> · tela {result.screenId.slice(0, 8)}
+              <div style={{ opacity: .9 }}>{result.message}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

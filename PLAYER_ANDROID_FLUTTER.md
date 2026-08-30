@@ -273,6 +273,7 @@ Aviso atual de programação:
 - `SET_VOLUME`: aplicar volume indicado;
 - `REBOOT`: reiniciar o aplicativo de forma controlada;
 - `TAKE_SCREENSHOT`: capturar e responder, quando suportado;
+- `UPDATE_APP`: baixar, validar (SHA-256) e instalar um novo APK do player — ver seção 15.2;
 - `TICKET_CALLED`: chamada de senha em tempo real; exibir overlay, tocar chime e pronunciar síntese de voz (TTS) — ver seção 27;
 - `EMERGENCY_ALERT_TRIGGERED`: sobrepor alerta destinado à tela;
 - `EMERGENCY_ALERT_CLEARED`: remover alerta;
@@ -1211,12 +1212,79 @@ Retry de comando já concluído retorna `200` e `duplicate: true`. Erros: `400` 
 - `SET_VOLUME`: implementado;
 - `TAKE_SCREENSHOT`: implementado no backend;
 - `REBOOT`: reinicia o aplicativo; implementado no contrato;
+- `UPDATE_APP`: atualização remota do APK; contrato de backend + painel implementados (ver seção 15.3);
 - `REBOOT_DEVICE`: não implementado; exige Device Owner/firmware autorizado;
 - `CLEAR_CACHE`: não implementado; quando existir, nunca removerá assets da versão ativa;
 - alertas: aplicar somente à tela destinatária;
 - suspensão: interromper transmissão, preservar dados locais e aguardar reativação.
 
 Screenshot de Flutter não captura necessariamente uma superfície Media3/PlatformView. Implementar PixelCopy ou solução nativa compatível e retornar falha explícita quando o hardware impedir.
+
+### 15.3 Atualização remota do app (`UPDATE_APP`)
+
+**Estado:** backend + painel implementados. App Kotlin: `OtaUpdateManager` + `BootReceiver` já implementados pelo time do player.
+
+#### Origem e permissão
+
+- Somente o **administrador da plataforma** (`SUPER_ADMIN`) dispara. O painel oferece duas rotas:
+  - `POST /api/screens/:id/remote-command` com `action: "UPDATE_APP"` — uma tela;
+  - `POST /api/screens/fleet/update-app` — lista de telas ou a frota inteira (todas as telas pareadas de todos os tenants).
+- Cada envio cria um `RemoteCommand` (`commandId` UUID, `expiresAt` = +24 h) e é reentregue no reconnect enquanto `PENDING`/`SENT` e não expirado.
+
+#### Mensagem WebSocket recebida pelo player
+
+`UPDATE_APP` é a **única exceção** ao padrão de `payload` aninhado: os campos vêm **no topo** da mensagem.
+
+```json
+{
+  "type": "UPDATE_APP",
+  "commandId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "deviceId": "screen-uuid",
+  "createdAt": "2026-08-30T15:00:00.000Z",
+  "expiresAt": "2026-08-31T15:00:00.000Z",
+  "apkUrl": "https://media.vitdoor.com.br/player/vitdoor-player-v2.3.0.apk",
+  "version": "2.3.0",
+  "checksum": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}
+```
+
+Garantias do backend (o app pode confiar):
+- `apkUrl` sempre `https://` e sempre no host do domínio de mídia (R2) ou da API oficial — nunca um host arbitrário;
+- `checksum` sempre presente, 64 hex minúsculos (SHA-256 do APK);
+- `version` sempre no formato `x.y.z`.
+
+O app deve, mesmo assim, **validar o checksum antes de instalar** e abortar se não bater.
+
+#### Resposta do player (mensagem terminal única)
+
+```json
+{
+  "type": "COMMAND_RESULT",
+  "commandId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "action": "UPDATE_APP",
+  "success": true,
+  "message": "Instalação da versão 2.3.0 disparada com sucesso"
+}
+```
+
+Em falha (`success: false`), `message` descreve a causa (link quebrado, checksum inválido, sem espaço, instalação negada). O backend marca o `RemoteCommand` como `SUCCEEDED`/`FAILED` e o painel exibe o resultado em tempo real. **Não** há mensagens de progresso — uma resposta só, no fim.
+
+#### Comportamento esperado do app (referência do que já foi implementado)
+
+- Download resiliente do APK; validação SHA-256; instalação silenciosa via `su pm install -r` quando houver root/PM, senão instalador nativo via `FileProvider`.
+- Credenciais (`screenId`, `screenName`, `deviceToken`) em `SharedPreferences` privado (`vitdoor_secure_credentials`); upgrade `-r` preserva os dados do app.
+- `BootReceiver` escuta `android.intent.action.MY_PACKAGE_REPLACED` → o app sobe sozinho após a instalação, já pareado, e volta a tocar.
+- Enviar o `COMMAND_RESULT` **antes** de a nova versão substituir o processo (ou logo no próximo boot, se a instalação matar o app antes do envio — nesse caso o backend reentrega e o comando expira em 24 h de qualquer forma).
+
+#### Checklist de teste
+
+- [ ] `UPDATE_APP` por `ADMIN_CLIENT`/`OPERATOR` → recusado (403).
+- [ ] `apkUrl` com host fora do R2, sem `.apk`, ou `http://` → recusado (400).
+- [ ] `checksum` ausente ou com menos de 64 hex → recusado (400).
+- [ ] APK correto → TV Box baixa, valida, instala, reinicia sozinha e volta pareada tocando a mesma programação.
+- [ ] APK com checksum errado → app aborta, `COMMAND_RESULT` `success:false`, painel mostra a falha, versão anterior continua rodando.
+- [ ] Tela offline no envio → comando `PENDING`; ao reconectar recebe o `UPDATE_APP` e executa.
+- [ ] "Atualizar frota" → todas as telas pareadas recebem; painel informa `delivered`/`pending`.
 
 ## 16. Segurança
 

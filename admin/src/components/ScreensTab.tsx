@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tv, Volume2, Camera, RefreshCw, Power, Trash2, Plus, Sliders, CheckCircle2, Radio, Copy, Check, X, Pencil } from 'lucide-react';
+import { Tv, Volume2, Camera, RefreshCw, Power, Trash2, Plus, Sliders, CheckCircle2, Radio, Copy, Check, X, Pencil, DownloadCloud } from 'lucide-react';
 
 interface ScreensTabProps {
   screens: any[];
@@ -9,6 +9,8 @@ interface ScreensTabProps {
   onUpdateScreen: (screenId: string, data: any) => void;
   onRemoteCommand: (screenId: string, action: string, payload?: any) => void;
   onDeleteScreen: (screenId: string) => void;
+  onUpdatePlayerApp: (payload: { apkUrl: string; version: string; checksum: string; screenIds?: string[] }) => Promise<void>;
+  userRole?: string;
   isPairModalOpen: boolean;
   setIsPairModalOpen: (open: boolean) => void;
 }
@@ -21,6 +23,8 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
   onUpdateScreen,
   onRemoteCommand,
   onDeleteScreen,
+  onUpdatePlayerApp,
+  userRole,
   isPairModalOpen,
   setIsPairModalOpen
 }) => {
@@ -38,6 +42,34 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
   const [editLocationName, setEditLocationName] = useState('');
   const [editGroupName, setEditGroupName] = useState('');
   const [editOrientation, setEditOrientation] = useState('HORIZONTAL');
+
+  // OTA update modal state (SUPER_ADMIN)
+  const [otaOpen, setOtaOpen] = useState(false);
+  const [otaVersion, setOtaVersion] = useState('');
+  const [otaApkUrl, setOtaApkUrl] = useState('');
+  const [otaChecksum, setOtaChecksum] = useState('');
+  const [otaTarget, setOtaTarget] = useState<'FLEET' | 'SELECTED'>('SELECTED');
+  const [otaSelectedIds, setOtaSelectedIds] = useState<string[]>([]);
+  const [otaSending, setOtaSending] = useState(false);
+
+  const submitOta = async () => {
+    const version = otaVersion.trim();
+    const apkUrl = otaApkUrl.trim();
+    const checksum = otaChecksum.trim().toLowerCase();
+    if (!/^\d+\.\d+\.\d+$/.test(version)) { alert('Versão deve estar no formato x.y.z.'); return; }
+    if (!/^[a-f0-9]{64}$/.test(checksum)) { alert('Informe o checksum SHA-256 (64 caracteres hex).'); return; }
+    if (otaTarget === 'SELECTED' && otaSelectedIds.length === 0) { alert('Selecione ao menos uma tela.'); return; }
+    const scope = otaTarget === 'FLEET' ? `TODAS as ${screens.filter((s) => s.paired).length} telas pareadas` : `${otaSelectedIds.length} tela(s)`;
+    if (!window.confirm(`Enviar atualização do app para a versão ${version} em ${scope}? As TV Boxes vão baixar e instalar o novo APK.`)) return;
+    setOtaSending(true);
+    try {
+      await onUpdatePlayerApp({ apkUrl, version, checksum, ...(otaTarget === 'SELECTED' ? { screenIds: otaSelectedIds } : {}) });
+      setOtaOpen(false);
+      setOtaVersion(''); setOtaApkUrl(''); setOtaChecksum(''); setOtaSelectedIds([]); setOtaTarget('SELECTED');
+    } finally {
+      setOtaSending(false);
+    }
+  };
 
   const handlePairSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,9 +107,16 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
           </p>
         </div>
 
-        <button className="btn-primary" onClick={() => setIsPairModalOpen(true)}>
-          <Plus size={18} /> Parear com Código (6 dígitos)
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {userRole === 'SUPER_ADMIN' && (
+            <button className="btn-secondary" onClick={() => setOtaOpen(true)} title="Atualização remota do app do player">
+              <DownloadCloud size={18} /> Atualizar app do Player
+            </button>
+          )}
+          <button className="btn-primary" onClick={() => setIsPairModalOpen(true)}>
+            <Plus size={18} /> Parear com Código (6 dígitos)
+          </button>
+        </div>
       </div>
 
       {/* Screens Table */}
@@ -101,7 +140,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                     <Tv size={20} color="#60a5fa" />
                     <div>
                       <div>{screen.name}</div>
-                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>IP: {screen.ipAddress || 'não informado'}</span>
+                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>IP: {screen.ipAddress || 'não informado'} · App v{screen.appVersion || '—'}</span>
                     </div>
                   </div>
                 </td>
@@ -477,6 +516,62 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* OTA — Atualizar app do Player (SUPER_ADMIN) */}
+      {otaOpen && userRole === 'SUPER_ADMIN' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '18px' }}>
+          <div className="glass-panel" style={{ width: 'min(560px, 100%)', maxHeight: '92vh', overflowY: 'auto', padding: '28px' }}>
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '6px', color: '#fff' }}>Atualizar app do Player</h3>
+            <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '18px' }}>
+              As TV Boxes vão baixar o APK, validar o checksum SHA-256 e instalar. O APK precisa estar hospedado no domínio de mídia do VitDoor (R2).
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <label style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>Versão (x.y.z)
+                <input className="input-field" value={otaVersion} onChange={(e) => setOtaVersion(e.target.value)} placeholder="2.3.0" style={{ marginTop: '4px' }} />
+              </label>
+              <label style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>URL do APK
+                <input className="input-field" value={otaApkUrl} onChange={(e) => setOtaApkUrl(e.target.value)} placeholder="https://media.vitdoor.com.br/player/vitdoor-player-v2.3.0.apk" style={{ marginTop: '4px' }} />
+              </label>
+              <label style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>Checksum SHA-256
+                <input className="input-field" value={otaChecksum} onChange={(e) => setOtaChecksum(e.target.value)} placeholder="64 caracteres hexadecimais" style={{ marginTop: '4px' }} />
+              </label>
+
+              <div style={{ marginTop: '4px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: '#cbd5e1', marginBottom: '6px' }}>
+                  <input type="radio" checked={otaTarget === 'SELECTED'} onChange={() => setOtaTarget('SELECTED')} /> Somente as telas selecionadas
+                </label>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: '#cbd5e1' }}>
+                  <input type="radio" checked={otaTarget === 'FLEET'} onChange={() => setOtaTarget('FLEET')} /> Toda a frota ({screens.filter((s) => s.paired).length} telas pareadas)
+                </label>
+              </div>
+
+              {otaTarget === 'SELECTED' && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {screens.filter((s) => s.paired).map((screen) => (
+                    <button
+                      key={screen.id}
+                      type="button"
+                      className={otaSelectedIds.includes(screen.id) ? 'btn-primary' : 'btn-secondary'}
+                      style={{ padding: '5px 10px', fontSize: '0.78rem' }}
+                      onClick={() => setOtaSelectedIds((ids) => ids.includes(screen.id) ? ids.filter((x) => x !== screen.id) : [...ids, screen.id])}
+                    >
+                      {screen.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+              <button type="button" className="btn-secondary" onClick={() => setOtaOpen(false)} disabled={otaSending}>Cancelar</button>
+              <button type="button" className="btn-primary" onClick={submitOta} disabled={otaSending}>
+                <DownloadCloud size={16} /> {otaSending ? 'Enviando...' : 'Enviar atualização'}
+              </button>
+            </div>
           </div>
         </div>
       )}
