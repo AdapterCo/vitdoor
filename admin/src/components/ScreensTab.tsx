@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Tv, Volume2, Camera, RefreshCw, Power, Trash2, Plus, Sliders, CheckCircle2, Radio, Copy, Check, X, Pencil, DownloadCloud } from 'lucide-react';
 
 interface ScreensTabProps {
@@ -10,6 +10,7 @@ interface ScreensTabProps {
   onRemoteCommand: (screenId: string, action: string, payload?: any) => void;
   onDeleteScreen: (screenId: string) => void;
   onUpdatePlayerApp: (payload: { apkUrl: string; version: string; checksum: string; screenIds?: string[] }) => Promise<void>;
+  onGetFleetCount: () => Promise<number>;
   userRole?: string;
   isPairModalOpen: boolean;
   setIsPairModalOpen: (open: boolean) => void;
@@ -24,6 +25,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
   onRemoteCommand,
   onDeleteScreen,
   onUpdatePlayerApp,
+  onGetFleetCount,
   userRole,
   isPairModalOpen,
   setIsPairModalOpen
@@ -51,6 +53,11 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
   const [otaTarget, setOtaTarget] = useState<'FLEET' | 'SELECTED'>('SELECTED');
   const [otaSelectedIds, setOtaSelectedIds] = useState<string[]>([]);
   const [otaSending, setOtaSending] = useState(false);
+  const [fleetCount, setFleetCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (otaOpen) onGetFleetCount().then(setFleetCount).catch(() => setFleetCount(null));
+  }, [otaOpen]);
 
   const submitOta = async () => {
     const version = otaVersion.trim();
@@ -59,7 +66,9 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
     if (!/^\d+\.\d+\.\d+$/.test(version)) { alert('Versão deve estar no formato x.y.z.'); return; }
     if (!/^[a-f0-9]{64}$/.test(checksum)) { alert('Informe o checksum SHA-256 (64 caracteres hex).'); return; }
     if (otaTarget === 'SELECTED' && otaSelectedIds.length === 0) { alert('Selecione ao menos uma tela.'); return; }
-    const scope = otaTarget === 'FLEET' ? `TODAS as ${screens.filter((s) => s.paired).length} telas pareadas` : `${otaSelectedIds.length} tela(s)`;
+    const scope = otaTarget === 'FLEET'
+      ? `TODAS as telas pareadas do sistema (todos os clientes)${fleetCount != null ? ` — ${fleetCount} tela(s)` : ''}`
+      : `${otaSelectedIds.length} tela(s) selecionada(s)`;
     if (!window.confirm(`Enviar atualização do app para a versão ${version} em ${scope}? As TV Boxes vão baixar e instalar o novo APK.`)) return;
     setOtaSending(true);
     try {
@@ -545,7 +554,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                   <input type="radio" checked={otaTarget === 'SELECTED'} onChange={() => setOtaTarget('SELECTED')} /> Somente as telas selecionadas
                 </label>
                 <label style={{ display: 'block', fontSize: '0.85rem', color: '#cbd5e1' }}>
-                  <input type="radio" checked={otaTarget === 'FLEET'} onChange={() => setOtaTarget('FLEET')} /> Toda a frota ({screens.filter((s) => s.paired).length} telas pareadas)
+                  <input type="radio" checked={otaTarget === 'FLEET'} onChange={() => setOtaTarget('FLEET')} /> Toda a frota — todas as telas pareadas de todos os clientes{fleetCount != null ? ` (${fleetCount})` : ''}
                 </label>
               </div>
 

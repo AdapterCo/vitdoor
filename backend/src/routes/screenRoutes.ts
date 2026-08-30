@@ -209,6 +209,12 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
   });
 });
 
+// Total de telas pareadas em toda a plataforma (todos os clientes) — para a confirmação da atualização em massa.
+screenRoutes.get('/fleet/count', requireSuperAdmin, async (_req: Request, res: Response): Promise<any> => {
+  const paired = await prisma.screen.count({ where: { paired: true } });
+  return res.json({ paired });
+});
+
 // Atualização remota do app do player — exclusivo do administrador da plataforma.
 screenRoutes.post('/fleet/update-app', requireSuperAdmin, async (req: Request, res: Response): Promise<any> => {
   const payload = normalizeCommandPayload('UPDATE_APP', req.body);

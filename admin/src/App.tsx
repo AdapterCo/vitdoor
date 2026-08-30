@@ -225,6 +225,16 @@ export function App() {
     loadTenantData(activeTenant.id);
   };
 
+  const handleGetFleetCount = async (): Promise<number> => {
+    try {
+      const response = await apiFetch('/screens/fleet/count');
+      if (!response.ok) return 0;
+      return (await response.json()).paired || 0;
+    } catch {
+      return 0;
+    }
+  };
+
   const handleUpdatePlayerApp = async (payload: { apkUrl: string; version: string; checksum: string; screenIds?: string[] }) => {
     const response = await apiFetch('/screens/fleet/update-app', {
       method: 'POST',
@@ -531,6 +541,7 @@ export function App() {
             onRemoteCommand={handleRemoteCommand}
             onDeleteScreen={handleDeleteScreen}
             onUpdatePlayerApp={handleUpdatePlayerApp}
+            onGetFleetCount={handleGetFleetCount}
             userRole={user.role}
             isPairModalOpen={isPairModalOpen}
             setIsPairModalOpen={setIsPairModalOpen}
