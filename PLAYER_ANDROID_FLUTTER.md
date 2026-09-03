@@ -1045,17 +1045,164 @@ class ProofOfPlayService {
 
 ## 14. Inicialização, quiosque e recuperação
 
-- registrar `BOOT_COMPLETED` e iniciar conforme restrições da versão Android;
-- usar foreground service quando necessário;
-- entrar em modo imersivo e esconder barras do sistema;
-- bloquear Back/Home somente quando o equipamento estiver provisionado como Device Owner/Lock Task;
-- fornecer saída administrativa protegida por PIN local ou comando autorizado;
-- manter tela ligada durante reprodução;
-- watchdog detecta travamento do pipeline, não reinicia em loop infinito;
-- após crash ou falta de energia, abrir versão ativa do banco antes de tentar rede;
-- registrar contagem de crashes e última causa conhecida.
+**Estado:** especificação Kotlin fechada — implementação no app do time do player.
 
-Modo quiosque completo depende de provisionamento/MDM ou Device Owner. Não prometer bloqueio absoluto em uma TV Box comum sem validar o firmware.
+Objetivo operacional: **o player abre sozinho quando a TV liga, fica na tela, e não deixa
+sair.** Quem tenta sair (Home, Back, Recentes) volta para o player em ≤ 3 s. A única forma
+de sair é digitar um PIN de manutenção — porque o operador precisa mexer no equipamento
+de vez em quando (Wi-Fi, hora, diagnóstico).
+
+### 14.1 Autostart no boot
+
+- Permissão `RECEIVE_BOOT_COMPLETED`.
+- `BootReceiver` escuta `android.intent.action.BOOT_COMPLETED`, `android.intent.action.QUICKBOOT_POWERON`,
+  `com.htc.intent.action.QUICKBOOT_POWERON` (variações de OEM) e `android.intent.action.MY_PACKAGE_REPLACED`
+  (já usado no OTA — seção 15.3).
+- Ao receber: subir o `VitDoorGuardService` (foreground service), que então abre a `MainActivity`
+  (`FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_REORDER_TO_FRONT`). O start direto de Activity a partir
+  de um `BroadcastReceiver` é restrito no Android 10+ — passar sempre pela service.
+- A `MainActivity` também é declarada como **HOME launcher** (ver 14.2). Isso resolve o boot
+  naturalmente: se o firmware chamar a home, quem responde é o player.
+- Android TV: `intent-filter` da `MainActivity` com `CATEGORY_LEANBACK_LAUNCHER`.
+- Alguns firmwares de TV Box exigem habilitar o app na lista de "inicialização automática"
+  das configurações do sistema. Isso **não** dá para forçar por código — entra no manual de
+  instalação do equipamento.
+
+### 14.2 Modo quiosque — dois níveis
+
+O app detecta o que o equipamento permite (`devicePolicyManager.isDeviceOwnerApp(packageName)`)
+e aplica o bloqueio mais forte disponível.
+
+**Nível 1 — Device Owner + Lock Task (bloqueio real, recomendado)**
+
+Equipamento provisionado como Device Owner (ver 14.6). Uma vez só, por aparelho. Com
+`DevicePolicyManager`:
+
+- `setLockTaskPackages(admin, arrayOf(packageName))` + `activity.startLockTask()` → o sistema
+  bloqueia Home, Recentes, barra de status e notificações. Back é entregue ao app (que consome).
+- `setLockTaskFeatures(admin, 0)` → esconde tudo (sem relógio do sistema, sem notificação).
+- `setStatusBarDisabled(admin, true)` e `setKeyguardDisabled(admin, true)`.
+- `addPersistentPreferredActivity(admin, homeFilter, componentName)` → Home sempre resolve para
+  o player, inclusive na janela entre o boot e o `startLockTask()`.
+- `setUninstallBlocked(admin, packageName, true)`.
+- `addUserRestriction`: `DISALLOW_SAFE_BOOT`, `DISALLOW_FACTORY_RESET`, `DISALLOW_ADD_USER`,
+  `DISALLOW_MOUNT_PHYSICAL_MEDIA`. Opcionais conforme a operação: `DISALLOW_ADJUST_VOLUME`
+  (só se o volume for 100% controlado pelo painel).
+- `setGlobalSetting(STAY_ON_WHILE_PLUGGED_IN, "7")` → tela nunca dorme.
+
+Nesse nível, o bloqueio de saída é do **sistema operacional** — o watchdog (14.3) só precisa
+cobrir crash.
+
+**Nível 2 — sem Device Owner (TV Box comum, não provisionada)**
+
+Não existe bloqueio absoluto. Camadas que, juntas, seguram a grande maioria dos casos:
+
+- `MainActivity` declarada como **HOME launcher** (`intent-filter` com `CATEGORY_HOME` +
+  `CATEGORY_DEFAULT`; `CATEGORY_LEANBACK_LAUNCHER` no TV) e definida como launcher padrão na
+  primeira instalação (o operador confirma uma vez). Botão Home → volta para o player.
+- Immersive sticky (`WindowInsetsController` / `SYSTEM_UI_FLAG_IMMERSIVE_STICKY`): barras
+  aparecem só com swipe e somem sozinhas.
+- `dispatchKeyEvent` consome `KEYCODE_BACK`, `KEYCODE_MENU`, `KEYCODE_APP_SWITCH` e teclas de
+  volume enquanto travado.
+- `onUserLeaveHint()` / `onWindowFocusChanged(false)` acionam o **watchdog** (14.3) para
+  retomar o foco em ≤ 3 s.
+- Se o firmware tiver `su` (root), o `KioskController` pode reforçar via `su -c am start ...`.
+  Opcional e por conta e risco do integrador.
+
+### 14.3 Watchdog de foreground — o "volta em 3 segundos"
+
+- **Foreground service** `VitDoorGuardService` em **processo separado** (`android:process=":guard"`),
+  com notificação persistente discreta. Sobrevive a crash da `MainActivity`.
+- A cada ~1 s verifica se a `MainActivity` está em primeiro plano (flag `isForeground`
+  mantido por `ActivityLifecycleCallbacks`, não por `getRunningTasks`).
+- Se **não** está em foreground **e** não há janela de manutenção ativa (14.4):
+  - `startActivity(MainActivity, FLAG_ACTIVITY_REORDER_TO_FRONT | FLAG_ACTIVITY_NEW_TASK)`;
+  - se Device Owner e o lock task caiu, `startLockTask()` de novo;
+  - alvo: player de volta na tela em **≤ 3 s**.
+- **Anti-loop:** se a Activity crashar mais de 4 vezes em 3 min, o watchdog para de reabrir
+  na hora e entra em backoff (5 s → 15 s → 60 s), grava `crashCount` e `lastCrashReason` na
+  telemetria (seção 17) e exibe uma tela de erro com o **código de pareamento** visível.
+  Nunca reinício infinito sem intervalo.
+- O watchdog é (re)iniciado pelo `BootReceiver`, pelo `MY_PACKAGE_REPLACED` e pelo próprio
+  `onCreate` da `MainActivity`.
+
+### 14.4 Destravamento de manutenção por PIN
+
+- **Gesto oculto** para abrir o teclado de PIN: 5 toques no **canto superior direito**
+  (área ~120 dp) em até 3 s; ou, no controle, segurar `KEYCODE_MENU` por 3 s. Nada é
+  desenhado na tela em operação normal.
+- Abre um teclado numérico acima de tudo (acima de alerta emergencial e overlay de senha).
+- PIN de 4–6 dígitos:
+  - **Fonte:** guardado cifrado em `SharedPreferences` (`vitdoor_secure_credentials`, o mesmo
+    do `deviceToken`). Valor inicial = `screen.maintenancePin` do manifesto quando presente
+    (contrato opcional abaixo); senão, `BuildConfig.DEFAULT_MAINTENANCE_PIN`, que **deve** ser
+    trocado na implantação.
+  - 3 erros → bloqueia o teclado por 30 s, dobrando a cada rodada. Nunca indicar "quase".
+- **PIN correto → janela de manutenção:**
+  - suspende o watchdog e, se Device Owner, `stopLockTask()`;
+  - libera Home/Back/Recentes e um atalho para `Intent(Settings.ACTION_SETTINGS)` (Wi-Fi, hora);
+  - banner fixo no topo: `MANUTENÇÃO — trava volta em 04:37` (regressivo) + botão **"Reativar agora"**;
+  - duração padrão **5 min** (`screen.maintenanceWindowSeconds`); ao zerar ou no botão, re-trava
+    tudo e volta ao player;
+  - se a TV desligar durante a manutenção, no próximo boot volta **travada** (a janela não
+    persiste reboot).
+- **Contrato opcional no manifesto** (backend entrega quando implementado; sem isso o app usa
+  o PIN local):
+
+```json
+"screen": {
+  "id": "uuid",
+  "orientation": "HORIZONTAL",
+  "volume": 80,
+  "maintenancePin": "4728",
+  "maintenanceWindowSeconds": 300
+}
+```
+
+Quando presente, o app substitui o PIN local pelo do manifesto — assim o operador troca o
+PIN pelo painel e ele sincroniza. Ausência dos campos = mantém o PIN já guardado.
+
+### 14.5 Recuperação após crash ou falta de energia
+
+- `BootReceiver`/watchdog sobem o app; ele abre a **versão ativa do cache local antes de
+  tentar a rede** — a programação volta na hora, mesmo offline.
+- `crashCount` e `lastCrashReason` vão na telemetria e aparecem no painel.
+- Tela nunca dorme durante a reprodução: `FLAG_KEEP_SCREEN_ON` na window + (Device Owner)
+  `STAY_ON_WHILE_PLUGGED_IN`.
+
+### 14.6 Provisionamento como Device Owner
+
+Uma vez por equipamento, com a TV Box **recém-resetada de fábrica e sem nenhuma conta
+adicionada**:
+
+```
+adb shell dpm set-device-owner br.com.vitdoor.player/.kiosk.VitDoorDeviceAdminReceiver
+```
+
+- Exige `DeviceAdminReceiver` no manifesto + `device_admin.xml` com as policies usadas.
+- Alternativa sem ADB: **provisionamento por QR code** na tela de boas-vindas do Android
+  (7+) — o instalador escaneia um QR que instala o APK já como Device Owner. Colocar o QR
+  no manual.
+- Onde não for possível (box com conta Google pré-existente, firmware travado), o app cai
+  sozinho no Nível 2 (14.2).
+
+### 14.7 Checklist de teste na TV Box real
+
+- [ ] Liga a TV → player na tela em ≤ 20 s, sem passar pela home do Android.
+- [ ] Aperta **Home** → volta ao player em ≤ 3 s (ou nem sai, se Device Owner).
+- [ ] **Back** / **Recentes** / **Menu** → não sai.
+- [ ] Tira da tomada e liga de novo → volta travado, tocando a última programação, offline.
+- [ ] 5 toques no canto superior direito → teclado de PIN aparece.
+- [ ] PIN errado 3× → bloqueia 30 s.
+- [ ] PIN certo → janela de 5 min, banner regressivo, `Settings` acessível, Wi-Fi configurável.
+- [ ] Fim dos 5 min ou "Reativar agora" → re-trava e volta ao player.
+- [ ] Durante `UPDATE_APP` → tela do instalador aparece, instala, app volta **travado** via `MY_PACKAGE_REPLACED`.
+- [ ] Forçar 5 crashes seguidos → watchdog entra em backoff e mostra tela de erro com o código de pareamento, sem loop.
+- [ ] Device Owner: `adb shell am start -n <outra_activity>` → não sai do lock task.
+
+> Modo quiosque **absoluto** só existe com Device Owner ou MDM. Numa TV Box comum sem
+> provisionamento, o Nível 2 segura a grande maioria dos casos, mas não se deve prometer
+> bloqueio 100% sem validar o firmware do lote.
 
 ## 15. Comandos remotos
 
