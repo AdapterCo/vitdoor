@@ -96,6 +96,8 @@ model Screen {
   lastScreenshotUrl  String?
   deviceTokenVersion Int       @default(1)
   manifestVersion    Int       @default(1)
+  maintenancePin     String?
+  maintenanceUntil   DateTime?
 
   // Active Content
   activePlaylistId String?

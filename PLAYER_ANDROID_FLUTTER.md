@@ -274,6 +274,7 @@ Aviso atual de programação:
 - `REBOOT`: reiniciar o aplicativo de forma controlada;
 - `TAKE_SCREENSHOT`: capturar e responder, quando suportado;
 - `UPDATE_APP`: baixar e instalar um novo APK do player (checksum SHA-256 opcional) — ver seção 15.3;
+- `MAINTENANCE_UNLOCK` / `MAINTENANCE_LOCK`: destravar o quiosque por N minutos / re-travar na hora — ver seção 14.4;
 - `TICKET_CALLED`: chamada de senha em tempo real; exibir overlay, tocar chime e pronunciar síntese de voz (TTS) — ver seção 27;
 - `EMERGENCY_ALERT_TRIGGERED`: sobrepor alerta destinado à tela;
 - `EMERGENCY_ALERT_CLEARED`: remover alerta;
@@ -331,7 +332,8 @@ Resposta atual:
   "screen": {
     "id": "uuid",
     "orientation": "HORIZONTAL",
-    "volume": 80
+    "volume": 80,
+    "maintenancePin": "4728"
   },
   "activePlaylist": null,
   "activeLayout": null,
@@ -1126,41 +1128,53 @@ Não existe bloqueio absoluto. Camadas que, juntas, seguram a grande maioria dos
 - O watchdog é (re)iniciado pelo `BootReceiver`, pelo `MY_PACKAGE_REPLACED` e pelo próprio
   `onCreate` da `MainActivity`.
 
-### 14.4 Destravamento de manutenção por PIN
+### 14.4 Destravamento de manutenção
 
-- **Gesto oculto** para abrir o teclado de PIN: 5 toques no **canto superior direito**
-  (área ~120 dp) em até 3 s; ou, no controle, segurar `KEYCODE_MENU` por 3 s. Nada é
-  desenhado na tela em operação normal.
-- Abre um teclado numérico acima de tudo (acima de alerta emergencial e overlay de senha).
-- PIN de 4–6 dígitos:
-  - **Fonte:** guardado cifrado em `SharedPreferences` (`vitdoor_secure_credentials`, o mesmo
-    do `deviceToken`). Valor inicial = `screen.maintenancePin` do manifesto quando presente
-    (contrato opcional abaixo); senão, `BuildConfig.DEFAULT_MAINTENANCE_PIN`, que **deve** ser
-    trocado na implantação.
-  - 3 erros → bloqueia o teclado por 30 s, dobrando a cada rodada. Nunca indicar "quase".
-- **PIN correto → janela de manutenção:**
-  - suspende o watchdog e, se Device Owner, `stopLockTask()`;
-  - libera Home/Back/Recentes e um atalho para `Intent(Settings.ACTION_SETTINGS)` (Wi-Fi, hora);
-  - banner fixo no topo: `MANUTENÇÃO — trava volta em 04:37` (regressivo) + botão **"Reativar agora"**;
-  - duração padrão **5 min** (`screen.maintenanceWindowSeconds`); ao zerar ou no botão, re-trava
-    tudo e volta ao player;
-  - se a TV desligar durante a manutenção, no próximo boot volta **travada** (a janela não
-    persiste reboot).
-- **Contrato opcional no manifesto** (backend entrega quando implementado; sem isso o app usa
-  o PIN local):
+Há dois caminhos: **remoto pelo painel** (o normal) e **local por PIN** (fallback quando a
+TV está sem internet e o operador está na frente dela).
+
+#### Remoto — comandos `MAINTENANCE_UNLOCK` / `MAINTENANCE_LOCK`
+
+**Estado:** backend + painel implementados.
+
+O operador clica em "Liberar manutenção" no painel e escolhe a duração. Chega via WebSocket
+(mesmo fluxo dos outros comandos — `commandId`, ack por `COMMAND_RESULT`):
 
 ```json
-"screen": {
-  "id": "uuid",
-  "orientation": "HORIZONTAL",
-  "volume": 80,
-  "maintenancePin": "4728",
-  "maintenanceWindowSeconds": 300
-}
+{ "type": "MAINTENANCE_UNLOCK", "commandId": "uuid", "deviceId": "screen-uuid",
+  "createdAt": "...", "expiresAt": "...", "payload": { "minutes": 15 } }
 ```
 
-Quando presente, o app substitui o PIN local pelo do manifesto — assim o operador troca o
-PIN pelo painel e ele sincroniza. Ausência dos campos = mantém o PIN já guardado.
+- O app **conta os `minutes` a partir do recebimento** (robusto a relógio errado); `expiresAt`
+  é só informativo e igual a `createdAt + minutes`.
+- `{ "type": "MAINTENANCE_LOCK", "commandId": "uuid", ... }` (sem payload) → re-trava na hora.
+- O backend só reentrega um `MAINTENANCE_UNLOCK` no reconnect se a janela ainda não venceu
+  (`expiresAt` do comando = fim da janela, não +24 h).
+- Responder `COMMAND_RESULT` `success: true` ao aplicar.
+
+#### Local — PIN
+
+- **Gesto oculto** para abrir o teclado de PIN: 5 toques no **canto superior direito**
+  (área ~120 dp) em até 3 s; ou segurar `KEYCODE_MENU` por 3 s. Nada é desenhado na tela em
+  operação normal.
+- Teclado numérico acima de tudo (acima de alerta emergencial e overlay de senha).
+- PIN de 4–6 dígitos:
+  - **Fonte:** `screen.maintenancePin`, entregue no manifesto (ver seção 9). O app guarda
+    cifrado em `SharedPreferences` (`vitdoor_secure_credentials`). Quando o manifesto traz o
+    campo, ele **substitui** o valor local — assim o operador troca o PIN pelo painel e
+    sincroniza. `maintenancePin: null` no manifesto → sem PIN local (só destrava pelo painel).
+    Fallback de primeira instalação: `BuildConfig.DEFAULT_MAINTENANCE_PIN`.
+  - 3 erros → bloqueia o teclado por 30 s, dobrando a cada rodada. Nunca indicar "quase".
+- Janela local padrão: **5 min**.
+
+#### Janela de manutenção (vale para os dois caminhos)
+
+- suspende o watchdog e, se Device Owner, `stopLockTask()`;
+- libera Home/Back/Recentes e um atalho para `Intent(Settings.ACTION_SETTINGS)` (Wi-Fi, hora);
+- banner fixo no topo: `MANUTENÇÃO — trava volta em 04:37` (regressivo) + botão **"Reativar agora"**;
+- ao zerar o tempo, no botão, ou ao receber `MAINTENANCE_LOCK` → re-trava tudo e volta ao player;
+- se a TV desligar durante a manutenção, no próximo boot volta **travada** (a janela não
+  persiste reboot).
 
 ### 14.5 Recuperação após crash ou falta de energia
 
@@ -1360,6 +1374,7 @@ Retry de comando já concluído retorna `200` e `duplicate: true`. Erros: `400` 
 - `TAKE_SCREENSHOT`: implementado no backend;
 - `REBOOT`: reinicia o aplicativo; implementado no contrato;
 - `UPDATE_APP`: atualização remota do APK; contrato de backend + painel implementados (ver seção 15.3);
+- `MAINTENANCE_UNLOCK` / `MAINTENANCE_LOCK`: destravamento remoto do quiosque; backend + painel implementados (ver seção 14.4);
 - `REBOOT_DEVICE`: não implementado; exige Device Owner/firmware autorizado;
 - `CLEAR_CACHE`: não implementado; quando existir, nunca removerá assets da versão ativa;
 - alertas: aplicar somente à tela destinatária;

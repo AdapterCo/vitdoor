@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Tv, Volume2, Camera, RefreshCw, Power, Trash2, Plus, Sliders, CheckCircle2, Radio, Copy, Check, X, Pencil, DownloadCloud } from 'lucide-react';
+import { Tv, Volume2, Camera, RefreshCw, Power, Trash2, Plus, Sliders, CheckCircle2, Radio, Copy, Check, X, Pencil, DownloadCloud, Lock, Unlock } from 'lucide-react';
 
 interface ScreensTabProps {
   screens: any[];
@@ -44,6 +44,8 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
   const [editLocationName, setEditLocationName] = useState('');
   const [editGroupName, setEditGroupName] = useState('');
   const [editOrientation, setEditOrientation] = useState('HORIZONTAL');
+  const [editMaintenancePin, setEditMaintenancePin] = useState('');
+  const [pairPin, setPairPin] = useState('');
 
   // OTA update modal state (SUPER_ADMIN)
   const [otaOpen, setOtaOpen] = useState(false);
@@ -83,11 +85,14 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
   const handlePairSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pairingCode) return;
-    const success = await onPairScreen({ pairingCode: pairingCode.trim(), name, locationName, groupName, orientation });
+    const pin = pairPin.trim();
+    if (pin && !/^\d{4,6}$/.test(pin)) { alert('O PIN de manutenção deve ter de 4 a 6 dígitos.'); return; }
+    const success = await onPairScreen({ pairingCode: pairingCode.trim(), name, locationName, groupName, orientation, maintenancePin: pin });
     if (!success) return;
     setPairingCode('');
     setName('');
     setLocationName('');
+    setPairPin('');
     setIsPairModalOpen(false);
   };
 
@@ -149,7 +154,12 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                     <Tv size={20} color="#60a5fa" />
                     <div>
                       <div>{screen.name}</div>
-                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>IP: {screen.ipAddress || 'não informado'} · App v{screen.appVersion || '—'}</span>
+                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                        IP: {screen.ipAddress || 'não informado'} · App v{screen.appVersion || '—'}
+                        {screen.maintenanceUntil && new Date(screen.maintenanceUntil).getTime() > Date.now() && (
+                          <span style={{ color: '#4ade80' }}> · 🔓 manutenção até {new Date(screen.maintenanceUntil).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                        )}
+                      </span>
                     </div>
                   </div>
                 </td>
@@ -236,6 +246,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                         setEditLocationName(screen.locationName || '');
                         setEditGroupName(screen.groupName || 'Geral');
                         setEditOrientation(screen.orientation || 'HORIZONTAL');
+                        setEditMaintenancePin(screen.maintenancePin || '');
                       }}
                     >
                       <Pencil size={14} color="#a855f7" />
@@ -264,6 +275,29 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                     >
                       <RefreshCw size={14} />
                     </button>
+                    {(() => {
+                      const until = screen.maintenanceUntil ? new Date(screen.maintenanceUntil) : null;
+                      const active = !!(until && until.getTime() > Date.now());
+                      return (
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: '6px 10px' }}
+                          title={active
+                            ? `Em manutenção até ${until!.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} — clique para travar agora`
+                            : 'Liberar para manutenção'}
+                          onClick={() => {
+                            if (active) { onRemoteCommand(screen.id, 'MAINTENANCE_LOCK'); return; }
+                            const raw = window.prompt('Liberar esta tela para manutenção por quantos minutos?', '15');
+                            if (raw === null) return;
+                            const minutes = parseInt(raw, 10);
+                            if (!Number.isInteger(minutes) || minutes < 1 || minutes > 240) { alert('Informe um número de 1 a 240.'); return; }
+                            onRemoteCommand(screen.id, 'MAINTENANCE_UNLOCK', { minutes });
+                          }}
+                        >
+                          {active ? <Unlock size={14} color="#4ade80" /> : <Lock size={14} color="#94a3b8" />}
+                        </button>
+                      );
+                    })()}
                     <button
                       className="btn-secondary"
                       style={{ padding: '6px 10px' }}
@@ -359,6 +393,18 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                   <option value="180">Invertido (180° Ponta-Cabeça)</option>
                   <option value="VERTICAL">Vertical / 270° (Totem Vertical 9:16)</option>
                 </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>PIN de manutenção (4–6 dígitos)</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className="input-field"
+                  value={pairPin}
+                  onChange={(e) => setPairPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="senha pra destravar a TV no local (opcional)"
+                />
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px' }}>
@@ -463,11 +509,14 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
 
             <form onSubmit={(e) => {
               e.preventDefault();
+              const pin = editMaintenancePin.trim();
+              if (pin && !/^\d{4,6}$/.test(pin)) { alert('O PIN de manutenção deve ter de 4 a 6 dígitos.'); return; }
               onUpdateScreen(editingScreen.id, {
                 name: editName,
                 locationName: editLocationName,
                 groupName: editGroupName,
-                orientation: editOrientation
+                orientation: editOrientation,
+                maintenancePin: pin
               });
               setEditingScreen(null);
             }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -499,6 +548,18 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                   className="input-field"
                   value={editGroupName}
                   onChange={(e) => setEditGroupName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>PIN de manutenção (4–6 dígitos)</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className="input-field"
+                  value={editMaintenancePin}
+                  onChange={(e) => setEditMaintenancePin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="usado pra destravar a TV no local; em branco = remover"
                 />
               </div>
 

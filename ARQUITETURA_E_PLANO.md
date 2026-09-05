@@ -533,7 +533,7 @@ Estados:
 | Proof-of-play offline web | SIMULADOR | Deve ser refeito com fila SQLite persistente no aplicativo Android |
 | Aplicativo Android TV | PENDENTE | Especificação preservada, mas desenvolvimento adiado enquanto o projeto web é consolidado |
 | Inicialização automática | PARCIAL | Especificação Kotlin fechada em `PLAYER_ANDROID_FLUTTER.md` §14 (BootReceiver + HOME launcher + foreground service); implementação no app |
-| Modo quiosque | PARCIAL | Spec Kotlin fechada em §14: Device Owner + Lock Task (bloqueio real) ou Nível 2 sem provisionamento; watchdog reabre em ≤3s; destravamento por PIN de manutenção (janela de 5 min). Implementação no app |
+| Modo quiosque | PARCIAL | Spec Kotlin fechada em §14 (Device Owner + Lock Task; watchdog reabre em ≤3s). Destravamento: PIN por tela e comandos `MAINTENANCE_UNLOCK`/`MAINTENANCE_LOCK` **implementados no backend + painel** (PIN vai no manifesto, liberação por minutos pelo painel). Falta a implementação do quiosque no app |
 | ExoPlayer / Media3 | PENDENTE | Android |
 | Atualização remota do app | PARCIAL | Comando `UPDATE_APP` (WebSocket) e painel do master implementados; APK hospedado no R2 (host restrito, HTTPS), checksum SHA-256 opcional. Execução no app Android (Kotlin) feita pelo time do player |
 | Assinatura e distribuição APK | PARCIAL | Política definida para Play App Signing, Managed Google Play e EMM; CI, conta organizacional e frota ainda não configurados |

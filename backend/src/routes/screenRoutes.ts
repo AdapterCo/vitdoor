@@ -36,12 +36,14 @@ screenRoutes.post('/generate-code', async (_req: Request, res: Response): Promis
 
 // Pair device by code (admin confirms pairing code shown on TV)
 screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => {
-  const { tenantId, pairingCode, name, locationName, groupName, orientation } = req.body;
+  const { tenantId, pairingCode, name, locationName, groupName, orientation, maintenancePin } = req.body;
   const scopedTenantId = tenantScope(req, tenantId);
 
   if (!pairingCode) {
     return res.status(400).json({ error: 'Tenant ID e Código de Pareamento são obrigatórios.' });
   }
+  const pin = parseMaintenancePin(maintenancePin);
+  if (pin.error) return res.status(400).json({ error: pin.error });
 
   const normalizedPairingCode = cleanCode(pairingCode);
   const pairingSessions = await prisma.pairingSession.findMany({ where: { claimedAt: null, expiresAt: { gt: new Date() } } });
@@ -81,7 +83,8 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
         orientation: orientation || screen.orientation,
         paired: true,
         status: 'OFFLINE',
-        activePlaylistId: screen.activePlaylistId || defaultPlaylist?.id || null
+        activePlaylistId: screen.activePlaylistId || defaultPlaylist?.id || null,
+        ...(pin.provided ? { maintenancePin: pin.value } : {})
       }
     });
   } else {
@@ -96,7 +99,8 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
         groupName: groupName || 'Geral',
         orientation: orientation || 'HORIZONTAL',
         status: 'OFFLINE',
-        activePlaylistId: defaultPlaylist?.id || null
+        activePlaylistId: defaultPlaylist?.id || null,
+        ...(pin.provided ? { maintenancePin: pin.value } : {})
       }
     });
   }
@@ -115,9 +119,11 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const scopedTenantId = tenantScope(req, req.body.tenantId);
   const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
-  const { name, locationName, groupName, orientation, volume, activePlaylistId, activeLayoutId } = req.body;
+  const { name, locationName, groupName, orientation, volume, activePlaylistId, activeLayoutId, maintenancePin } = req.body;
   const playlistProvided = Object.prototype.hasOwnProperty.call(req.body, 'activePlaylistId');
   const layoutProvided = Object.prototype.hasOwnProperty.call(req.body, 'activeLayoutId');
+  const pin = parseMaintenancePin(maintenancePin);
+  if (pin.error) return res.status(400).json({ error: pin.error });
 
   if (activePlaylistId) {
     const playlist = await prisma.playlist.findFirst({ where: { id: activePlaylistId, tenantId: scopedTenantId } });
@@ -138,6 +144,7 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
       volume: volume !== undefined ? parseInt(volume, 10) : undefined,
       activePlaylistId: playlistProvided ? (activePlaylistId || null) : undefined,
       activeLayoutId: layoutProvided ? (activeLayoutId || null) : undefined,
+      maintenancePin: pin.provided ? pin.value : undefined,
       manifestVersion: { increment: 1 }
     },
     include: {
@@ -165,7 +172,9 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
   const payload = normalizeCommandPayload(action, req.body.payload);
   if (!payload.valid) return res.status(400).json({ error: payload.error });
   const commandId = randomUUID();
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60_000);
+  const expiresAt = action === 'MAINTENANCE_UNLOCK'
+    ? new Date(Date.now() + payload.value!.minutes * 60_000)
+    : new Date(Date.now() + 24 * 60 * 60_000);
   const command = await prisma.remoteCommand.create({
     data: {
       commandId,
@@ -196,11 +205,17 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
       data: { volume: payload.value!.volume, manifestVersion: { increment: 1 } }
     });
   }
+  if (action === 'MAINTENANCE_UNLOCK') {
+    await prisma.screen.update({ where: { id }, data: { maintenanceUntil: expiresAt } });
+  } else if (action === 'MAINTENANCE_LOCK') {
+    await prisma.screen.update({ where: { id }, data: { maintenanceUntil: null } });
+  }
   if (sent) await prisma.remoteCommand.update({ where: { commandId }, data: { status: 'SENT', sentAt: new Date() } });
 
   return res.status(202).json({
     commandId,
     action,
+    maintenanceUntil: action === 'MAINTENANCE_UNLOCK' ? expiresAt : action === 'MAINTENANCE_LOCK' ? null : undefined,
     status: sent ? 'SENT' : 'PENDING',
     delivered: sent,
     createdAt: command.createdAt,
@@ -294,14 +309,30 @@ screenRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> =>
   return res.json({ success: true });
 });
 
+/** PIN de manutenção da tela: 4 a 6 dígitos. `provided:false` = não mexer; `value:null` = remover. */
+function parseMaintenancePin(raw: unknown): { provided: boolean; value: string | null; error?: string } {
+  if (raw === undefined) return { provided: false, value: null };
+  if (raw === null || raw === '') return { provided: true, value: null };
+  const pin = String(raw).trim();
+  if (!/^\d{4,6}$/.test(pin)) return { provided: true, value: null, error: 'PIN de manutenção deve ter de 4 a 6 dígitos.' };
+  return { provided: true, value: pin };
+}
+
 function normalizeCommandPayload(action: string, value: any): { valid: boolean; value?: any; error?: string } {
-  if (!['SYNC', 'TAKE_SCREENSHOT', 'SET_VOLUME', 'REBOOT', 'UPDATE_APP'].includes(action)) {
-    return { valid: false, error: 'Ação inválida. Use SYNC, TAKE_SCREENSHOT, SET_VOLUME, REBOOT ou UPDATE_APP.' };
+  if (!['SYNC', 'TAKE_SCREENSHOT', 'SET_VOLUME', 'REBOOT', 'UPDATE_APP', 'MAINTENANCE_UNLOCK', 'MAINTENANCE_LOCK'].includes(action)) {
+    return { valid: false, error: 'Ação inválida.' };
   }
   if (action === 'SET_VOLUME') {
     const volume = Number(value?.volume);
     if (!Number.isInteger(volume) || volume < 0 || volume > 100) return { valid: false, error: 'Volume deve ser um inteiro entre 0 e 100.' };
     return { valid: true, value: { volume } };
+  }
+  if (action === 'MAINTENANCE_UNLOCK') {
+    const minutes = Number(value?.minutes);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 240) {
+      return { valid: false, error: 'Duração da manutenção deve ser um inteiro entre 1 e 240 minutos.' };
+    }
+    return { valid: true, value: { minutes } };
   }
   if (action === 'UPDATE_APP') {
     const version = typeof value?.version === 'string' ? value.version.trim() : '';

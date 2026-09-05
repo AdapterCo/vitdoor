@@ -77,7 +77,7 @@ export function playlistDto(playlist: any, forPlayer = false) {
 
 export function screenDto(screen: any) {
   return {
-    ...pick(screen, ['id', 'name', 'paired', 'orientation', 'resolution', 'ipAddress', 'locationName', 'groupName', 'status', 'lastPing', 'volume', 'storageFreeMb', 'ramUsagePercent', 'cpuUsagePercent', 'appVersion', 'currentMediaName', 'lastScreenshotUrl', 'activePlaylistId', 'activeLayoutId', 'manifestVersion', 'createdAt', 'updatedAt']),
+    ...pick(screen, ['id', 'name', 'paired', 'orientation', 'resolution', 'ipAddress', 'locationName', 'groupName', 'status', 'lastPing', 'volume', 'storageFreeMb', 'ramUsagePercent', 'cpuUsagePercent', 'appVersion', 'currentMediaName', 'lastScreenshotUrl', 'activePlaylistId', 'activeLayoutId', 'manifestVersion', 'maintenancePin', 'maintenanceUntil', 'createdAt', 'updatedAt']),
     ...(screen.activePlaylist ? { activePlaylist: pick(screen.activePlaylist, ['id', 'name']) } : {}),
     ...(screen.activeLayout ? { activeLayout: pick(screen.activeLayout, ['id', 'name']) } : {})
   };

@@ -118,7 +118,8 @@ export async function buildScreenManifest(screenId: string) {
     screen: {
       id: screen.id,
       orientation: screen.orientation,
-      volume: screen.volume
+      volume: screen.volume,
+      maintenancePin: screen.maintenancePin ?? null
     },
     activePlaylist: playlistDto(screen.activePlaylist, true),
     activeLayout: playerLayoutDto(screen.activeLayout),
