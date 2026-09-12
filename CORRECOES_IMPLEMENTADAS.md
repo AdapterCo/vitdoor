@@ -2,6 +2,14 @@
 
 As alterações estão no código deste workspace. Não foi realizado deploy nem alterado o banco configurado no ambiente. O diagnóstico original está em [AUDITORIA_PROJETO.md](AUDITORIA_PROJETO.md); este arquivo registra o estado posterior às correções.
 
+## Complemento: imagem de screenshot quebrada
+
+O painel agora busca a captura com a mesma origem de API e sessão usadas no login, e exibe um blob local. A URL pública persistida não determina mais o destino do pedido autenticado. Capturas antigas no R2, no armazenamento local ou em base64 podem ser lidas pelo endpoint autenticado, com validação de origem, prefixo do tenant/tela, formato e tamanho. Arquivo ausente resulta em mensagem e botão para tentar carregar novamente.
+
+Não foram alterados `.env` reais ou endereços de produção. Na entrega anterior, **novos screenshots passaram a ser gravados no volume privado do backend (`private_data`)**, enquanto mídias continuam obedecendo `STORAGE_DRIVER`/R2. A ausência de um print novo no R2 é esperada nessa versão; conferir o volume privado na instalação. URLs antigas de screenshot não precisam ser expostas diretamente no navegador para permitir sua leitura pelo painel.
+
+Validação deste complemento: 20 testes do backend e 2 testes específicos no Chrome passaram; backend e painel compilaram. Os testes de navegador usam APIs simuladas, sem acessar a produção. A correção ainda exige publicação do backend e painel. O `DATABASE_URL` mencionado abaixo é exclusivamente o do workspace local, não o ambiente de produção do usuário.
+
 ## Troca de senha
 
 Todos os usuários autenticados, inclusive VIEWER, têm acesso a **Minha conta → Trocar senha**. O formulário exige senha atual, nova senha e confirmação. A política é de pelo menos 12 caracteres e no máximo 72 bytes UTF-8, evitando truncamento pelo bcrypt.

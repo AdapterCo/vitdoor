@@ -2,7 +2,8 @@ import { prisma } from './prisma.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { HttpError } from './validation.js';
 
 const uploadDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadDir)) {
@@ -76,7 +77,60 @@ export async function saveScreenshot(buffer: Buffer, mimeType: 'image/jpeg' | 'i
   const destination = localStoragePath(key, true);
   await fs.promises.mkdir(path.dirname(destination), { recursive: true });
   await fs.promises.writeFile(destination, buffer, { flag: 'wx' });
-  return { url: `${(process.env.PUBLIC_BASE_URL || 'http://localhost:4000').replace(/\/$/, '')}/api/screens/${screenId}/screenshot?v=${Date.now()}`, storagePath, cleanupId: cleanup.id };
+  return { url: `/api/screens/${screenId}/screenshot?v=${Date.now()}`, storagePath, cleanupId: cleanup.id };
+}
+
+/** Only resolve legacy objects belonging to the already-authorized screen. No arbitrary URL fetch. */
+export function legacyScreenshotLocation(screen: { id: string; tenantId: string; lastScreenshotUrl?: string | null }): { kind: 'r2' | 'local'; key: string } | null {
+  if (!screen.lastScreenshotUrl) return null;
+  let url: URL;
+  try { url = new URL(screen.lastScreenshotUrl); } catch { return null; }
+  if (url.username || url.password || url.search || url.hash) return null;
+  const roots = [
+    { kind: 'r2' as const, base: process.env.R2_PUBLIC_URL, prefix: `tenants/${screen.tenantId}/screenshots/${screen.id}/` },
+    { kind: 'local' as const, base: process.env.PUBLIC_BASE_URL ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/uploads` : undefined, prefix: '' }
+  ];
+  for (const root of roots) {
+    if (!root.base) continue;
+    const base = new URL(root.base.replace(/\/$/, '') + '/');
+    if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) continue;
+    let key: string;
+    try { key = decodeURIComponent(url.pathname.slice(base.pathname.length)); } catch { continue; }
+    if (!key.startsWith(root.prefix)) continue;
+    const filename = key.slice(root.prefix.length);
+    if (/^\d{13}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png)$/i.test(filename)) return { kind: root.kind, key };
+  }
+  return null;
+}
+
+export async function readStoredScreenshot(screen: { id: string; tenantId: string; screenshotPath?: string | null; lastScreenshotUrl?: string | null }): Promise<{ buffer: Buffer; mime: string }> {
+  let buffer: Buffer;
+  if (screen.screenshotPath?.startsWith('private:')) {
+    const key = screen.screenshotPath.slice(8);
+    if (!key.startsWith(`screenshots/${screen.tenantId}/${screen.id}/`)) throw new HttpError(404, 'Captura não encontrada.');
+    buffer = await fs.promises.readFile(localStoragePath(key, true)).catch(error => { if (error.code === 'ENOENT') throw new HttpError(404, 'Arquivo de captura ausente. Solicite uma nova captura e confira o volume privado do backend.'); throw error; });
+  } else if (/^data:image\/(jpeg|png);base64,/.test(screen.lastScreenshotUrl || '')) {
+    const value = screen.lastScreenshotUrl!;
+    if (value.length > 3 * 1024 * 1024 || !/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(value)) throw new HttpError(415, 'Captura antiga inválida.');
+    buffer = Buffer.from(value.slice(value.indexOf(',') + 1), 'base64');
+  } else {
+    const legacy = legacyScreenshotLocation(screen);
+    if (!legacy) throw new HttpError(404, 'Captura não disponível. Solicite uma nova captura.');
+    if (legacy.kind === 'local') {
+      buffer = await fs.promises.readFile(localStoragePath(legacy.key)).catch(error => { if (error.code === 'ENOENT') throw new HttpError(404, 'Captura antiga não encontrada. Solicite uma nova captura.'); throw error; });
+    } else {
+      if (!s3Client || !process.env.R2_BUCKET_NAME) throw new HttpError(503, 'Armazenamento da captura temporariamente indisponível.');
+      const result = await s3Client.send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: legacy.key }), { abortSignal: AbortSignal.timeout(15000) }).catch(error => { if (error.name === 'NoSuchKey' || error.$metadata?.httpStatusCode === 404) throw new HttpError(404, 'Captura antiga não encontrada no R2. Solicite uma nova captura.'); throw error; });
+      if (!result.Body || (result.ContentLength || 0) > 2 * 1024 * 1024) throw new HttpError(415, 'Captura inválida.');
+      const chunks: Buffer[] = []; let size = 0;
+      for await (const chunk of result.Body as AsyncIterable<Uint8Array>) { size += chunk.length; if (size > 2 * 1024 * 1024) { (result.Body as any).destroy?.(); throw new HttpError(415, 'Captura excede o limite.'); } chunks.push(Buffer.from(chunk)); }
+      buffer = Buffer.concat(chunks);
+    }
+  }
+  const png = buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const jpeg = buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255;
+  if (buffer.length > 2 * 1024 * 1024 || (!png && !jpeg)) throw new HttpError(415, 'Captura inválida. Solicite uma nova captura.');
+  return { buffer, mime: png ? 'image/png' : 'image/jpeg' };
 }
 
 export async function deleteStoredFile(storagePath?: string | null): Promise<void> {

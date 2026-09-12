@@ -8,7 +8,8 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   let response: Response;
   try {
     response = await fetch(path.startsWith('http') ? path : `${API_BASE}${path}`, { ...init, headers, credentials: 'include', signal: init.signal || AbortSignal.timeout(init.body instanceof FormData ? 600_000 : 60_000) });
-  } catch {
+  } catch (error) {
+    if (init.signal?.aborted) throw error;
     response = new Response(JSON.stringify({ error: 'Falha de conexão. Seus dados não foram confirmados. Tente novamente.' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
   }
   if (response.status === 401 && !path.includes('/auth/login')) {

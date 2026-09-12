@@ -1,3 +1,4 @@
+import { ScreenScreenshot } from './ScreenScreenshot';
 import React from 'react';
 import { Tv, Wifi, WifiOff, PlayCircle, HardDrive, Cpu, Volume2, Camera, RefreshCw } from 'lucide-react';
 
@@ -127,7 +128,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 justifyContent: 'center'
               }}>
                 {screen.lastScreenshotUrl ? (
-                  <img src={screen.lastScreenshotUrl} alt="Último screenshot capturado" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <ScreenScreenshot screenId={screen.id} revision={screen.lastScreenshotUrl} />
                 ) : (
                   <div style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>
                     <Tv size={36} style={{ marginBottom: '8px', opacity: 0.5 }} />

@@ -1,4 +1,4 @@
-import { localStoragePath } from '../lib/storage.js';
+import { readStoredScreenshot } from '../lib/storage.js';
 import { Router } from '../lib/router.js';
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
@@ -346,7 +346,8 @@ function normalizeOrientation(value: unknown): string {
 
 screenRoutes.get('/:id/screenshot', async (req, res) => {
   const screen = await prisma.screen.findFirst({ where: { id: req.params.id, tenantId: tenantScope(req), archivedAt: null } });
-  if (!screen?.screenshotPath?.startsWith('private:')) throw new HttpError(404, 'Screenshot não disponível. Solicite uma nova captura.');
+  if (!screen) throw new HttpError(404, 'Tela não encontrada.');
+  const image = await readStoredScreenshot(screen);
   res.setHeader('Cache-Control', 'private, no-store');
-  return res.sendFile(localStoragePath(screen.screenshotPath.slice(8), true));
+  return res.type(image.mime).send(image.buffer);
 });
