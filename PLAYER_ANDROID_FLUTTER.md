@@ -8,6 +8,24 @@
 **Data:** 13/08/2026  
 **Estado:** especificação oficial; suporte a Rodapé com notícias RSS automáticas ou texto personalizado, suporte simultâneo a Layout e Playlist, solução PixelCopy para screenshot sem tela preta, NFC, Chamador de Senhas, Alertas e Proof-of-Play concluídos no backend; aplicativo Android (Kotlin) em integração
 
+## Atualização do contrato — 12/09/2026
+
+Este workspace contém backend, painel e simulador web; o código Android não está presente e não foi homologado nesta entrega. As seções anteriores de status não constituem comprovação de funcionamento em hardware. Consulte [CORRECOES_IMPLEMENTADAS.md](CORRECOES_IMPLEMENTADAS.md).
+
+- Após persistir o token e a identidade da tela, enviar `POST /api/device/pairing/ack` com Bearer. O segredo de bootstrap só funciona até o consumo/expiração. `POST /api/device/renew` renova um token ainda válido; tokens revogados exigem novo pareamento.
+- HTTP 401 representa credencial revogada/inválida. HTTP 403 representa suspensão temporária da empresa e não deve apagar o pareamento. HTTP 5xx deve permitir retry sem apagar o cache.
+- O manifesto mantém `schemaVersion: 1`, adiciona `timezone` às campanhas e entrega metadados atuais nas mídias das zonas. Fazer reconciliação periódica por `GET /api/device/manifest`, além de receber `MANIFEST_UPDATED`. Respeitar `activePlaylist: null` e `activeLayout: null`.
+- Todo evento de prova deve persistir um UUID `eventId` criado uma única vez, `screenId`, `mediaId`, `mediaName`, `manifestVersion`, `playedAt`, `durationSeconds` e `completed` booleano. Enviar também `mediaVersion`, `campaignId` quando aplicável, `zoneId` e `reason`. Usar a versão do manifesto que iniciou a reprodução. Não declarar conclusão na troca de item; interrupções/erros são incompletos.
+- Lotes contêm entre 1 e 500 itens e retornam `eventIds` confirmados e `rejectedEventIds`. Apagar somente eventos confirmados daquele lote; separar rejeitados para diagnóstico. Eventos com mais de 90 dias não são aceitos automaticamente. Não regenerar UUID em retry.
+- Campanhas usam datas de calendário no timezone IANA informado. Intervalos que atravessam meia-noite pertencem ao dia de início; usar prioridade decrescente. Um limite é reconciliado por provas recebidas, não reserva antecipada de impressões offline.
+- Heartbeat deve informar `currentMediaId` real da zona principal, ou null quando sem mídia. NFC usa essa informação apenas quando recente.
+- `GET /api/device/state` reconcilia `activeAlert`. Respeitar `expiresAt` localmente e priorizar emergência sobre fila ou programação normal.
+- Confirmar comandos com `commandId`, `action`, `success` booleano e mensagem. Está disponível `POST /api/device/commands/:commandId/ack`, útil para aguardar confirmação durável antes de reiniciar. Respeitar `expiresAt`, persistir deduplicação e não reexecutar comando já aplicado.
+- Screenshot: `POST /api/device/screenshots/:commandId`, multipart campo `file`, JPEG/PNG até 2 MB, Bearer do dispositivo. O sucesso depende do upload; `SCREENSHOT_RESULT` com base64 não é mais aceito. A leitura da captura é privada para o painel.
+- O simulador identifica-se como `clientKind: WEB_SIMULATOR` no registro WebSocket e recebe `CONTENT_UPDATED` hidratado. Android deve seguir o fluxo de manifesto.
+
+Atualizar e validar o aplicativo Android junto com o backend antes do rollout. Testar retomada offline, checksum, armazenamento cheio, suspensão, revogação e perda de energia no repositório Android.
+
 ## 1. Objetivo
 
 Criar e manter o player comercial exclusivo do VitDoor como aplicativo Flutter para Android (`br.com.vitdoor.player`), capaz de:

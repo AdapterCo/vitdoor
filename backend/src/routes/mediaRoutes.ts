@@ -1,13 +1,15 @@
-import { Router, Request, Response } from 'express';
+import { Router } from '../lib/router.js';
+import { Request, Response } from 'express';
 import multer from 'multer';
 import { prisma } from '../lib/prisma.js';
 import { deleteStoredFile, purgePublicUrl, saveFile } from '../lib/storage.js';
 import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
-import { detectMediaDuration } from '../lib/mediaMetadata.js';
+import { probeDuration } from '../lib/probeDuration.js';
+import { HttpError, integer, text } from '../lib/validation.js';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomUUID, randomBytes } from 'crypto';
 import { fileTypeFromFile } from 'file-type';
 import { mediaDto, mediaFolderDto } from '../lib/dto.js';
 import { parseWhatsAppTarget, normalizeInstagramTarget, normalizeGenericUrl, isValidPhone, buildWhatsAppWebUrl } from '../lib/ctaHelpers.js';
@@ -25,12 +27,12 @@ if (!fs.existsSync(tmpUploadDir)) {
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, tmpUploadDir),
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${randomUUID()}-${file.originalname}`)
+    filename: (_req, file, cb) => cb(null, `${randomUUID()}.upload`)
   }),
   limits: { fileSize: 256 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, callback) => {
     const allowed = file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/') || file.mimetype.startsWith('audio/') || file.mimetype === 'application/pdf' || file.mimetype === 'application/octet-stream';
-    if (!allowed) return callback(new Error('Tipo de arquivo não permitido.'));
+    if (!allowed) return callback(new HttpError(415, 'Tipo de arquivo não permitido.'));
     return callback(null, true);
   }
 });
@@ -42,7 +44,7 @@ mediaRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
 
   const medias = await prisma.media.findMany({
     where: {
-      tenantId,
+      tenantId, archivedAt: null,
       ...(type ? { type } : {})
     },
     orderBy: { createdAt: 'desc' }
@@ -103,7 +105,7 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
   }
   const folderId = await validateFolder(tenantId, req.auth!.userId, req.body.folderId);
   if (req.body.folderId && !folderId) return res.status(400).json({ error: 'Pasta inválida.' });
-  const storage = await prisma.media.aggregate({ where: { tenantId }, _sum: { sizeBytes: true } });
+  const storage = await prisma.media.aggregate({ where: { tenantId, archivedAt: null }, _sum: { sizeBytes: true } });
   const usedBytes = Number(storage._sum.sizeBytes || 0);
   if (usedBytes + req.file.size > tenant.maxStorageMb * 1024 * 1024) {
     return res.status(413).json({ error: 'Limite de armazenamento contratado atingido.' });
@@ -128,35 +130,43 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
   for await (const chunk of stream) hash.update(chunk);
   const checksum = hash.digest('hex');
 
-  const { url, storagePath } = await saveFile(req.file, tenantId, mediaId);
+  const { url, storagePath, cleanupId } = await saveFile(req.file, tenantId, mediaId);
   
   let detectedDuration = null;
   if (type === 'VIDEO' || type === 'AUDIO') {
-    const fileBuffer = await fs.promises.readFile(req.file.path);
-    detectedDuration = detectMediaDuration(fileBuffer, mime);
+    detectedDuration = await probeDuration(req.file.path);
   }
   
   const requestedDuration = parseInt(req.body.durationSeconds, 10);
-  const duration = detectedDuration || (Number.isFinite(requestedDuration) && requestedDuration > 0 ? requestedDuration : 10);
+  const duration = integer(detectedDuration || (Number.isFinite(requestedDuration) ? requestedDuration : 10), 'Duração', 1, 86400);
 
-  const media = await prisma.media.create({
+  const fileSize = req.file.size;
+  const media = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${tenantId} FOR UPDATE`;
+    const account = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+    const used = await tx.media.aggregate({ where: { tenantId, archivedAt: null }, _sum: { sizeBytes: true } });
+    if (Number(used._sum.sizeBytes || 0) + fileSize > account.maxStorageMb * 1024 * 1024) throw new HttpError(413, 'Limite de armazenamento atingido.');
+    const created = await tx.media.create({
     data: {
       id: mediaId,
       tenantId,
       createdById: req.auth!.userId,
       folderId,
-      name: req.body.name || req.file.originalname,
+      name: text(req.body.name || req.file!.originalname, 'Nome'),
       type,
       url,
       storagePath,
       thumbnailUrl: type === 'IMAGE' ? url : undefined,
       durationSeconds: duration,
-      sizeBytes: BigInt(req.file.size),
+      sizeBytes: BigInt(fileSize),
       mimeType: mime,
       checksum,
       version: 1,
       tags: req.body.tags || 'Geral'
     }
+  });
+    await tx.storageDeletion.delete({ where: { id: cleanupId } });
+    return created;
   });
 
   return res.json(mediaDto(media));
@@ -177,7 +187,10 @@ mediaRoutes.post('/widget', async (req: Request, res: Response): Promise<any> =>
   }
   if (type !== 'WEB_PAGE') return res.status(400).json({ error: 'Tipo dinâmico inválido. Use WEB_PAGE.' });
 
-  const duration = durationSeconds ? parseInt(durationSeconds, 10) : 15;
+  const duration = integer(durationSeconds ?? 15, 'Duração', 1, 86400);
+  let widgetUrl: URL;
+  try { widgetUrl = new URL(url); } catch { throw new HttpError(400, 'URL inválida.'); }
+  if (widgetUrl.protocol !== 'https:' || widgetUrl.username || widgetUrl.password) throw new HttpError(400, 'Use URL HTTPS sem credenciais.');
   const folderId = await validateFolder(tenantId, req.auth!.userId, requestedFolderId);
   if (requestedFolderId && !folderId) return res.status(400).json({ error: 'Pasta inválida.' });
 
@@ -201,10 +214,10 @@ mediaRoutes.post('/widget', async (req: Request, res: Response): Promise<any> =>
 mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.body.tenantId);
-  const existing = await prisma.media.findFirst({ where: { id, tenantId } });
+  const existing = await prisma.media.findFirst({ where: { id, tenantId, archivedAt: null } });
   if (!existing) return res.status(404).json({ error: 'Mídia não encontrada.' });
 
-  const durationSeconds = Math.max(1, Math.round(Number(req.body.durationSeconds) || existing.durationSeconds));
+  const durationSeconds = integer(req.body.durationSeconds ?? existing.durationSeconds, 'Duração', 1, 86400);
   const ctaJson = normalizeCta(req.body.cta);
   if (req.body.cta !== undefined && ctaJson === undefined) return res.status(400).json({ error: 'CTA inválido. Informe WhatsApp com DDD ou URL válida do Instagram.' });
   const folderId = req.body.folderId === undefined ? existing.folderId : await validateFolder(tenantId, req.auth!.userId, req.body.folderId);
@@ -213,7 +226,7 @@ mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
     const updated = await tx.media.update({
       where: { id },
       data: {
-        name: req.body.name ?? existing.name,
+        name: req.body.name === undefined ? existing.name : text(req.body.name, 'Nome'),
         durationSeconds,
         tags: req.body.tags ?? existing.tags,
         folderId,
@@ -222,6 +235,7 @@ mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
       }
     });
     await tx.playlistItem.updateMany({ where: { mediaId: id }, data: { durationSeconds } });
+    await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
     return updated;
   });
   const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
@@ -402,7 +416,7 @@ function normalizeCta(value: unknown): string | null | undefined {
 mediaRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const media = await prisma.media.findFirst({ where: { id, tenantId } });
+  const media = await prisma.media.findFirst({ where: { id, tenantId, archivedAt: null } });
   if (!media) return res.status(404).json({ error: 'Mídia não encontrada.' });
   const layouts = await prisma.layout.findMany({
     where: { tenantId },
@@ -412,9 +426,12 @@ mediaRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => 
   if (layoutUsingMedia) {
     return res.status(409).json({ error: `Remova esta mídia do layout "${layoutUsingMedia.name}" antes de excluí-la.` });
   }
-  await prisma.media.delete({ where: { id } });
-  await deleteStoredFile(media.storagePath).catch(() => {});
-  await purgePublicUrl(media.url).catch(() => {});
+  await prisma.$transaction(async tx => {
+    await tx.media.update({ where: { id }, data: { archivedAt: new Date(), reportTokenHash: null, reportExpiresAt: null } });
+    await tx.playlistItem.deleteMany({ where: { mediaId: id } });
+    if (media.storagePath) await tx.storageDeletion.create({ data: { storagePath: media.storagePath, publicUrl: media.url } });
+    await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
+  });
   const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
   for (const screenId of affectedIds) await sendManifestToScreen(screenId, true);
   return res.json({ success: true });
@@ -430,3 +447,19 @@ function layoutContainsMedia(canvasConfigJson: string, mediaId: string): boolean
     return false;
   }
 }
+
+mediaRoutes.post('/:id/report-link', async (req, res) => {
+  const tenantId = tenantScope(req, req.body.tenantId);
+  const media = await prisma.media.findFirst({ where: { id: req.params.id, tenantId, archivedAt: null } });
+  if (!media) throw new HttpError(404, 'Mídia não encontrada.');
+  const token = randomBytes(32).toString('base64url');
+  const expiresAt = new Date(Date.now() + 30 * 86400_000);
+  await prisma.media.update({ where: { id: media.id }, data: { reportTokenHash: createHash('sha256').update(token).digest('hex'), reportExpiresAt: expiresAt } });
+  return res.json({ token, expiresAt });
+});
+mediaRoutes.delete('/:id/report-link', async (req, res) => {
+  const tenantId = tenantScope(req);
+  const result = await prisma.media.updateMany({ where: { id: req.params.id, tenantId }, data: { reportTokenHash: null, reportExpiresAt: null } });
+  if (!result.count) throw new HttpError(404, 'Mídia não encontrada.');
+  return res.status(204).end();
+});

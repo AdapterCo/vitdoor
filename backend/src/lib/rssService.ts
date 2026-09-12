@@ -1,3 +1,4 @@
+import { safeFeedUrl, fetchPublicFeed } from './safeHttp.js';
 import { XMLParser } from 'fast-xml-parser';
 
 const MAX_ITEMS = 20;
@@ -24,22 +25,7 @@ interface FeedCacheEntry {
 
 const cache = new Map<string, FeedCacheEntry>();
 
-/** Valida a URL do feed antes de qualquer requisição (defesa contra SSRF por host).
- *  Não protege contra DNS rebinding — aceitável para URLs configuradas pelo admin. */
-export function assertSafeFeedUrl(raw: string): string {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error('URL de feed inválida.');
-  }
-  if (url.protocol !== 'https:') throw new Error('O feed RSS deve usar HTTPS.');
-  const host = url.hostname.replace(/^\[|\]$/g, '');
-  if (PRIVATE_HOST.test(host) || PRIVATE_IP.test(host)) {
-    throw new Error('Endereço de feed não permitido.');
-  }
-  return url.toString();
-}
+export function assertSafeFeedUrl(raw: string): string { return safeFeedUrl(raw).toString(); }
 
 function stripHtml(value: string): string {
   return value
@@ -73,52 +59,21 @@ export function parseFeedTitles(xml: string): string[] {
   return titles;
 }
 
-async function fetchFeedText(url: string): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'VitDoor-RSS/1.0',
-        Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml'
-      }
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const reader = response.body?.getReader();
-    if (!reader) return await response.text();
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.length;
-      if (total > MAX_BYTES) {
-        controller.abort();
-        throw new Error('Feed maior que o limite de 2 MB.');
-      }
-      chunks.push(value);
-    }
-    return Buffer.concat(chunks).toString('utf8');
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 /** Busca um feed e atualiza o cache em memória. Nunca lança.
  *  Retorna true quando o conjunto de manchetes mudou em relação ao valor anterior. */
 export async function refreshFeed(url: string): Promise<boolean> {
   try {
     const safe = assertSafeFeedUrl(url);
-    const xml = await fetchFeedText(safe);
+    const xml = await fetchPublicFeed(safe);
     const items = parseFeedTitles(xml);
     if (items.length === 0) throw new Error('Feed sem manchetes.');
     const hash = items.join('');
     const previous = cache.get(url);
+    if (cache.size >= 5000 && !cache.has(url)) cache.delete(cache.keys().next().value!);
     cache.set(url, { items, hash, fetchedAt: Date.now(), failing: false });
     return !previous || previous.hash !== hash;
   } catch (error) {
+    if (cache.size >= 5000 && !cache.has(url)) cache.delete(cache.keys().next().value!);
     const previous = cache.get(url);
     cache.set(url, {
       items: previous?.items ?? [],

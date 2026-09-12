@@ -11,6 +11,7 @@ import {
   Building2,
   Tv2,
   Ticket,
+  KeyRound,
   LogOut
 } from 'lucide-react';
 
@@ -34,8 +35,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, tenan
     { id: 'queues', label: 'Chamador de Senhas', icon: Ticket },
     { id: 'emergency', label: 'Alerta Emergencial', icon: AlertTriangle },
     { id: 'tenants', label: 'Clientes & Licenças', icon: Building2, masterOnly: true },
+    { id: 'account', label: 'Minha conta', icon: KeyRound },
   ];
-  const menuItems = allMenuItems.filter((item) => !item.masterOnly || user?.role === 'SUPER_ADMIN');
+  const menuItems = allMenuItems.filter((item) => (!item.masterOnly || user?.role === 'SUPER_ADMIN') && (item.id !== 'queues' || ['SUPER_ADMIN', 'ADMIN_CLIENT', 'OPERATOR'].includes(user?.role)));
 
   return (
     <aside style={{
@@ -76,13 +78,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, tenan
       </div>
 
       {/* Navigation Menu */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '20px', flex: 1 }}>
+      <nav aria-label="Menu principal" style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '20px', flex: 1, overflowY: 'auto' }}>
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
           return (
             <button
               key={item.id}
+              aria-current={isActive ? 'page' : undefined}
               onClick={() => setActiveTab(item.id)}
               style={{
                 display: 'flex',

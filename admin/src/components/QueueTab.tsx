@@ -62,6 +62,8 @@ export const QueueTab: React.FC<QueueTabProps> = ({ screens, tenantId }) => {
         return;
       }
 
+      const created = await res.json();
+      alert(`PIN criado: ${created.pinCode}. Anote e informe ao operador. Ele não será exibido novamente.`);
       setIsModalOpen(false);
       setName('');
       setPrefix('A');
@@ -87,7 +89,7 @@ export const QueueTab: React.FC<QueueTabProps> = ({ screens, tenantId }) => {
   };
 
   const copyCallerLink = (pin: string, queueId: string) => {
-    const callerUrl = `${window.location.origin}/chamar?pin=${pin}`;
+    const callerUrl = `${window.location.origin}/chamar?tenantId=${encodeURIComponent(tenantId || '')}`;
     navigator.clipboard.writeText(callerUrl);
     setCopiedId(queueId);
     setTimeout(() => setCopiedId(null), 2000);
@@ -153,7 +155,7 @@ export const QueueTab: React.FC<QueueTabProps> = ({ screens, tenantId }) => {
                   <KeyRound size={14} /> PIN do Operador:
                 </span>
                 <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#fbbf24', fontSize: '1rem' }}>
-                  {q.pinCode}
+                  <button className="btn-secondary" onClick={async () => { if (!confirm('Gerar novo PIN e encerrar sessões dos operadores?')) return; try { const res = await apiFetch(`/queues/admin/${q.id}/reset-pin`, { method: 'POST', body: JSON.stringify({ tenantId }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error); alert(`Novo PIN: ${data.pinCode}. Anote agora.`); } catch (e) { alert(e instanceof Error ? e.message : 'Falha ao gerar PIN.'); } }}>Novo PIN</button>
                 </span>
               </div>
             </div>
@@ -170,7 +172,7 @@ export const QueueTab: React.FC<QueueTabProps> = ({ screens, tenantId }) => {
               </button>
 
               <a
-                href={`/chamar?pin=${q.pinCode}`}
+                href={`/chamar?tenantId=${encodeURIComponent(tenantId || '')}`}
                 target="_blank"
                 rel="noreferrer"
                 className="btn-secondary"

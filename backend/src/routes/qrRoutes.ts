@@ -1,4 +1,5 @@
-import { Router, type Request, type Response } from 'express';
+import { Router } from '../lib/router.js';
+import { type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { rateLimit } from 'express-rate-limit';
 import {
@@ -44,7 +45,7 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
   }
 
   const media = await prisma.media.findFirst({
-    where: { id: mediaId, tenant: { status: 'ACTIVE' } },
+    where: { id: mediaId, archivedAt: null, tenant: { status: 'ACTIVE' } },
     select: { id: true, name: true, tenantId: true, ctaJson: true }
   });
 
@@ -67,25 +68,11 @@ qrRoutes.get('/:mediaId', scanRateLimit, async (req: Request, res: Response): Pr
   let validatedScreenId: string | null = null;
   if (screenId && screenId.length > 0) {
     const screen = await prisma.screen.findFirst({
-      where: { id: screenId },
+      where: { id: screenId, tenantId: media.tenantId, archivedAt: null },
       select: { id: true }
     });
-    validatedScreenId = screen?.id ?? null;
-  }
-
-  // Fallback: if screenId wasn't passed in query string, resolve which screen is currently playing this mediaId
-  if (!validatedScreenId) {
-    const activeScreen = await prisma.screen.findFirst({
-      where: {
-        tenantId: media.tenantId,
-        OR: [
-          { currentMediaId: media.id },
-          { activePlaylist: { items: { some: { mediaId: media.id } } } }
-        ]
-      },
-      select: { id: true }
-    });
-    validatedScreenId = activeScreen?.id ?? null;
+    if (!screen) return res.status(404).send('Tela não encontrada para esta mídia.');
+    validatedScreenId = screen.id;
   }
 
   // Register the scan asynchronously (do not block the redirect)
@@ -133,74 +120,22 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
 
   // Find screen with active tenant and current media
   const screen = await prisma.screen.findFirst({
-    where: { id: screenId, tenant: { status: 'ACTIVE' } },
-    select: { id: true, tenantId: true, currentMediaId: true, currentMediaName: true, activePlaylistId: true, createdById: true }
+    where: { id: screenId, archivedAt: null, tenant: { status: 'ACTIVE' } },
+    select: { id: true, tenantId: true, currentMediaAt: true, currentMediaId: true, currentMediaName: true, activePlaylistId: true, createdById: true }
   });
 
   if (!screen) {
     return res.status(404).send('Tela ou estabelecimento inativo.');
   }
 
-  // --- 5-layer media resolution ---
-
-  // 1. Try screen.currentMediaId (reported by player in real-time via heartbeat)
-  let targetMediaId = screen.currentMediaId;
-
-  // 2. Try matching screen.currentMediaName if reported
-  if (!targetMediaId && screen.currentMediaName) {
-    const mediaByName = await prisma.media.findFirst({
-      where: { name: screen.currentMediaName, tenantId: screen.tenantId }
-    });
-    if (mediaByName) targetMediaId = mediaByName.id;
-  }
-
-  // 3. Try screen.activePlaylistId or default tenant playlist
-  if (!targetMediaId) {
-    const playlist = screen.activePlaylistId
-      ? await prisma.playlist.findUnique({
-          where: { id: screen.activePlaylistId, tenantId: screen.tenantId },
-          include: { items: { include: { media: true }, orderBy: { orderIndex: 'asc' } } }
-        })
-      : await prisma.playlist.findFirst({
-          where: { tenantId: screen.tenantId },
-          include: { items: { include: { media: true }, orderBy: { orderIndex: 'asc' } } }
-        });
-
-    if (playlist?.items) {
-      // Prefer the first item in the playlist that has a valid CTA enabled
-      for (const item of playlist.items) {
-        if (item.media?.ctaJson) {
-          try {
-            const parsed = JSON.parse(item.media.ctaJson);
-            if (parsed?.enabled && parsed?.target) {
-              targetMediaId = item.media.id;
-              break;
-            }
-          } catch {}
-        }
-      }
-      if (!targetMediaId && playlist.items[0]?.mediaId) {
-        targetMediaId = playlist.items[0].mediaId;
-      }
-    }
-  }
-
-  // 4. Fallback: Find ANY media in tenant with an active CTA
-  if (!targetMediaId) {
-    const anyCtaMedia = await prisma.media.findFirst({
-      where: { tenantId: screen.tenantId, NOT: { ctaJson: null } },
-      orderBy: { updatedAt: 'desc' }
-    });
-    if (anyCtaMedia) targetMediaId = anyCtaMedia.id;
-  }
-
-  if (!targetMediaId) {
-    return res.status(404).send('Nenhuma mídia com QR/NFC configurada nesta tela.');
+  const targetMediaId = screen.currentMediaId;
+  if (!targetMediaId || !screen.currentMediaAt || Date.now() - screen.currentMediaAt.getTime() > 30_000) {
+    return res.status(404).send('A tela não está informando uma mídia atual. Tente novamente em instantes.');
   }
 
   // Fetch media CTA configuration
   const media = await prisma.media.findFirst({
-    where: { id: targetMediaId, tenantId: screen.tenantId },
+    where: { id: targetMediaId, tenantId: screen.tenantId, archivedAt: null },
     select: { id: true, name: true, ctaJson: true }
   });
 
@@ -360,16 +295,7 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
     <a class="btn-secondary" href="${safeWebAttr}">Abrir no navegador</a>
   </div>
 
-  <script>
-    // Tenta abrir automaticamente via whatsapp:// ao carregar a página.
-    // Em muitos browsers isso funciona. Se falhar silenciosamente, o botão
-    // acima garante que o usuário consegue abrir com um tap.
-    var _auto = false;
-    try {
-      window.location.href = ${safeAppUrl};
-      _auto = true;
-    } catch (e) {}
-  </script>
+
 </body>
 </html>`);
   }

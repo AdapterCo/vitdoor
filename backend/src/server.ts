@@ -1,3 +1,8 @@
+import { errorHandler } from './middleware/errors.js';
+import { asyncHandler } from './lib/router.js';
+import { randomUUID } from 'crypto';
+import { startMaintenance } from './lib/maintenance.js';
+import { migrateQueuePins } from './routes/queueRoutes.js';
 import 'dotenv/config';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
@@ -42,8 +47,12 @@ import {
 const app = express();
 const PORT = process.env.PORT || 4000;
 assertStorageConfiguration();
-app.set('trust proxy', 1);
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || (process.env.NODE_ENV === 'production' ? 1 : 0)));
 app.disable('x-powered-by');
+app.use((req, res, next) => {
+  const started = Date.now(); const requestId = randomUUID(); res.setHeader('X-Request-Id', requestId);
+  res.once('finish', () => { if (res.statusCode >= 400) console.warn(JSON.stringify({ event: 'http_request', requestId, method: req.method, path: req.path, status: res.statusCode, durationMs: Date.now() - started })); }); next();
+});
 
 if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) {
   throw new Error('JWT_SECRET deve ter pelo menos 32 caracteres em produção.');
@@ -67,6 +76,14 @@ app.use(cookieParser());
 app.use(express.json({ limit: '2mb', strict: true }));
 app.use(express.urlencoded({ extended: true, limit: '2mb', parameterLimit: 200 }));
 
+// Only registered active media are public. Legacy screenshots and orphan files are not.
+app.use('/uploads', asyncHandler(async (req, res, next) => {
+  let key: string;
+  try { key = decodeURIComponent(req.path).replace(/^\/+/, ''); } catch { res.sendStatus(400); return; }
+  const media = await prisma.media.findFirst({ where: { archivedAt: null, tenant: { status: 'ACTIVE' }, OR: [{ storagePath: key }, { storagePath: `local:${key}` }] }, select: { id: true } });
+  if (!media) { res.sendStatus(404); return; }
+  next();
+}));
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.use('/api', apiRateLimiter);
@@ -101,34 +118,32 @@ app.get('/api/health', async (_req, res) => {
 });
 
 app.use((_req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
-app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Unhandled request error:', error);
-  if (error instanceof multer.MulterError) {
-    const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
-    res.status(status).json({ error: error.code === 'LIMIT_FILE_SIZE' ? 'Arquivo maior que o limite permitido de 256 MB.' : 'Upload inválido.' });
-    return;
-  }
-  if (error instanceof SyntaxError) {
-    res.status(400).json({ error: 'Corpo da requisição inválido.' });
-    return;
-  }
-  res.status(500).json({ error: 'Erro interno do servidor.' });
-});
+app.use(errorHandler);
 
 const server = http.createServer(app);
 server.headersTimeout = 15_000;
 server.requestTimeout = 10 * 60_000;
 server.keepAliveTimeout = 5_000;
-initWebSocketServer(server);
+const stopWebSockets = initWebSocketServer(server);
+let stopRss = () => {};
+let stopMaintenance = () => {};
 
-server.listen(PORT, () => {
-  console.log(`VitDoor Backend Server rodando na porta ${PORT}`);
-  startRssRefreshJob();
-});
+async function start() {
+  await migrateQueuePins();
+  await prisma.screen.updateMany({ where: { status: 'ONLINE' }, data: { status: 'OFFLINE' } });
+  server.listen(PORT, () => {
+    console.log(`VitDoor Backend Server rodando na porta ${PORT}`);
+    stopRss = startRssRefreshJob(); stopMaintenance = startMaintenance();
+  });
+}
+void start().catch(() => { console.error('Inicialização falhou. Verifique banco e migrations.'); process.exit(1); });
 
 async function shutdown(signal: string) {
   console.log(`${signal} recebido; encerrando servidor.`);
+  stopWebSockets(); stopRss(); stopMaintenance();
+  const timeout = setTimeout(() => process.exit(1), 10000); timeout.unref();
   server.close(async () => {
+    clearTimeout(timeout);
     await prisma.$disconnect();
     process.exit(0);
   });

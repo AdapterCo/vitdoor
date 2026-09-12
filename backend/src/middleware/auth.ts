@@ -2,11 +2,14 @@ import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
 import { getAdminJwtSecret, getSessionToken } from '../lib/session.js';
+import { verifyAdminSession } from '../lib/adminSessions.js';
+import { HttpError } from '../lib/validation.js';
 
 export interface AuthUser {
   userId: string;
   tenantId: string;
   role: string;
+  sessionId: string;
 }
 
 declare global {
@@ -28,7 +31,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   const usesSessionCookie = Boolean(req.cookies?.vitdoor_session);
   const origin = req.headers.origin;
   if (usesSessionCookie && origin && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    const allowedAdminOrigins = (process.env.ADMIN_ORIGINS || process.env.PUBLIC_BASE_URL || '')
+    const allowedAdminOrigins = (process.env.ADMIN_ORIGINS || (process.env.NODE_ENV !== 'production' ? 'http://localhost:3000,http://127.0.0.1:3000' : process.env.PUBLIC_BASE_URL) || '')
       .split(',').map((value) => value.trim().replace(/\/$/, '')).filter(Boolean);
     if (!allowedAdminOrigins.includes(origin.replace(/\/$/, ''))) {
       res.status(403).json({ error: 'Origem da sessão não autorizada.' });
@@ -36,16 +39,12 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     }
   }
   try {
-    const auth = jwt.verify(token, getAdminJwtSecret(), { algorithms: ['HS256'] }) as AuthUser;
-    const user = await prisma.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, active: true }, include: { tenant: true } });
-    if (!user || user.tenant.status !== 'ACTIVE') {
-      res.status(401).json({ error: 'Conta ou empresa suspensa.' });
-      return;
-    }
-    req.auth = auth;
+    const { user, sessionId } = await verifyAdminSession(token);
+    req.auth = { userId: user.id, tenantId: user.tenantId, role: user.role, sessionId };
     next();
-  } catch {
-    res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+  } catch (error) {
+    if (error instanceof HttpError) res.status(error.status).json({ error: error.message });
+    else next(error);
   }
 }
 
@@ -77,7 +76,7 @@ export function requireMutationRoles(...roles: string[]) {
 }
 
 export function tenantScope(req: Request, requestedTenantId?: string): string {
-  if (!req.auth) throw new Error('UNAUTHENTICATED');
-  if (requestedTenantId && requestedTenantId !== req.auth.tenantId) throw new Error('FORBIDDEN_TENANT');
+  if (!req.auth) throw new HttpError(401, 'Autenticação obrigatória.');
+  if (requestedTenantId && requestedTenantId !== req.auth.tenantId) throw new HttpError(403, 'Acesso a outro cliente não autorizado.');
   return req.auth.tenantId;
 }

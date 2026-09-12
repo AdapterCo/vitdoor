@@ -6,7 +6,7 @@ export const MANIFEST_SCHEMA_VERSION = 1;
 
 export async function buildScreenManifest(screenId: string) {
   const screen = await prisma.screen.findFirst({
-    where: { id: screenId, paired: true, tenant: { status: 'ACTIVE' } },
+    where: { id: screenId, archivedAt: null, paired: true, tenant: { status: 'ACTIVE' } },
     include: {
       activePlaylist: {
         include: {
@@ -61,33 +61,7 @@ export async function buildScreenManifest(screenId: string) {
     }
   });
 
-  const activeCampaigns: typeof rawCampaigns = [];
-  for (const campaign of rawCampaigns) {
-    if (campaign.maxImpressions && campaign.maxImpressions > 0) {
-      const mediaNames = campaign.playlist?.items
-        .map((i) => i.media?.name)
-        .filter((n): n is string => typeof n === 'string' && n.length > 0) || [];
-
-      if (mediaNames.length > 0) {
-        const count = await prisma.proofOfPlay.count({
-          where: {
-            tenantId: screen.tenantId,
-            mediaName: { in: mediaNames },
-            playedAt: { gte: campaign.createdAt }
-          }
-        });
-
-        if (count >= campaign.maxImpressions) {
-          await prisma.campaign.update({
-            where: { id: campaign.id },
-            data: { status: 'EXPIRED' }
-          }).catch(() => {});
-          continue;
-        }
-      }
-    }
-    activeCampaigns.push(campaign);
-  }
+  const activeCampaigns = rawCampaigns.filter(c => c.playlist?.tenantId === screen.tenantId && (c.maxImpressions == null || c.currentImpressions < c.maxImpressions));
 
   for (const item of screen.activePlaylist?.items || []) {
     if (item.mediaId) mediaIds.add(item.mediaId);
@@ -105,12 +79,26 @@ export async function buildScreenManifest(screenId: string) {
     ? await prisma.media.findMany({
         where: {
           id: { in: [...mediaIds] },
-          tenantId: screen.tenantId
+          tenantId: screen.tenantId, archivedAt: null
         },
         orderBy: { id: 'asc' }
       })
     : [];
-  // Missing media is ignored gracefully
+  const mediaMap = new Map(medias.map(media => [media.id, media]));
+  const hydrateLayout = (layout: any) => {
+    if (!layout) return null;
+    const dto = playerLayoutDto(layout);
+    if (dto?.canvasConfig?.zones) dto.canvasConfig.zones = dto.canvasConfig.zones.map((zone: any) => ({ ...zone, items: (zone.items || []).flatMap((item: any) => {
+      const media = mediaMap.get(item.mediaId); return media ? [{ ...playerMediaDto(media), mediaId: media.id }] : [];
+    }) }));
+    return dto;
+  };
+  const hydratePlaylist = (playlist: any) => {
+    if (!playlist) return null;
+    const dto = playlistDto(playlist, true)!;
+    dto.items = (playlist.items || []).flatMap((item: any) => item.mediaId && !mediaMap.has(item.mediaId) ? [] : [{ id: item.id, mediaId: item.mediaId, layoutId: item.layoutId, durationSeconds: item.durationSeconds, media: item.mediaId ? playerMediaDto(mediaMap.get(item.mediaId)) : null, layout: hydrateLayout(item.layout) }]);
+    return dto;
+  };
 
   const payload = {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
@@ -121,8 +109,8 @@ export async function buildScreenManifest(screenId: string) {
       volume: screen.volume,
       maintenancePin: screen.maintenancePin ?? null
     },
-    activePlaylist: playlistDto(screen.activePlaylist, true),
-    activeLayout: playerLayoutDto(screen.activeLayout),
+    activePlaylist: hydratePlaylist(screen.activePlaylist),
+    activeLayout: hydrateLayout(screen.activeLayout),
     campaigns: activeCampaigns.map((c) => ({
       id: c.id,
       name: c.name,
@@ -135,8 +123,9 @@ export async function buildScreenManifest(screenId: string) {
       endTime: c.endTime,
       daysOfWeek: c.daysOfWeek,
       priority: c.priority,
+      timezone: c.timezone,
       maxImpressions: c.maxImpressions,
-      playlist: playlistDto(c.playlist, true)
+      playlist: hydratePlaylist(c.playlist)
     })),
     assets: medias.map((media) => playerMediaDto(media))
   };
@@ -159,7 +148,7 @@ export async function buildScreenManifest(screenId: string) {
     // Mantém histórico suficiente para rollback/diagnóstico sem crescimento
     // infinito do banco. A versão mais recente nunca é removida.
     const obsolete = await prisma.screenManifest.findMany({
-      where: { screenId: screen.id },
+      where: { screenId: screen.id, createdAt: { lt: new Date(Date.now() - 90 * 86400_000) } },
       orderBy: { version: 'desc' },
       skip: 30,
       select: { id: true }
@@ -189,7 +178,7 @@ export async function bumpScreenManifestVersions(screenIds: string[]): Promise<v
 
 export async function bumpOwnerManifestVersions(tenantId: string, _ownerId?: string): Promise<string[]> {
   const screens = await prisma.screen.findMany({
-    where: { tenantId },
+    where: { tenantId, archivedAt: null },
     select: { id: true }
   });
   const ids = screens.map((screen) => screen.id);

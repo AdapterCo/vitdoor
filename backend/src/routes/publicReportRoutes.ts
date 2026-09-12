@@ -1,4 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { createHash } from 'crypto';
+import { HttpError } from '../lib/validation.js';
+import { Router } from '../lib/router.js';
+import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 
 export const publicReportRoutes = Router();
@@ -16,8 +19,11 @@ publicReportRoutes.get('/media/:mediaId', async (req: Request, res: Response): P
     return res.status(400).json({ error: 'ID de mídia inválido.' });
   }
 
-  const media = await prisma.media.findUnique({
-    where: { id: mediaId },
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new HttpError(404, 'Link de relatório inválido ou expirado.');
+  res.setHeader('Cache-Control', 'no-store');
+  const media = await prisma.media.findFirst({
+    where: { id: mediaId, archivedAt: null, tenant: { status: 'ACTIVE' }, reportTokenHash: createHash('sha256').update(token).digest('hex'), reportExpiresAt: { gt: new Date() } },
     select: {
       id: true,
       tenantId: true,
@@ -57,7 +63,7 @@ publicReportRoutes.get('/media/:mediaId', async (req: Request, res: Response): P
     prisma.proofOfPlay.count({
       where: {
         tenantId: media.tenantId,
-        mediaName: media.name,
+        mediaId: media.id,
         playedAt: { gte: since }
       }
     }),
@@ -65,7 +71,7 @@ publicReportRoutes.get('/media/:mediaId', async (req: Request, res: Response): P
     prisma.proofOfPlay.aggregate({
       where: {
         tenantId: media.tenantId,
-        mediaName: media.name,
+        mediaId: media.id,
         playedAt: { gte: since }
       },
       _sum: { durationSeconds: true }
@@ -74,7 +80,7 @@ publicReportRoutes.get('/media/:mediaId', async (req: Request, res: Response): P
     prisma.proofOfPlay.findMany({
       where: {
         tenantId: media.tenantId,
-        mediaName: media.name,
+        mediaId: media.id,
         playedAt: { gte: since }
       },
       include: { screen: { select: { id: true, name: true, locationName: true } } },
@@ -86,7 +92,7 @@ publicReportRoutes.get('/media/:mediaId', async (req: Request, res: Response): P
       by: ['screenId'],
       where: {
         tenantId: media.tenantId,
-        mediaName: media.name,
+        mediaId: media.id,
         playedAt: { gte: since }
       },
       _count: { _all: true },

@@ -1,3 +1,4 @@
+import { csvCell, csvRow } from '../csv';
 import React, { useState } from 'react';
 import { BarChart3, Download, ShieldCheck, QrCode, Smartphone, TrendingUp, Wifi, Globe } from 'lucide-react';
 
@@ -16,6 +17,7 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
 
   const handleExportCsv = () => {
     let csv = '\uFEFF';
+    csv += 'Exportacao dos registros recentes retornados pela API (ate 50 por historico).\n';
     csv += 'VitDoor - Relatório de Proof of Play e Conversões\n';
     csv += `Data de Emissão:;${new Date().toLocaleString('pt-BR')}\n\n`;
 
@@ -31,13 +33,13 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
     csv += 'HISTÓRICO RECENTE DE CONVERSÕES\n';
     csv += 'Data / Hora;Origem;Tela;Mídia;Destino\n';
     (qrStats?.recentScans || []).forEach((scan: any) => {
-      csv += `"${new Date(scan.scannedAt).toLocaleString('pt-BR')}";"${scan.scanSource === 'NFC_TAP' ? 'NFC Totem' : 'QR Code'}";"${scan.screen?.name || 'Tela'}";"${scan.media?.name || 'Mídia'}";"${scan.ctaType}"\n`;
+      csv += csvRow([new Date(scan.scannedAt).toLocaleString('pt-BR'), scan.scanSource === 'NFC_TAP' ? 'NFC Totem' : 'QR Code', scan.screen?.name || 'Tela', scan.media?.name || 'Midia', scan.ctaType]);
     });
 
     csv += '\nHISTÓRICO RECENTE DE EXIBIÇÕES AUDITADAS\n';
     csv += 'Data / Hora;Tela;Mídia Exibida;Duração (s);Status\n';
     (recentLogs || []).forEach((log: any) => {
-      csv += `"${new Date(log.playedAt).toLocaleString('pt-BR')}";"${log.screen?.name || 'Tela'}";"${log.mediaName}";${log.durationSeconds};"Completa (100%)"\n`;
+      csv += csvRow([new Date(log.playedAt).toLocaleString('pt-BR'), log.screen?.name, log.mediaName, log.durationSeconds, log.completed ? 'Completa' : 'Incompleta']);
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -249,7 +251,7 @@ export const ProofOfPlayTab: React.FC<ProofOfPlayTabProps> = ({ stats, qrStats }
                   <td style={{ padding: '14px 12px', color: '#60a5fa' }}>{log.mediaName}</td>
                   <td style={{ padding: '14px 12px', color: '#cbd5e1' }}>{log.durationSeconds}s</td>
                   <td style={{ padding: '14px 12px' }}>
-                    <span className="badge-online">Completa (100%)</span>
+                    <span className="badge-online">{log.completed ? 'Completa' : 'Incompleta'}</span>
                   </td>
                 </tr>
               ))

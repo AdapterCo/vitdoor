@@ -65,17 +65,18 @@ async function main() {
         assert(result.response.ok, `${sessions[i].email} não conseguiu listar ${route}`);
         const ids = Array.isArray(result.body) ? result.body.map((item: any) => item.id) : [];
         const fixtureKey = ({ '/media': 'media', '/media/folders': 'folder', '/layouts': 'layout', '/playlists': 'playlist', '/campaigns': 'campaign' } as Record<string, string>)[route];
+        assert(ids.includes((fixtures[i] as any)[fixtureKey].id), `${route} nao retornou o proprio registro`);
         assert(!ids.includes((fixtures[other] as any)[fixtureKey].id), `${route} vazou entre clientes`);
       }
       const foreignMedia = await request(`/media/${fixtures[other].media.id}`, { method: 'PUT', body: JSON.stringify({ tenantId: sessions[i].tenantId, name: 'INVASÃO' }) }, sessions[i]);
       assert(foreignMedia.response.status === 404, 'edição cruzada de mídia não foi bloqueada');
-      const foreignLayout = await request('/layouts', { method: 'POST', body: JSON.stringify({ tenantId: sessions[i].tenantId, name: 'Layout invasor', canvasConfigJson: { zones: [{ id: 'main', items: [{ mediaId: fixtures[other].media.id }] }] } }) }, sessions[i]);
-      assert(foreignLayout.response.status === 400, 'mídia estrangeira foi aceita dentro do layout');
+      const foreignLayout = await request('/layouts', { method: 'POST', body: JSON.stringify({ tenantId: sessions[i].tenantId, name: 'Layout invasor', canvasConfigJson: { version: 2, preset: 'FULL', zones: [{ id: 'main', name: 'Principal', widthPercent: 100, fit: 'CONTAIN', audioEnabled: true, items: [{ mediaId: fixtures[other].media.id }] }] } }) }, sessions[i]);
+      assert(foreignLayout.response.status === 400 && /m.dia/i.test(foreignLayout.body.error || ''), 'mídia estrangeira foi aceita dentro do layout');
       const stats = await request(`/proof-of-play/stats?tenantId=${sessions[i].tenantId}`, {}, sessions[i]);
       assert(stats.response.ok && stats.body.totalScreens === 0 && stats.body.totalPlays === 0, 'relatório não respeitou o espaço individual');
     }
     const masterCross = await request(`/media?tenantId=${sessions[0].tenantId}`, {}, master);
-    assert(!masterCross.response.ok, 'master conseguiu abrir diretamente a biblioteca do cliente');
+    assert(masterCross.response.status === 403, 'master conseguiu abrir diretamente a biblioteca do cliente');
     console.log('AUDITORIA APROVADA: master + dois clientes isolados em mídias, pastas, layouts, playlists, campanhas e relatórios.');
   } finally {
     for (const client of clients) await request(`/tenants/${client.tenantId}`, { method: 'PUT', body: JSON.stringify({ status: 'SUSPENDED' }) }, master);

@@ -1,327 +1,112 @@
-import { Router, type Request, type Response } from 'express';
+import { Router } from '../lib/router.js';
+import type { Request } from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { createHmac, randomInt } from 'crypto';
+import { rateLimit } from 'express-rate-limit';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, tenantScope } from '../middleware/auth.js';
+import { authenticate, requireRoles, tenantScope } from '../middleware/auth.js';
 import { broadcastTicketCalled, isScreenOnline } from '../lib/websocket.js';
+import { getAdminJwtSecret } from '../lib/session.js';
+import { HttpError, isUuid, text } from '../lib/validation.js';
 
 export const queueRoutes = Router();
-
-// ==========================================
-// OPERATOR PUBLIC ENDPOINTS (AUTHENTICATED VIA PIN)
-// ==========================================
-
-/**
- * POST /api/queues/operator/auth
- * Operador digita o PIN (ex: "1234") para acessar a tela do chamador.
- */
-queueRoutes.post('/operator/auth', async (req: Request, res: Response): Promise<any> => {
-  const { pinCode, tenantId } = req.body;
-  if (!pinCode || typeof pinCode !== 'string' || !tenantId) {
-    return res.status(400).json({ error: 'PIN inválido ou tenant ausente.' });
+const managers = requireRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'OPERATOR');
+const pinLimit = rateLimit({ windowMs: 15 * 60_000, limit: 10, skipSuccessfulRequests: true, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Muitas tentativas de PIN. Aguarde 15 minutos.' } });
+const tenantPinLimit = rateLimit({ windowMs: 15 * 60_000, limit: 100, skipSuccessfulRequests: true, keyGenerator: req => typeof req.body.tenantId === 'string' ? req.body.tenantId : 'invalid', message: { error: 'Limite de tentativas do estabelecimento atingido.' } });
+const lookupPin = (tenantId: string, pin: string) => createHmac('sha256', getAdminJwtSecret()).update(`${tenantId}:${pin}`).digest('hex');
+function pinValue(value: unknown): string {
+  if (typeof value !== 'string' || !/^\d{4,6}$/.test(value)) throw new HttpError(400, 'PIN deve conter 4 a 6 dígitos.');
+  return value;
+}
+export async function migrateQueuePins() {
+  const queues = await prisma.ticketQueue.findMany({ where: { pinCode: { not: null } } });
+  for (const queue of queues) {
+    const pin = queue.pinCode!;
+    await prisma.ticketQueue.update({ where: { id: queue.id }, data: { pinHash: await bcrypt.hash(pin, 12), pinLookup: lookupPin(queue.tenantId, pin), pinCode: null } });
   }
-
-  const queue = await prisma.ticketQueue.findFirst({
-    where: { pinCode: pinCode.trim(), tenantId },
-    include: {
-      screen: { select: { id: true, name: true, status: true, lastPing: true } },
-      tenant: { select: { status: true } }
-    }
-  });
-
-  if (!queue || queue.tenant.status !== 'ACTIVE') {
-    return res.status(401).json({ error: 'PIN de chamador não encontrado ou inativo.' });
-  }
-
-  // Get recent 5 called tickets
-  const recentTickets = await prisma.queueTicket.findMany({
-    where: { queueId: queue.id },
-    orderBy: { calledAt: 'desc' },
-    take: 5
-  });
-
-  const online = isScreenOnline(queue.screenId) ||
-    queue.screen?.status === 'ONLINE' ||
-    Boolean(queue.screen?.lastPing && (Date.now() - new Date(queue.screen.lastPing).getTime()) < 60000);
-
-  return res.json({
-    queue: {
-      id: queue.id,
-      name: queue.name,
-      prefix: queue.prefix,
-      currentNum: queue.currentNum,
-      deskName: queue.deskName,
-      screenId: queue.screenId,
-      screenName: queue.screen?.name || null,
-      screenStatus: online ? 'ONLINE' : 'OFFLINE'
-    },
-    recentTickets
-  });
+}
+function queueDto(queue: any) {
+  return { id: queue.id, name: queue.name, prefix: queue.prefix, currentNum: queue.currentNum, deskName: queue.deskName, screenId: queue.screenId, screen: queue.screen, screenName: queue.screen?.name, screenStatus: isScreenOnline(queue.screenId) ? 'ONLINE' : 'OFFLINE', _count: queue._count };
+}
+async function operatorQueue(req: Request) {
+  let claims: any;
+  try { claims = jwt.verify(req.headers.authorization?.replace(/^Bearer /, '') || '', getAdminJwtSecret(), { algorithms: ['HS256'] }); }
+  catch { throw new HttpError(401, 'Sessão do chamador expirada. Informe o PIN novamente.'); }
+  if (claims.type !== 'QUEUE' || typeof claims.queueId !== 'string') throw new HttpError(401, 'Sessão inválida.');
+  const queue = await prisma.ticketQueue.findFirst({ where: { id: claims.queueId, tenantId: claims.tenantId, tokenVersion: claims.version, tenant: { status: 'ACTIVE' } }, include: { screen: { select: { id: true, name: true } } } });
+  if (!queue) throw new HttpError(401, 'Fila indisponível.');
+  return queue;
+}
+async function queueStatus(queue: any) {
+  const recentTickets = await prisma.queueTicket.findMany({ where: { queueId: queue.id, status: { not: 'RESET' } }, orderBy: { calledAt: 'desc' }, take: 5 });
+  return { queue: queueDto(queue), recentTickets };
+}
+queueRoutes.post('/operator/auth', pinLimit, tenantPinLimit, async (req, res) => {
+  const tenantId = text(req.body.tenantId, 'Estabelecimento');
+  const pin = pinValue(req.body.pinCode);
+  const queue = await prisma.ticketQueue.findFirst({ where: { tenantId, pinLookup: lookupPin(tenantId, pin), tenant: { status: 'ACTIVE' } }, include: { screen: { select: { id: true, name: true } } } });
+  if (!queue?.pinHash || !await bcrypt.compare(pin, queue.pinHash)) throw new HttpError(401, 'PIN inválido.');
+  const token = jwt.sign({ type: 'QUEUE', queueId: queue.id, tenantId, version: queue.tokenVersion }, getAdminJwtSecret(), { expiresIn: '8h', algorithm: 'HS256' });
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ ...await queueStatus(queue), token });
 });
+queueRoutes.post('/operator/status', async (req, res) => res.json(await queueStatus(await operatorQueue(req))));
 
-/**
- * POST /api/queues/operator/call-next
- * Operador clica em "Chamar Próximo"
- */
-queueRoutes.post('/operator/call-next', async (req: Request, res: Response): Promise<any> => {
-  const { pinCode, tenantId } = req.body;
-  if (!pinCode || typeof pinCode !== 'string' || !tenantId) {
-    return res.status(400).json({ error: 'PIN e tenantId obrigatórios.' });
-  }
-
-  const queue = await prisma.ticketQueue.findFirst({
-    where: { pinCode: pinCode.trim(), tenantId },
-    select: { id: true, prefix: true, currentNum: true, deskName: true, screenId: true, tenant: { select: { status: true } } }
-  });
-
-  if (!queue || queue.tenant.status !== 'ACTIVE') return res.status(401).json({ error: 'PIN inválido ou inativo.' });
-
-  const nextNum = queue.currentNum + 1;
-  const formattedNum = (queue.prefix ? queue.prefix : '') + String(nextNum).padStart(3, '0');
-
-  const [updatedQueue, ticket] = await prisma.$transaction([
-    prisma.ticketQueue.update({
-      where: { id: queue.id },
-      data: { currentNum: nextNum }
-    }),
-    prisma.queueTicket.create({
-      data: {
-        queueId: queue.id,
-        ticketNumber: formattedNum,
-        deskName: queue.deskName,
-        status: 'CALLED'
+for (const action of ['call-next', 'call-specific', 'recall', 'reset']) {
+  queueRoutes.post(`/operator/${action}`, async (req, res) => {
+    const queue = await operatorQueue(req);
+    if (!isUuid(req.body.eventId)) throw new HttpError(400, 'eventId UUID obrigatório.');
+    const custom = action === 'call-specific' ? text(req.body.customNumber, 'Senha', 12).toUpperCase() : '';
+    if (custom && !/^[A-Z0-9 -]+$/.test(custom)) throw new HttpError(400, 'Senha deve conter letras e números.');
+    const result = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "TicketQueue" WHERE id = ${queue.id} FOR UPDATE`;
+      const fresh = await tx.ticketQueue.findUniqueOrThrow({ where: { id: queue.id } });
+      if (fresh.tokenVersion !== queue.tokenVersion) throw new HttpError(401, 'Sessão do operador revogada.');
+      const duplicate = await tx.queueTicket.findUnique({ where: { queueId_eventId: { queueId: queue.id, eventId: req.body.eventId } } });
+      if (duplicate) return { ticket: duplicate, currentNum: fresh.currentNum, duplicate: true };
+      let currentNum = fresh.currentNum;
+      if (action === 'call-next') {
+        if (currentNum >= 2147483646) throw new HttpError(409, 'Zere o contador antes de continuar.');
+        currentNum = (await tx.ticketQueue.update({ where: { id: queue.id }, data: { currentNum: { increment: 1 } } })).currentNum;
       }
-    })
-  ]);
-
-  // Format audio text for TTS synthesis (e.g. "Senha A 0 4 3, Consultório 0 1")
-  const spacedNumber = formattedNum.split('').join(' ');
-  const audioText = `Senha ${spacedNumber}, ${queue.deskName}`;
-
-  // Broadcast WebSocket event to the screen if connected
-  if (queue.screenId) {
-    broadcastTicketCalled(queue.screenId, {
-      ticketNumber: formattedNum,
-      deskName: queue.deskName,
-      audioText
+      if (action === 'recall' && currentNum === 0) throw new HttpError(400, 'Nenhuma senha chamada ainda.');
+      if (action === 'reset') { currentNum = 0; await tx.ticketQueue.update({ where: { id: queue.id }, data: { currentNum: 0 } }); }
+      const ticketNumber = action === 'call-specific' ? custom : `${fresh.prefix}${String(currentNum).padStart(3, '0')}`;
+      const ticket = await tx.queueTicket.create({ data: { queueId: queue.id, eventId: req.body.eventId, ticketNumber, deskName: fresh.deskName, status: action === 'reset' ? 'RESET' : 'CALLED' } });
+      return { ticket, currentNum, duplicate: false };
     });
-  }
-
-  return res.json({
-    success: true,
-    currentNum: updatedQueue.currentNum,
-    ticketNumber: ticket.ticketNumber,
-    deskName: ticket.deskName,
-    calledAt: ticket.calledAt
+    let delivered = false;
+    if (action !== 'reset' && !result.duplicate && queue.screenId) delivered = broadcastTicketCalled(queue.screenId, { ticketNumber: result.ticket.ticketNumber, deskName: result.ticket.deskName, audioText: `Senha ${result.ticket.ticketNumber.split('').join(' ')}, ${result.ticket.deskName}` });
+    return res.json({ success: true, ...result.ticket, currentNum: result.currentNum, duplicate: result.duplicate, delivered });
   });
+}
+
+queueRoutes.get('/admin', authenticate, managers, async (req, res) => {
+  const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
+  return res.json((await prisma.ticketQueue.findMany({ where: { tenantId }, include: { screen: { select: { id: true, name: true } }, _count: { select: { tickets: true } } }, orderBy: { createdAt: 'desc' } })).map(queueDto));
 });
-
-/**
- * POST /api/queues/operator/recall
- * Operador clica em "Rechamar"
- */
-queueRoutes.post('/operator/recall', async (req: Request, res: Response): Promise<any> => {
-  const { pinCode, tenantId } = req.body;
-  if (!pinCode || typeof pinCode !== 'string' || !tenantId) {
-    return res.status(400).json({ error: 'PIN e tenantId obrigatórios.' });
-  }
-
-  const queue = await prisma.ticketQueue.findFirst({
-    where: { pinCode: pinCode.trim(), tenantId },
-    select: { id: true, prefix: true, currentNum: true, deskName: true, screenId: true, tenant: { select: { status: true } } }
-  });
-
-  if (!queue || queue.tenant.status !== 'ACTIVE') return res.status(401).json({ error: 'PIN inválido ou inativo.' });
-  if (queue.currentNum === 0) {
-    return res.status(400).json({ error: 'Nenhuma senha chamada ainda.' });
-  }
-
-  const formattedNum = (queue.prefix ? queue.prefix : '') + String(queue.currentNum).padStart(3, '0');
-
-  // Record recall as a new call event
-  const ticket = await prisma.queueTicket.create({
-    data: {
-      queueId: queue.id,
-      ticketNumber: formattedNum,
-      deskName: queue.deskName,
-      status: 'CALLED'
-    }
-  });
-
-  const spacedNumber = formattedNum.split('').join(' ');
-  const audioText = `Atenção, Senha ${spacedNumber}, ${queue.deskName}`;
-
-  if (queue.screenId) {
-    broadcastTicketCalled(queue.screenId, {
-      ticketNumber: formattedNum,
-      deskName: queue.deskName,
-      audioText
-    });
-  }
-
-  return res.json({
-    success: true,
-    ticketNumber: ticket.ticketNumber,
-    deskName: ticket.deskName,
-    calledAt: ticket.calledAt
-  });
+queueRoutes.post('/admin', authenticate, managers, async (req, res) => {
+  const tenantId = tenantScope(req, req.body.tenantId);
+  const pin = pinValue(req.body.pinCode || String(randomInt(100000, 1000000)));
+  const screenId = req.body.screenId || null;
+  if (screenId && !await prisma.screen.findFirst({ where: { id: screenId, tenantId, archivedAt: null } })) throw new HttpError(400, 'Tela inválida.');
+  const prefix = typeof req.body.prefix === 'string' ? req.body.prefix.trim().toUpperCase() : '';
+  if (!/^[A-Z0-9]{0,6}$/.test(prefix)) throw new HttpError(400, 'Prefixo inválido.');
+  const queue = await prisma.ticketQueue.create({ data: { tenantId, name: text(req.body.name, 'Nome'), prefix, deskName: text(req.body.deskName || 'Guichê 01', 'Guichê', 80), screenId, pinCode: null, pinHash: await bcrypt.hash(pin, 12), pinLookup: lookupPin(tenantId, pin) } });
+  return res.status(201).json({ ...queueDto(queue), pinCode: pin }); // shown once
 });
-
-/**
- * POST /api/queues/operator/call-specific
- * Operador digita um número específico para chamar (ex: preferencial P005)
- */
-queueRoutes.post('/operator/call-specific', async (req: Request, res: Response): Promise<any> => {
-  const { pinCode, tenantId, customNumber } = req.body;
-  if (!pinCode || typeof pinCode !== 'string' || !tenantId || !customNumber) {
-    return res.status(400).json({ error: 'PIN, tenantId e número específico são obrigatórios.' });
-  }
-
-  const queue = await prisma.ticketQueue.findFirst({
-    where: { pinCode: pinCode.trim(), tenantId },
-    select: { id: true, deskName: true, screenId: true, tenant: { select: { status: true } } }
-  });
-
-  if (!queue || queue.tenant.status !== 'ACTIVE') return res.status(401).json({ error: 'PIN inválido ou inativo.' });
-
-  const formattedNum = String(customNumber).trim().toUpperCase();
-
-  const ticket = await prisma.queueTicket.create({
-    data: {
-      queueId: queue.id,
-      ticketNumber: formattedNum,
-      deskName: queue.deskName,
-      status: 'CALLED'
-    }
-  });
-
-  const spacedNumber = formattedNum.split('').join(' ');
-  const audioText = `Senha ${spacedNumber}, ${queue.deskName}`;
-
-  if (queue.screenId) {
-    broadcastTicketCalled(queue.screenId, {
-      ticketNumber: formattedNum,
-      deskName: queue.deskName,
-      audioText
-    });
-  }
-
-  return res.json({
-    success: true,
-    ticketNumber: ticket.ticketNumber,
-    deskName: ticket.deskName,
-    calledAt: ticket.calledAt
-  });
+queueRoutes.post('/admin/:id/reset-pin', authenticate, managers, async (req, res) => {
+  const tenantId = tenantScope(req, req.body.tenantId);
+  const queue = await prisma.ticketQueue.findFirst({ where: { id: req.params.id, tenantId } });
+  if (!queue) throw new HttpError(404, 'Fila não encontrada.');
+  const pin = String(randomInt(100000, 1000000));
+  await prisma.ticketQueue.update({ where: { id: queue.id }, data: { pinCode: null, pinHash: await bcrypt.hash(pin, 12), pinLookup: lookupPin(tenantId, pin), tokenVersion: { increment: 1 } } });
+  return res.json({ pinCode: pin });
 });
-
-/**
- * POST /api/queues/operator/reset
- * Operador zera o contador da fila
- */
-queueRoutes.post('/operator/reset', async (req: Request, res: Response): Promise<any> => {
-  const { pinCode, tenantId } = req.body;
-  if (!pinCode || typeof pinCode !== 'string' || !tenantId) {
-    return res.status(400).json({ error: 'PIN e tenantId obrigatórios.' });
-  }
-
-  const queue = await prisma.ticketQueue.findFirst({
-    where: { pinCode: pinCode.trim(), tenantId },
-    select: { id: true, tenant: { select: { status: true } } }
-  });
-
-  if (!queue || queue.tenant.status !== 'ACTIVE') return res.status(401).json({ error: 'PIN inválido ou inativo.' });
-
-  await prisma.ticketQueue.update({
-    where: { id: queue.id },
-    data: { currentNum: 0 }
-  });
-
-  return res.json({ success: true, message: 'Contador de senhas zerado com sucesso.' });
-});
-
-// ==========================================
-// ADMIN ENDPOINTS (AUTHENTICATED MANAGER)
-// ==========================================
-
-/**
- * GET /api/queues/admin?tenantId=:tenantId
- */
-queueRoutes.get('/admin', authenticate, async (req: Request, res: Response): Promise<any> => {
-  try {
-    const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-
-    const queues = await prisma.ticketQueue.findMany({
-      where: { tenantId },
-      include: {
-        screen: { select: { id: true, name: true, status: true } },
-        _count: { select: { tickets: true } }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    return res.json(queues);
-  } catch (err: any) {
-    return res.status(err.message === 'UNAUTHENTICATED' ? 401 : 400).json({ error: err.message || 'Erro ao buscar filas' });
-  }
-});
-
-/**
- * POST /api/queues/admin
- * Admin cria uma nova fila de senhas com PIN
- */
-queueRoutes.post('/admin', authenticate, async (req: Request, res: Response): Promise<any> => {
-  try {
-    const tenantId = tenantScope(req, req.body.tenantId);
-    const { name, prefix, deskName, screenId, pinCode } = req.body;
-
-    if (!name || typeof name !== 'string' || !name.trim()) {
-      return res.status(400).json({ error: 'Nome da fila é obrigatório.' });
-    }
-
-    const cleanPin = typeof pinCode === 'string' && pinCode.trim() ? pinCode.trim() : Math.floor(1000 + Math.random() * 9000).toString();
-
-    // Check PIN uniqueness within tenant
-    const existingPin = await prisma.ticketQueue.findFirst({ where: { pinCode: cleanPin, tenantId } });
-    if (existingPin) {
-      return res.status(400).json({ error: 'PIN já está em uso por outra fila. Escolha outro código.' });
-    }
-
-    let validatedScreenId: string | null = null;
-    if (screenId) {
-      const screen = await prisma.screen.findFirst({ where: { id: screenId, tenantId } });
-      if (screen) validatedScreenId = screen.id;
-    }
-
-    const queue = await prisma.ticketQueue.create({
-      data: {
-        tenantId,
-        name: name.trim(),
-        prefix: (prefix || '').trim().toUpperCase(),
-        deskName: (deskName || 'Guichê 01').trim(),
-        screenId: validatedScreenId,
-        pinCode: cleanPin
-      },
-      include: { screen: { select: { id: true, name: true } } }
-    });
-
-    return res.status(201).json(queue);
-  } catch (err: any) {
-    return res.status(err.message === 'UNAUTHENTICATED' ? 401 : 400).json({ error: err.message || 'Erro ao criar fila' });
-  }
-});
-
-/**
- * DELETE /api/queues/admin/:id
- */
-queueRoutes.delete('/admin/:id', authenticate, async (req: Request, res: Response): Promise<any> => {
-  try {
-    const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-    const { id } = req.params;
-
-    const queue = await prisma.ticketQueue.findFirst({ where: { id, tenantId } });
-    if (!queue) return res.status(404).json({ error: 'Fila não encontrada.' });
-
-    await prisma.ticketQueue.delete({ where: { id } });
-    return res.json({ success: true });
-  } catch (err: any) {
-    return res.status(err.message === 'UNAUTHENTICATED' ? 401 : 400).json({ error: err.message || 'Erro ao excluir fila' });
-  }
+queueRoutes.delete('/admin/:id', authenticate, managers, async (req, res) => {
+  const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
+  const result = await prisma.ticketQueue.deleteMany({ where: { id: req.params.id, tenantId } });
+  if (!result.count) throw new HttpError(404, 'Fila não encontrada.');
+  return res.json({ success: true });
 });

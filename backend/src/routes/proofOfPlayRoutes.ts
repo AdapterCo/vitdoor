@@ -1,4 +1,6 @@
-import { Router, Request, Response } from 'express';
+import { campaignIsActive } from '../lib/schedule.js';
+import { Router } from '../lib/router.js';
+import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, tenantScope } from '../middleware/auth.js';
 import { authenticateDevice } from '../middleware/deviceAuth.js';
@@ -7,113 +9,76 @@ import { sendManifestToScreen } from '../lib/websocket.js';
 
 export const proofOfPlayRoutes = Router();
 
-// Log a proof of play event from Player
-proofOfPlayRoutes.post('/log', authenticateDevice, async (req: Request, res: Response): Promise<any> => {
-  const item = normalizeProofEvent(req.body);
+export function normalizeProofEvent(value: any) {
+  if (!isUuid(value?.eventId) || !isUuid(value?.screenId) || !isUuid(value?.mediaId)) return null;
+  const durationSeconds = Number(value.durationSeconds);
+  const playedAt = new Date(value.playedAt);
+  if (!Number.isInteger(durationSeconds) || durationSeconds < 0 || durationSeconds > 86400 || !Number.isFinite(playedAt.getTime()) || playedAt.getTime() > Date.now() + 300_000 || playedAt.getTime() < Date.now() - 90 * 86400_000) return null;
+  if (typeof value.completed !== 'boolean' || typeof value.mediaName !== 'string' || !value.mediaName.trim()) return null;
+  if (value.campaignId != null && !isUuid(value.campaignId)) return null;
+  if (!Number.isInteger(value.manifestVersion) || value.manifestVersion < 1) return null;
+  return { eventId: value.eventId.toLowerCase(), screenId: value.screenId, mediaId: value.mediaId, mediaName: value.mediaName.trim().slice(0, 255), mediaVersion: Number.isInteger(value.mediaVersion) ? value.mediaVersion : null, campaignId: value.campaignId ?? null, zoneId: typeof value.zoneId === 'string' ? value.zoneId.slice(0, 50) : null, manifestVersion: value.manifestVersion, reason: typeof value.reason === 'string' ? value.reason.slice(0, 80) : null, playedAt, durationSeconds, completed: value.completed };
+}
+function isUuid(value: unknown): value is string { return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
 
-  if (!item) return res.status(400).json({ error: 'Evento inválido. eventId UUID, screenId, mediaName, playedAt e durationSeconds são obrigatórios.' });
-  if (item.screenId !== req.deviceAuth!.screenId) return res.status(403).json({ error: 'A tela não pode registrar reprodução para outro dispositivo.' });
+function mediaInPlaylist(playlist: any, mediaId: string): boolean {
+  return (playlist?.items || []).some((item: any) => item.mediaId === mediaId || item.layout?.canvasConfig?.zones?.some((z: any) => z.items?.some((m: any) => m.mediaId === mediaId)));
+}
 
-  const existing = await prisma.proofOfPlay.findUnique({ where: { screenId_eventId: { screenId: item.screenId, eventId: item.eventId } }, select: { id: true } });
-  if (existing) return res.json({ accepted: true, duplicate: true, eventId: item.eventId, id: existing.id });
-  try {
-    const log = await prisma.proofOfPlay.create({ data: { ...item, tenantId: req.deviceAuth!.tenantId } });
-    return res.status(201).json({ accepted: true, duplicate: false, eventId: item.eventId, id: log.id });
-  } catch (error: any) {
-    if (error?.code !== 'P2002') throw error;
-    const duplicate = await prisma.proofOfPlay.findUnique({ where: { screenId_eventId: { screenId: item.screenId, eventId: item.eventId } }, select: { id: true } });
-    return res.json({ accepted: true, duplicate: true, eventId: item.eventId, id: duplicate?.id });
-  }
-});
-
-// Batch log proof of play events (offline queue sync)
-proofOfPlayRoutes.post('/log-batch', authenticateDevice, async (req: Request, res: Response): Promise<any> => {
-  const { items } = req.body;
-  if (!Array.isArray(items) || items.length < 1 || items.length > 500) {
-    return res.status(400).json({ error: 'Envie entre 1 e 500 eventos por lote.' });
-  }
-
-  try {
-    const validItems: ReturnType<typeof normalizeProofEvent>[] = [];
-    for (const item of items) {
-      const normalized = normalizeProofEvent(item);
-      if (normalized && normalized.screenId === req.deviceAuth!.screenId) validItems.push(normalized);
-    }
-
-    const uniqueItems = [...new Map(validItems.filter(Boolean).map((item) => [item!.eventId, item!])).values()];
-    const created = await prisma.proofOfPlay.createMany({
-      data: uniqueItems.map((item) => ({ ...item, tenantId: req.deviceAuth!.tenantId })),
-      skipDuplicates: true
-    });
-    
-    // Check if any campaign reached its maxImpressions limit
-    void checkAndExpireCampaigns(req.deviceAuth!.tenantId).catch(() => {});
-
-    return res.json({
-      received: items.length,
-      accepted: created.count,
-      duplicates: validItems.length - created.count,
-      rejected: items.length - validItems.length,
-      eventIds: uniqueItems.map((item) => item.eventId)
-    });
-  } catch (err) {
-    console.error('Error logging proof of play batch:', err);
-    return res.status(500).json({ error: 'Não foi possível persistir o lote de proof-of-play.' });
-  }
-});
-
-async function checkAndExpireCampaigns(tenantId: string) {
-  const activeCampaigns = await prisma.campaign.findMany({
-    where: { tenantId, status: 'ACTIVE', maxImpressions: { not: null } },
-    include: { playlist: { include: { items: { include: { media: true } } } } }
-  });
-
-  let expiredAny = false;
-  for (const campaign of activeCampaigns) {
-    if (!campaign.maxImpressions || campaign.maxImpressions <= 0) continue;
-    const mediaNames = campaign.playlist?.items
-      .map((i) => i.media?.name)
-      .filter((n): n is string => typeof n === 'string' && n.length > 0) || [];
-
-    if (mediaNames.length > 0) {
-      const count = await prisma.proofOfPlay.count({
-        where: {
-          tenantId,
-          mediaName: { in: mediaNames },
-          playedAt: { gte: campaign.createdAt }
-        }
-      });
-      if (count >= campaign.maxImpressions) {
-        await prisma.campaign.update({ where: { id: campaign.id }, data: { status: 'EXPIRED' } });
-        expiredAny = true;
+async function ingest(items: any[], screenId: string, tenantId: string) {
+  const versions = new Map<number, any>();
+  const accepted: NonNullable<ReturnType<typeof normalizeProofEvent>>[] = [];
+  const rejectedEventIds: string[] = [];
+  for (const raw of items) {
+    const item = normalizeProofEvent(raw);
+    let valid = !!item && item.screenId === screenId;
+    if (item && valid) {
+      if (!versions.has(item.manifestVersion)) {
+        const published = await prisma.screenManifest.findUnique({ where: { screenId_version: { screenId, version: item.manifestVersion } } });
+        versions.set(item.manifestVersion, published ? JSON.parse(published.payload) : null);
+      }
+      const manifest = versions.get(item.manifestVersion);
+      const asset = manifest?.assets?.find((m: any) => m.id === item.mediaId);
+      valid = !!asset && (item.mediaVersion == null || asset.version === item.mediaVersion);
+      if (valid) { item.mediaName = asset.name; item.mediaVersion = asset.version; }
+      if (item.campaignId) {
+        const campaign = manifest?.campaigns?.find((c: any) => c.id === item.campaignId);
+        valid = valid && !!campaign && mediaInPlaylist(campaign.playlist, item.mediaId) && campaignIsActive(campaign, item.playedAt);
       }
     }
+    if (valid && item) accepted.push(item);
+    else if (typeof raw?.eventId === 'string') rejectedEventIds.push(raw.eventId);
   }
-
-  if (expiredAny) {
-    const affectedIds = await bumpOwnerManifestVersions(tenantId);
-    for (const screenId of affectedIds) {
-      await sendManifestToScreen(screenId, true);
+  const uniqueItems = [...new Map(accepted.map(item => [item.eventId, item])).values()];
+  const result = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${tenantId} FOR UPDATE`;
+    const created = await tx.proofOfPlay.createMany({ data: uniqueItems.map(item => ({ ...item, tenantId })), skipDuplicates: true });
+    const campaigns = await tx.campaign.findMany({ where: { tenantId } });
+    let changed = false;
+    for (const campaign of campaigns) {
+      const count = await tx.proofOfPlay.count({ where: { tenantId, campaignId: campaign.id, completed: true } });
+      const expired = campaign.status === 'ACTIVE' && campaign.maxImpressions != null && count >= campaign.maxImpressions;
+      await tx.campaign.update({ where: { id: campaign.id }, data: { currentImpressions: count, ...(expired ? { status: 'EXPIRED' } : {}) } });
+      changed ||= expired;
     }
+    if (changed) await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
+    return { created, changed };
+  });
+  if (result.changed) {
+    const screens = await prisma.screen.findMany({ where: { tenantId, archivedAt: null }, select: { id: true } });
+    for (const screen of screens) await sendManifestToScreen(screen.id, true).catch(() => console.error('Campaign publish deferred', screen.id));
   }
+  return { received: items.length, accepted: result.created.count, duplicates: accepted.length - result.created.count, rejected: items.length - accepted.length, eventIds: uniqueItems.map(item => item.eventId), rejectedEventIds };
 }
-
-function normalizeProofEvent(value: any) {
-  let eventId = typeof value?.eventId === 'string' ? value.eventId.trim().toLowerCase() : '';
-  if (!isUuid(eventId)) {
-    eventId = crypto.randomUUID();
-  }
-  const screenId = typeof value?.screenId === 'string' ? value.screenId.trim() : '';
-  const mediaName = typeof value?.mediaName === 'string' ? value.mediaName.trim().slice(0, 255) : '';
-  const durationSeconds = Math.max(1, Math.min(86400, Math.round(Number(value?.durationSeconds) || 10)));
-  const playedAt = value?.playedAt ? new Date(value.playedAt) : new Date();
-  if (!screenId || !mediaName || Number.isNaN(playedAt.getTime())) return null;
-  return { eventId, screenId, mediaName, playedAt, durationSeconds, completed: value?.completed !== false };
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
+proofOfPlayRoutes.post('/log', authenticateDevice, async (req, res) => {
+  const result = await ingest([req.body], req.deviceAuth!.screenId, req.deviceAuth!.tenantId);
+  if (result.rejected) return res.status(400).json({ error: 'Evento inválido ou mídia fora do manifesto.', ...result });
+  return res.status(result.accepted ? 201 : 200).json({ ...result, eventId: result.eventIds[0], duplicate: result.duplicates > 0 });
+});
+proofOfPlayRoutes.post('/log-batch', authenticateDevice, async (req, res) => {
+  if (!Array.isArray(req.body.items) || !req.body.items.length || req.body.items.length > 500) return res.status(400).json({ error: 'Envie entre 1 e 500 eventos.' });
+  return res.json(await ingest(req.body.items, req.deviceAuth!.screenId, req.deviceAuth!.tenantId));
+});
 
 // Analytics dashboard summary
 proofOfPlayRoutes.get('/stats', authenticate, async (req: Request, res: Response): Promise<any> => {
@@ -124,20 +89,20 @@ proofOfPlayRoutes.get('/stats', authenticate, async (req: Request, res: Response
   });
 
   const totalScreens = await prisma.screen.count({
-    where: { tenantId }
+    where: { tenantId, archivedAt: null }
   });
 
   const onlineScreens = await prisma.screen.count({
     where: {
       tenantId,
-      status: 'ONLINE'
+      archivedAt: null, lastPing: { gt: new Date(Date.now() - 60000) }, status: 'ONLINE'
     }
   });
 
   const offlineScreens = await prisma.screen.count({
     where: {
       tenantId,
-      status: 'OFFLINE'
+      archivedAt: null, OR: [{ status: 'OFFLINE' }, { lastPing: null }, { lastPing: { lte: new Date(Date.now() - 60000) } }]
     }
   });
 
@@ -148,7 +113,7 @@ proofOfPlayRoutes.get('/stats', authenticate, async (req: Request, res: Response
     take: 50
   });
   const [storage, tenant] = await Promise.all([
-    prisma.media.aggregate({ where: { tenantId }, _sum: { sizeBytes: true } }),
+    prisma.media.aggregate({ where: { tenantId, archivedAt: null }, _sum: { sizeBytes: true } }),
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { maxScreens: true, maxStorageMb: true, unlimitedScreens: true } })
   ]);
 

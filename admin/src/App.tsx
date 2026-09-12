@@ -15,8 +15,11 @@ import { AdvertiserReportPage } from './components/AdvertiserReportPage';
 import { getWebSocketUrl } from './config';
 import { apiFetch } from './api';
 import { LoginScreen } from './components/LoginScreen';
+import { AccountTab } from './components/AccountTab';
 
 export function App() {
+  const [requestError, setRequestError] = useState('');
+  useEffect(() => { const report = (event: Event) => setRequestError((event as CustomEvent).detail); window.addEventListener('vitdoor:api-error', report); return () => window.removeEventListener('vitdoor:api-error', report); }, []);
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -201,8 +204,9 @@ export function App() {
       body: JSON.stringify({ ...data, tenantId: activeTenant.id })
     });
     if (res.ok) {
-      loadTenantData(activeTenant.id);
+      await loadTenantData(activeTenant.id);
     }
+    return res.ok;
   };
 
   const handleRemoteCommand = async (screenId: string, action: string, payload?: any) => {
@@ -285,13 +289,14 @@ export function App() {
   };
 
   const handleCreateWidget = async (widgetData: any) => {
-    if (!activeTenant) return;
-    await apiFetch('/media/widget', {
+    if (!activeTenant) return false;
+    const response = await apiFetch('/media/widget', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...widgetData, tenantId: activeTenant.id })
     });
-    loadTenantData(activeTenant.id);
+    if (!response.ok) { const data = await response.json(); alert(data.error); return false; }
+    await loadTenantData(activeTenant.id); return true;
   };
 
   const handleDeleteMedia = async (id: string) => {
@@ -396,13 +401,14 @@ export function App() {
   };
 
   const handleCreateCampaign = async (campaignData: any) => {
-    if (!activeTenant) return;
-    await apiFetch('/campaigns', {
+    if (!activeTenant) return false;
+    const response = await apiFetch('/campaigns', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...campaignData, tenantId: activeTenant.id })
     });
-    loadTenantData(activeTenant.id);
+    if (!response.ok) { const data = await response.json(); alert(data.error); return false; }
+    await loadTenantData(activeTenant.id); return true;
   };
 
   const handleUpdateCampaign = async (id: string, campaignData: any) => {
@@ -428,21 +434,23 @@ export function App() {
   };
 
   const handleTriggerEmergency = async (title: string, message: string, alertType: string, screenIds: string[]) => {
-    if (!activeTenant) return;
-    await apiFetch('/emergency/trigger', {
+    if (!activeTenant) return false;
+    const response = await apiFetch('/emergency/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tenantId: activeTenant.id, title, message, alertType, screenIds })
     });
+    return response.ok;
   };
 
   const handleClearEmergency = async (screenIds: string[]) => {
-    if (!activeTenant) return;
-    await apiFetch('/emergency/clear', {
+    if (!activeTenant) return false;
+    const response = await apiFetch('/emergency/clear', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tenantId: activeTenant.id, screenIds })
     });
+    return response.ok;
   };
 
   const handleCreateTenant = async (tenantData: any) => {
@@ -451,9 +459,11 @@ export function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(tenantData)
     });
+    if (!res.ok) { const data = await res.json(); alert(data.error); return false; }
     if (res.ok) {
       const tenantsRes = await apiFetch('/tenants');
       setTenants(await tenantsRes.json());
+      return true;
     }
   };
 
@@ -519,6 +529,8 @@ export function App() {
       />
 
       <main style={{ flex: 1, padding: '32px 40px', overflowY: 'auto' }}>
+        {requestError && <div role="alert" style={{ padding: 16, marginBottom: 20, color: '#fca5a5', border: '1px solid #7f1d1d' }}>{requestError} <button className="btn-secondary" onClick={() => setRequestError('')}>Fechar</button></div>}
+        {activeTab === 'account' && <AccountTab user={user} />}
         {activeTab === 'dashboard' && (
           <DashboardTab
             screens={screens}

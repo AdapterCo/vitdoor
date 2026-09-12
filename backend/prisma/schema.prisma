@@ -45,6 +45,8 @@ model User {
   name                   String
   email                  String           @unique
   passwordHash           String
+  sessionVersion         Int              @default(1)
+  sessions               AdminSession[]
   role                   String           @default("ADMIN_CLIENT") // SUPER_ADMIN, ADMIN_CLIENT, OPERATOR, DESIGNER, VIEWER
   avatarUrl              String?
   active                 Boolean          @default(true)
@@ -70,6 +72,9 @@ model Screen {
   name        String
   pairingCode String  @unique
   paired      Boolean @default(false)
+  archivedAt  DateTime?
+  currentMediaAt DateTime?
+  screenshotPath String?
 
   // Specs & Info
   orientation  String  @default("HORIZONTAL") // HORIZONTAL, VERTICAL
@@ -139,6 +144,8 @@ model PairingSession {
   secretHash String
   expiresAt  DateTime
   claimedAt  DateTime?
+  tokenVersion Int?
+  consumedAt DateTime?
   screenId   String?   @unique
   screen     Screen?   @relation(fields: [screenId], references: [id], onDelete: Cascade)
   createdAt  DateTime  @default(now())
@@ -165,6 +172,9 @@ model Media {
   mimeType        String?
   version         Int          @default(1)
   ctaJson         String?
+  archivedAt      DateTime?
+  reportTokenHash String? @unique
+  reportExpiresAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -260,6 +270,7 @@ model Campaign {
   maxImpressions     Int?
   currentImpressions Int       @default(0)
   status             String    @default("ACTIVE") // ACTIVE, PAUSED, COMPLETED
+  timezone           String    @default("America/Sao_Paulo")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -273,6 +284,12 @@ model ProofOfPlay {
   screenId        String
   screen          Screen   @relation(fields: [screenId], references: [id], onDelete: Cascade)
   mediaName       String
+  mediaId         String?
+  mediaVersion    Int?
+  campaignId      String?
+  zoneId          String?
+  manifestVersion Int?
+  reason          String?
   playedAt        DateTime @default(now())
   durationSeconds Int
   completed       Boolean  @default(true)
@@ -281,6 +298,8 @@ model ProofOfPlay {
   @@index([tenantId, playedAt])
   @@index([screenId, playedAt])
   @@index([tenantId, mediaName, playedAt])
+  @@index([tenantId, mediaId, playedAt])
+  @@index([tenantId, campaignId, playedAt])
 }
 
 model RemoteCommand {
@@ -315,6 +334,7 @@ model EmergencyAlert {
   message         String
   alertType       String                 @default("WARNING") // INFO, WARNING, EVACUATION, URGENT
   active          Boolean                @default(true)
+  expiresAt       DateTime?
   durationSeconds Int                    @default(60)
   createdAt       DateTime               @default(now())
   targets         EmergencyAlertTarget[]
@@ -372,7 +392,10 @@ model TicketQueue {
   name       String // ex: "Atendimento Geral", "Açougue", "Consultório 1"
   prefix     String        @default("") // ex: "A", "P", "C", ou ""
   currentNum Int           @default(0)
-  pinCode    String // PIN único de 4-6 dígitos para acesso do operador (ex: 1234)
+  pinCode    String? // Legado: convertido para hash na inicialização
+  pinHash    String?
+  pinLookup  String?
+  tokenVersion Int @default(1)
   deskName   String        @default("Guichê 01") // ex: "Consultório 03", "Balcão 02"
   screenId   String?
   screen     Screen?       @relation(fields: [screenId], references: [id], onDelete: SetNull)
@@ -381,6 +404,7 @@ model TicketQueue {
   updatedAt  DateTime      @updatedAt
 
   @@unique([tenantId, pinCode])
+  @@unique([tenantId, pinLookup])
   @@index([tenantId])
   @@index([pinCode])
 }
@@ -393,6 +417,28 @@ model QueueTicket {
   deskName     String // ex: "Consultório 03"
   status       String      @default("CALLED") // CALLED, COMPLETED, CANCELLED
   calledAt     DateTime    @default(now())
+  eventId      String?
 
   @@index([queueId, calledAt])
+  @@unique([queueId, eventId])
+}
+
+model AdminSession {
+  id        String @id @default(uuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model StorageDeletion {
+  id          String @id @default(uuid())
+  storagePath String
+  publicUrl   String?
+  attempts    Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  @@index([nextAttemptAt])
 }

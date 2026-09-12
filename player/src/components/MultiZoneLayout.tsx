@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Clock } from 'lucide-react';
-import { MediaVideo } from './MediaVideo';
+import { MediaSequence, type PlaybackProps } from './MediaSequence';
 import { API_BASE } from '../config';
 
-export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 80, orientation = 'HORIZONTAL' }: { layout: any; activePlaylist?: any; activeAlert?: any; volume?: number; orientation?: string }) {
+export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 80, orientation = 'HORIZONTAL', onProof, onCurrent, screenId }: PlaybackProps & { layout: any; activePlaylist?: any; activeAlert?: any; volume?: number; orientation?: string }) {
   const config = useMemo(() => {
     if (!layout) return null;
     if (layout.canvasConfig && typeof layout.canvasConfig === 'object') {
@@ -21,12 +21,12 @@ export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 
     update(); const timer = setInterval(update, 1000); return () => clearInterval(timer);
   }, []);
 
-  if (!config) return <div style={{ width: '100vw', height: '100vh', background: '#000', color: '#fff', display: 'grid', placeItems: 'center' }}>Layout inválido</div>;
+  if (!config) return <div style={{ width: '100%', height: '100%', background: '#000', color: '#fff', display: 'grid', placeItems: 'center' }}>Layout inválido</div>;
 
   const isVertical = orientation === 'VERTICAL' || orientation === 'PORTRAIT' || layout?.orientation === 'VERTICAL' || config?.orientation === 'VERTICAL';
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#000', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', background: '#000', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: isVertical ? 'column' : 'row' }}>
         {(config.zones || []).map((zone: any, zoneIndex: number) => {
           const zoneItems = (zone.items && zone.items.length > 0) ? zone.items : (activePlaylist?.items || []);
@@ -41,7 +41,7 @@ export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 
                 borderRight: isVertical ? undefined : '1px solid rgba(255,255,255,.08)'
               }}
             >
-              <ZonePlayer items={zoneItems} fit={zone.fit || 'CONTAIN'} volume={volume} loop={zone.loop !== false} audioEnabled={typeof zone.audioEnabled === 'boolean' ? zone.audioEnabled : zoneIndex === 0} />
+              <MediaSequence items={zoneItems.filter((item: any) => !item.layout)} fit={zone.fit === 'COVER' ? 'cover' : zone.fit === 'FILL' ? 'fill' : 'contain'} volume={volume} audioEnabled={typeof zone.audioEnabled === 'boolean' ? zone.audioEnabled : zoneIndex === 0} onProof={onProof} onCurrent={onCurrent} screenId={screenId} zoneId={zoneIndex === 0 ? 'main' : String(zone.id || zoneIndex)} />
             </div>
           );
         })}
@@ -131,21 +131,4 @@ function clockPositionStyle(position?: string): React.CSSProperties {
     case 'BOTTOM_RIGHT': return { bottom: edge, right: edge };
     default: return { top: edge, right: edge };
   }
-}
-
-function ZonePlayer({ items, fit, volume, loop, audioEnabled }: { items: any[]; fit: string; volume: number; loop: boolean; audioEnabled: boolean }) {
-  const [index, setIndex] = useState(0);
-  useEffect(() => setIndex(0), [JSON.stringify(items.map((item) => item.mediaId))]);
-  const item = items[index % Math.max(1, items.length)];
-  const advance = () => items.length > 1 && setIndex((current) => loop ? (current + 1) % items.length : Math.min(current + 1, items.length - 1));
-  useEffect(() => {
-    if (!item || item.type === 'VIDEO') return;
-    const timer = setTimeout(advance, Math.max(1, item.durationSeconds || 10) * 1000);
-    return () => clearTimeout(timer);
-  }, [index, item?.mediaId, item?.durationSeconds]);
-  if (!item) return <div style={{ width: '100%', height: '100%', background: '#111827', color: '#64748b', display: 'grid', placeItems: 'center' }}>Área sem conteúdo</div>;
-  const objectFit = fit === 'COVER' ? 'cover' : fit === 'FILL' ? 'fill' : 'contain';
-  if (item.type === 'VIDEO') return <MediaVideo key={item.mediaId} src={item.url} volume={volume} audioEnabled={audioEnabled} loop={items.length === 1 && loop} onEnded={advance} objectFit={objectFit} />;
-  if (item.type === 'WEB_PAGE') return <iframe src={item.url} title={item.name} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', border: 0 }} />;
-  return <img src={item.url} crossOrigin="anonymous" alt={item.name} style={{ width: '100%', height: '100%', objectFit, background: '#000' }} />;
 }

@@ -21,7 +21,7 @@ export function mediaFolderDto(folder: any) {
 
 export function playerMediaDto(media: any) {
   if (!media) return null;
-  const result = pick(media, ['id', 'name', 'type', 'url', 'thumbnailUrl', 'durationSeconds', 'sizeBytes', 'checksum', 'mimeType', 'version', 'ctaJson']);
+  const result = pick(media, ['id', 'name', 'type', 'url', 'thumbnailUrl', 'durationSeconds', 'validUntil', 'sizeBytes', 'checksum', 'mimeType', 'version', 'ctaJson']);
   if (typeof result.ctaJson === 'string') { try { result.cta = JSON.parse(result.ctaJson); } catch { result.cta = null; } delete result.ctaJson; }
   if (typeof result.sizeBytes === 'bigint') result.sizeBytes = Number(result.sizeBytes);
   return result;
@@ -76,8 +76,9 @@ export function playlistDto(playlist: any, forPlayer = false) {
 }
 
 export function screenDto(screen: any) {
+  if (!screen.screenshotPath) screen = { ...screen, lastScreenshotUrl: null };
   return {
-    ...pick(screen, ['id', 'name', 'paired', 'orientation', 'resolution', 'ipAddress', 'locationName', 'groupName', 'status', 'lastPing', 'volume', 'storageFreeMb', 'ramUsagePercent', 'cpuUsagePercent', 'appVersion', 'currentMediaName', 'lastScreenshotUrl', 'activePlaylistId', 'activeLayoutId', 'manifestVersion', 'maintenancePin', 'maintenanceUntil', 'createdAt', 'updatedAt']),
+    ...pick(screen, ['id', 'name', 'paired', 'orientation', 'resolution', 'ipAddress', 'locationName', 'groupName', 'status', 'lastPing', 'volume', 'storageFreeMb', 'ramUsagePercent', 'cpuUsagePercent', 'appVersion', 'currentMediaName', 'lastScreenshotUrl', 'activePlaylistId', 'activeLayoutId', 'manifestVersion', 'maintenanceUntil', 'createdAt', 'updatedAt']),
     ...(screen.activePlaylist ? { activePlaylist: pick(screen.activePlaylist, ['id', 'name']) } : {}),
     ...(screen.activeLayout ? { activeLayout: pick(screen.activeLayout, ['id', 'name']) } : {})
   };
@@ -85,7 +86,7 @@ export function screenDto(screen: any) {
 
 export function campaignDto(campaign: any) {
   return {
-    ...pick(campaign, ['id', 'name', 'advertiserName', 'playlistId', 'startDate', 'endDate', 'daysOfWeek', 'startTime', 'endTime', 'priority', 'maxImpressions', 'currentImpressions', 'status', 'createdAt', 'updatedAt']),
+    ...pick(campaign, ['id', 'name', 'advertiserName', 'playlistId', 'startDate', 'endDate', 'daysOfWeek', 'startTime', 'endTime', 'priority', 'maxImpressions', 'timezone', 'currentImpressions', 'status', 'createdAt', 'updatedAt']),
     ...(campaign.playlist ? { playlist: pick(campaign.playlist, ['id', 'name']) } : {})
   };
 }
@@ -93,7 +94,7 @@ export function campaignDto(campaign: any) {
 export function alertDto(alert: any) {
   if (!alert) return null;
   return {
-    ...pick(alert, ['id', 'title', 'message', 'alertType', 'active', 'durationSeconds', 'createdAt']),
+    ...pick(alert, ['id', 'title', 'message', 'alertType', 'active', 'durationSeconds', 'expiresAt', 'createdAt']),
     ...(Array.isArray(alert.targets) ? { screenIds: alert.targets.map((target: any) => target.screenId) } : {})
   };
 }

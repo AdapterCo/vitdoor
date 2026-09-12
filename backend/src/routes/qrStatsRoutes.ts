@@ -1,4 +1,5 @@
-import { Router, type Request, type Response } from 'express';
+import { Router } from '../lib/router.js';
+import { type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { tenantScope } from '../middleware/auth.js';
 

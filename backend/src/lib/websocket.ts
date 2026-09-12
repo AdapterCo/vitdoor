@@ -4,6 +4,8 @@ import { prisma } from './prisma.js';
 import jwt from 'jsonwebtoken';
 import { getAdminJwtSecret, readCookie, SESSION_COOKIE_NAME } from './session.js';
 import { alertDto, playerLayoutDto, playlistDto } from './dto.js';
+import { verifyAdminSession } from './adminSessions.js';
+import { getActiveAlert } from './alerts.js';
 import { buildScreenManifest } from './manifest.js';
 
 interface ConnectedClient {
@@ -18,33 +20,27 @@ interface ConnectedClient {
   messagesInWindow: number;
   sessionToken?: string;
   isAlive: boolean;
+  sessionId?: string;
+  expiresAt?: Date;
+  deviceVersion?: number;
+  webSimulator?: boolean;
+  delivering?: boolean;
 }
 
 const activeConnections = new Set<ConnectedClient>();
-
-// Ping/Pong heartbeat interval to keep Cloudflare WS connections alive (30s)
-const heartbeatInterval = setInterval(() => {
-  for (const client of activeConnections) {
-    if (client.isAlive === false) {
-      activeConnections.delete(client);
-      client.ws.terminate();
-    } else {
-      client.isAlive = false;
-      if (client.ws.readyState === WebSocket.OPEN) {
-        client.ws.ping();
-      }
-    }
-  }
-}, 30_000);
 
 export function cleanCode(code?: string): string {
   return (code || '').trim().replace(/[\s-]/g, '').toUpperCase();
 }
 
 export function initWebSocketServer(server: Server) {
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 6 * 1024 * 1024 });
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
 
   wss.on('connection', (ws: WebSocket, request) => {
+    if (activeConnections.size >= 2000 || [...activeConnections].filter(c => !c.screenId && !c.ownerId).length >= 100) { ws.close(1013, 'Capacity exceeded'); return; }
+    const origin = request.headers.origin;
+    const allowed = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001').split(',').map(v => v.trim());
+    if (origin && !allowed.includes(origin)) { ws.close(1008, 'Origin rejected'); return; }
     const client: ConnectedClient = {
       ws,
       type: 'PLAYER',
@@ -65,7 +61,10 @@ export function initWebSocketServer(server: Server) {
     }, 10_000);
     activeConnections.add(client);
 
-    ws.on('message', async (data: string) => {
+    let messages = Promise.resolve();
+    ws.on('error', () => ws.close());
+    ws.on('message', (data: string) => {
+      messages = messages.then(async () => {
       client.isAlive = true;
       const now = Date.now();
       if (now - client.messageWindowStartedAt >= 60_000) {
@@ -73,16 +72,20 @@ export function initWebSocketServer(server: Server) {
         client.messagesInWindow = 0;
       }
       client.messagesInWindow += 1;
-      if (client.messagesInWindow > 120) {
+      if (client.messagesInWindow > 600) {
         ws.close(1008, 'Message rate exceeded');
         return;
       }
       try {
         const message = JSON.parse(data.toString());
+        if (!message || typeof message.type !== 'string') return;
+        if (message.type.startsWith('REGISTER_') && (client.screenId || client.ownerId)) { ws.close(1008, 'Already registered'); return; }
+        if (!message.type.startsWith('REGISTER_') && !client.screenId && !client.ownerId) { ws.close(1008, 'Authentication required'); return; }
         await handleMessage(client, message);
       } catch (err) {
-        console.error('WebSocket Message Parsing Error:', err);
+        console.error('WebSocket message failed');
       }
+      });
     });
 
     ws.on('close', async () => {
@@ -113,12 +116,15 @@ export function initWebSocketServer(server: Server) {
 
   const heartbeatInterval = setInterval(() => {
     for (const client of activeConnections) {
-      if (client.isAlive === false) {
-        client.ws.terminate();
-        activeConnections.delete(client);
-      } else {
-        client.isAlive = false;
-        client.ws.ping();
+      if (!client.isAlive || (client.expiresAt && client.expiresAt <= new Date())) { client.ws.terminate(); continue; }
+      client.isAlive = false;
+      if (client.ws.readyState === WebSocket.OPEN) client.ws.ping();
+      if (client.type === 'ADMIN' && client.sessionToken) {
+        void verifyAdminSession(client.sessionToken).catch(() => client.ws.close(4001, 'Session expired'));
+      } else if (client.screenId) {
+        void prisma.screen.findFirst({ where: { id: client.screenId, archivedAt: null, paired: true, deviceTokenVersion: client.deviceVersion, tenant: { status: 'ACTIVE' } } })
+          .then(screen => { if (!screen) client.ws.close(4003, 'Device revoked'); })
+          .catch(() => client.ws.close(1011, 'Unable to validate device'));
       }
     }
   }, 30_000);
@@ -127,8 +133,7 @@ export function initWebSocketServer(server: Server) {
     clearInterval(heartbeatInterval);
   });
 
-  process.on('SIGTERM', () => clearInterval(heartbeatInterval));
-  process.on('SIGINT', () => clearInterval(heartbeatInterval));
+  return () => { clearInterval(heartbeatInterval); for (const client of activeConnections) { if (client.authTimer) clearTimeout(client.authTimer); client.ws.terminate(); } wss.close(); };
 
   console.log('⚡ Gateway WebSocket Server ativo em /ws');
 }
@@ -137,6 +142,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
   switch (msg.type) {
     case 'REGISTER_PLAYER': {
       client.type = 'PLAYER';
+      client.webSimulator = msg.clientKind === 'WEB_SIMULATOR';
       client.pairingCode = msg.pairingCode;
       let screen = null;
       if (msg.deviceToken) {
@@ -144,14 +150,17 @@ async function handleMessage(client: ConnectedClient, msg: any) {
           if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is not configured');
           const auth = jwt.verify(msg.deviceToken, process.env.JWT_SECRET, { algorithms: ['HS256'] }) as any;
           if (auth.type === 'DEVICE') {
+            client.deviceVersion = auth.version;
+            client.expiresAt = new Date(auth.exp * 1000);
             screen = await prisma.screen.findFirst({ where: {
               id: auth.screenId,
               tenantId: auth.tenantId,
-              paired: true,
+              paired: true, archivedAt: null,
               deviceTokenVersion: auth.version
             } });
           }
-        } catch {
+        } catch (error) {
+          if (!(error instanceof jwt.JsonWebTokenError) && !(error instanceof jwt.TokenExpiredError)) { client.ws.close(1011, 'Unable to validate device'); break; }
           client.ws.send(JSON.stringify({ type: 'DEVICE_AUTH_FAILED' }));
           client.ws.close(1008, 'Invalid device credentials');
           break;
@@ -187,37 +196,20 @@ async function handleMessage(client: ConnectedClient, msg: any) {
           }
         });
 
-        // Send active playlist / content data back to player
-        const activePlaylist = screen.activePlaylistId
-          ? await prisma.playlist.findUnique({
-            where: { id: screen.activePlaylistId, tenantId: screen.tenantId },
-              include: { items: { include: { media: true, layout: true }, orderBy: { orderIndex: 'asc' } } }
-            })
-          : await prisma.playlist.findFirst({
-              where: { tenantId: screen.tenantId },
-              include: { items: { include: { media: true, layout: true }, orderBy: { orderIndex: 'asc' } } }
-            });
-
-        const activeAlert = await prisma.emergencyAlert.findFirst({
-          where: { tenantId: screen.tenantId, active: true, targets: { some: { screenId: screen.id } } },
-          orderBy: { createdAt: 'desc' }
-        });
-        const activeLayout = screen.activeLayoutId
-          ? await prisma.layout.findFirst({ where: { id: screen.activeLayoutId, tenantId: screen.tenantId } })
-          : null;
         const manifest = await buildScreenManifest(screen.id);
-
+        const activeAlert = await getActiveAlert(screen.id, screen.tenantId);
         client.ws.send(JSON.stringify({
           type: 'PAIRING_SUCCESS',
           screenId: screen.id,
           screenName: screen.name,
           volume: screen.volume,
           orientation: screen.orientation,
-          activePlaylist: playlistDto(activePlaylist, true),
-          activeLayout: playerLayoutDto(activeLayout),
+          activePlaylist: manifest?.activePlaylist ?? null,
+          activeLayout: manifest?.activeLayout ?? null,
           activeAlert: alertDto(activeAlert),
           manifestVersion: manifest?.version,
-          manifestChecksum: manifest?.checksum
+          manifestChecksum: manifest?.checksum,
+          campaigns: manifest?.campaigns ?? []
         }));
         await deliverPendingCommands(client);
 
@@ -226,8 +218,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
           screen.tenantId
         );
       } else {
-        if (client.authTimer) clearTimeout(client.authTimer);
-        client.ws.send(JSON.stringify({ type: 'PAIRING_PENDING', pairingCode: msg.pairingCode }));
+        client.ws.close(1008, 'Device credentials required');
       }
       break;
     }
@@ -239,7 +230,12 @@ async function handleMessage(client: ConnectedClient, msg: any) {
         if (Number.isFinite(msg.cpuUsagePercent)) telemetry.cpuUsagePercent = clampInteger(msg.cpuUsagePercent, 0, 100);
         if (Number.isFinite(msg.storageFreeMb)) telemetry.storageFreeMb = Math.max(0, Math.round(msg.storageFreeMb));
         if (typeof msg.currentMediaName === 'string' && msg.currentMediaName.trim()) telemetry.currentMediaName = msg.currentMediaName.trim().slice(0, 255);
-        if (typeof msg.currentMediaId === 'string' && msg.currentMediaId.trim()) telemetry.currentMediaId = msg.currentMediaId.trim();
+        if (Object.prototype.hasOwnProperty.call(msg, 'currentMediaId')) {
+          const media = typeof msg.currentMediaId === 'string' ? await prisma.media.findFirst({ where: { id: msg.currentMediaId, tenantId: client.tenantId, archivedAt: null } }) : null;
+          telemetry.currentMediaId = media?.id ?? null;
+          telemetry.currentMediaName = media?.name ?? null;
+          telemetry.currentMediaAt = media ? new Date() : null;
+        }
         await prisma.screen.update({
           where: { id: client.screenId },
           data: telemetry
@@ -257,18 +253,21 @@ async function handleMessage(client: ConnectedClient, msg: any) {
           },
           client.tenantId
         );
+        await deliverPendingCommands(client, false);
       }
       break;
     }
 
     case 'REGISTER_ADMIN': {
       try {
-        const auth = jwt.verify(client.sessionToken || msg.token || '', getAdminJwtSecret(), { algorithms: ['HS256'] }) as any;
-        const user = await prisma.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, active: true, tenant: { status: 'ACTIVE' } } });
-        if (!user) throw new Error('INACTIVE_ADMIN');
+        const token = client.sessionToken || msg.token || '';
+        const session = await verifyAdminSession(token);
         client.type = 'ADMIN';
-        client.tenantId = auth.tenantId;
-        client.ownerId = auth.userId;
+        client.tenantId = session.user.tenantId;
+        client.ownerId = session.user.id;
+        client.sessionToken = token;
+        client.sessionId = session.sessionId;
+        client.expiresAt = session.expiresAt;
         if (client.authTimer) clearTimeout(client.authTimer);
       } catch {
         client.ws.close(1008, 'Unauthorized');
@@ -276,33 +275,6 @@ async function handleMessage(client: ConnectedClient, msg: any) {
       break;
     }
 
-    case 'SCREENSHOT_RESULT': {
-      if (
-        client.screenId &&
-        typeof msg.commandId === 'string' &&
-        typeof msg.imageDataUrl === 'string' &&
-        msg.imageDataUrl.startsWith('data:image/jpeg;base64,') &&
-        msg.imageDataUrl.length <= 5 * 1024 * 1024
-      ) {
-        const command = await completeCommand(client.screenId, msg.commandId, true, 'Screenshot recebido pelo canal legado do simulador.', 'TAKE_SCREENSHOT');
-        if (!command) break;
-        await prisma.screen.update({
-          where: { id: client.screenId },
-          data: { lastScreenshotUrl: msg.imageDataUrl }
-        });
-        broadcastToAdmins(
-          {
-            type: 'SCREENSHOT_UPDATED',
-            screenId: client.screenId,
-            commandId: msg.commandId,
-            imageUrl: msg.imageDataUrl,
-            capturedAt: new Date().toISOString()
-          },
-          client.tenantId
-        );
-      }
-      break;
-    }
     case 'COMMAND_RESULT': {
       if (client.screenId && typeof msg.commandId === 'string') {
         const action = typeof msg.action === 'string' ? msg.action.slice(0, 40).toUpperCase() : 'UNKNOWN';
@@ -388,8 +360,16 @@ export async function sendManifestToScreen(
 ): Promise<boolean> {
   const manifest = await buildScreenManifest(screenId);
   if (!manifest) return false;
+  const client = [...activeConnections].find(c => c.type === 'PLAYER' && c.screenId === screenId && c.ws.readyState === WebSocket.OPEN);
+  if (!client) return false;
+  const legacy = client.webSimulator ? {
+    activePlaylist: manifest.activePlaylist, activeLayout: manifest.activeLayout,
+    campaigns: manifest.campaigns, volume: manifest.screen.volume, orientation: manifest.screen.orientation,
+    activeAlert: alertDto(await getActiveAlert(screenId, client.tenantId!))
+  } : {};
   return sendCommandToScreen(screenId, {
-    type: 'MANIFEST_UPDATED',
+    ...legacy,
+    type: client.webSimulator ? 'CONTENT_UPDATED' : 'MANIFEST_UPDATED',
     deviceId: screenId,
     manifestVersion: manifest.version,
     manifestChecksum: manifest.checksum,
@@ -402,32 +382,23 @@ export async function sendManifestToScreen(
   });
 }
 
-async function deliverPendingCommands(client: ConnectedClient): Promise<void> {
-  if (!client.screenId || client.ws.readyState !== WebSocket.OPEN) return;
+async function deliverPendingCommands(client: ConnectedClient, reconnect = true): Promise<void> {
+  if (!client.screenId || client.ws.readyState !== WebSocket.OPEN || client.delivering) return;
+  client.delivering = true;
+  try {
   const now = new Date();
   await prisma.remoteCommand.updateMany({
     where: { screenId: client.screenId, status: { in: ['PENDING', 'SENT'] }, expiresAt: { lte: now } },
     data: { status: 'EXPIRED', completedAt: new Date(), success: false, message: 'Comando expirado após 24 horas.' }
   });
   const commands = await prisma.remoteCommand.findMany({
-    where: { screenId: client.screenId, status: { in: ['PENDING', 'SENT'] }, expiresAt: { gt: now } },
+    where: { screenId: client.screenId, status: { in: ['PENDING', 'SENT'] }, expiresAt: { gt: now }, ...(reconnect ? {} : { OR: [{ sentAt: null }, { sentAt: { lt: new Date(Date.now() - 60_000) } }] }) },
     orderBy: { createdAt: 'asc' },
     take: 50
   });
   for (const command of commands) {
     if (command.action === 'SYNC') {
-      const manifest = await buildScreenManifest(client.screenId);
-      if (!manifest) continue;
-      client.ws.send(JSON.stringify({
-        type: 'MANIFEST_UPDATED',
-        commandId: command.commandId,
-        deviceId: client.screenId,
-        createdAt: command.createdAt.toISOString(),
-        expiresAt: command.expiresAt.toISOString(),
-        manifestVersion: manifest.version,
-        manifestChecksum: manifest.checksum,
-        forceReload: true
-      }));
+      await sendManifestToScreen(client.screenId, true, command);
     } else {
       let payload: any;
       try { payload = command.payloadJson ? JSON.parse(command.payloadJson) : undefined; } catch { payload = undefined; }
@@ -435,13 +406,14 @@ async function deliverPendingCommands(client: ConnectedClient): Promise<void> {
         formatCommandForDevice(command.action, command.commandId, client.screenId, command.createdAt, command.expiresAt, payload)
       ));
     }
-    await prisma.remoteCommand.update({ where: { commandId: command.commandId }, data: { status: 'SENT', sentAt: new Date() } });
+    await prisma.remoteCommand.updateMany({ where: { commandId: command.commandId, status: { in: ['PENDING', 'SENT'] } }, data: { status: 'SENT', sentAt: new Date() } });
   }
+  } finally { client.delivering = false; }
 }
 
-async function completeCommand(screenId: string, commandId: string, success: boolean, message?: string, action?: string) {
+export async function completeCommand(screenId: string, commandId: string, success: boolean, message?: string, action?: string) {
   const command = await prisma.remoteCommand.findFirst({ where: { commandId, screenId } });
-  if (!command || (action && command.action !== action)) return null;
+  if (!command || (action && command.action !== action) || (command.action === 'TAKE_SCREENSHOT' && success)) return null;
   if (['SUCCEEDED', 'FAILED', 'EXPIRED'].includes(command.status)) return null;
   if (command.expiresAt <= new Date()) {
     await prisma.remoteCommand.update({
@@ -450,10 +422,11 @@ async function completeCommand(screenId: string, commandId: string, success: boo
     });
     return null;
   }
-  return prisma.remoteCommand.update({
-    where: { commandId },
+  const result = await prisma.remoteCommand.updateMany({
+    where: { commandId, status: { in: ['PENDING', 'SENT'] }, expiresAt: { gt: new Date() } },
     data: { status: success ? 'SUCCEEDED' : 'FAILED', success, message, completedAt: new Date() }
   });
+  return result.count ? command : null;
 }
 
 export function broadcastToAdmins(data: any, tenantId?: string) {
@@ -475,4 +448,11 @@ export function disconnectTenant(tenantId: string) {
       connection.ws.close(4003, 'Tenant suspended');
     }
   }
+}
+
+export function disconnectAdminSessions(userId: string, sessionId?: string) {
+  for (const client of activeConnections) if (client.type === 'ADMIN' && client.ownerId === userId && (!sessionId || client.sessionId === sessionId)) client.ws.close(4001, 'Session changed');
+}
+export function disconnectScreen(screenId: string) {
+  for (const client of activeConnections) if (client.screenId === screenId) { client.ws.send(JSON.stringify({ type: 'DEVICE_AUTH_FAILED' })); client.ws.close(4003, 'Device revoked'); }
 }

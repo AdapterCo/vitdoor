@@ -3,8 +3,8 @@ import { AlertTriangle, Siren } from 'lucide-react';
 
 interface EmergencyTabProps {
   screens: any[];
-  onTriggerEmergency: (title: string, message: string, alertType: string, screenIds: string[]) => Promise<void>;
-  onClearEmergency: (screenIds: string[]) => Promise<void>;
+  onTriggerEmergency: (title: string, message: string, alertType: string, screenIds: string[]) => Promise<boolean>;
+  onClearEmergency: (screenIds: string[]) => Promise<boolean>;
 }
 
 export const EmergencyTab: React.FC<EmergencyTabProps> = ({ screens, onTriggerEmergency, onClearEmergency }) => {
@@ -16,7 +16,7 @@ export const EmergencyTab: React.FC<EmergencyTabProps> = ({ screens, onTriggerEm
   const handleTrigger = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!title || !message || screenIds.length === 0) return;
-    await onTriggerEmergency(title, message, alertType, screenIds);
+    if (!await onTriggerEmergency(title, message, alertType, screenIds)) return;
     alert(`Alerta enviado para ${screenIds.length} ${screenIds.length === 1 ? 'tela' : 'telas'}.`);
   };
 
@@ -76,7 +76,7 @@ export const EmergencyTab: React.FC<EmergencyTabProps> = ({ screens, onTriggerEm
               className="btn-secondary"
               style={{ color: '#38bdf8', borderColor: 'rgba(56,189,248,0.3)' }}
               onClick={async () => {
-                await onClearEmergency(screenIds);
+                if (!await onClearEmergency(screenIds)) return;
                 alert(screenIds.length > 0 ? `Alerta encerrado nas ${screenIds.length} telas selecionadas.` : 'Alerta encerrado em TODAS as telas da conta.');
               }}
             >

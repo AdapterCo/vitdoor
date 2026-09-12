@@ -6,7 +6,7 @@ interface ScreensTabProps {
   playlists: any[];
   layouts: any[];
   onPairScreen: (data: any) => Promise<boolean>;
-  onUpdateScreen: (screenId: string, data: any) => void;
+  onUpdateScreen: (screenId: string, data: any) => Promise<boolean>;
   onRemoteCommand: (screenId: string, action: string, payload?: any) => void;
   onDeleteScreen: (screenId: string) => void;
   onUpdatePlayerApp: (payload: { apkUrl: string; version: string; checksum?: string; screenIds?: string[] }) => Promise<void>;
@@ -246,7 +246,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                         setEditLocationName(screen.locationName || '');
                         setEditGroupName(screen.groupName || 'Geral');
                         setEditOrientation(screen.orientation || 'HORIZONTAL');
-                        setEditMaintenancePin(screen.maintenancePin || '');
+                        setEditMaintenancePin('');
                       }}
                     >
                       <Pencil size={14} color="#a855f7" />
@@ -507,18 +507,18 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
               Altere o nome, localização, grupo e orientação de exibição desta tela.
             </p>
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
               const pin = editMaintenancePin.trim();
               if (pin && !/^\d{4,6}$/.test(pin)) { alert('O PIN de manutenção deve ter de 4 a 6 dígitos.'); return; }
-              onUpdateScreen(editingScreen.id, {
+              const saved = await onUpdateScreen(editingScreen.id, {
                 name: editName,
                 locationName: editLocationName,
                 groupName: editGroupName,
                 orientation: editOrientation,
-                maintenancePin: pin
+                ...(pin ? { maintenancePin: pin } : {})
               });
-              setEditingScreen(null);
+              if (saved) setEditingScreen(null);
             }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1' }}>Nome da Tela *</label>
@@ -557,9 +557,9 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                   type="text"
                   inputMode="numeric"
                   className="input-field"
-                  value={editMaintenancePin}
+                  placeholder="Deixe vazio para manter o PIN atual" value={editMaintenancePin}
                   onChange={(e) => setEditMaintenancePin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="usado pra destravar a TV no local; em branco = remover"
+
                 />
               </div>
 

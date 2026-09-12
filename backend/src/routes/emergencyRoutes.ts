@@ -1,8 +1,10 @@
-import { Router, type Request, type Response } from 'express';
+import { Router } from '../lib/router.js';
+import { type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { sendCommandToScreen } from '../lib/websocket.js';
 import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
 import { alertDto } from '../lib/dto.js';
+import { HttpError, integer, text } from '../lib/validation.js';
 
 export const emergencyRoutes = Router();
 emergencyRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'OPERATOR'));
@@ -10,7 +12,7 @@ emergencyRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'OPERATO
 emergencyRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const alerts = await prisma.emergencyAlert.findMany({
-    where: { tenantId, active: true },
+    where: { tenantId, active: true, expiresAt: { gt: new Date() } },
     include: { targets: true },
     orderBy: { createdAt: 'desc' }
   });
@@ -22,10 +24,12 @@ emergencyRoutes.post('/trigger', async (req: Request, res: Response): Promise<an
   const { title, message, alertType, durationSeconds } = req.body;
   const screenIds = normalizeIds(req.body.screenIds);
   if (!title || !message || screenIds.length === 0) return res.status(400).json({ error: 'Título, mensagem e ao menos uma tela são obrigatórios.' });
-  const screens = await prisma.screen.findMany({ where: { tenantId, id: { in: screenIds } }, select: { id: true } });
+  const screens = await prisma.screen.findMany({ where: { tenantId, archivedAt: null, id: { in: screenIds } }, select: { id: true } });
   if (screens.length !== screenIds.length) return res.status(400).json({ error: 'Uma ou mais telas são inválidas.' });
+  const duration = integer(durationSeconds ?? 60, 'Duração', 1, 86400);
+  if (alertType && !['INFO', 'WARNING', 'EVACUATION', 'URGENT'].includes(alertType)) throw new HttpError(400, 'Tipo de alerta inválido.');
   const alert = await prisma.emergencyAlert.create({
-    data: { tenantId, createdById: req.auth!.userId, title, message, alertType: alertType || 'WARNING', durationSeconds: durationSeconds ? parseInt(durationSeconds, 10) : 60, active: true,
+    data: { tenantId, createdById: req.auth!.userId, title: text(title, 'Título'), message: text(message, 'Mensagem', 2000), alertType: alertType || 'WARNING', durationSeconds: duration, expiresAt: new Date(Date.now() + duration * 1000), active: true,
       targets: { create: screenIds.map((screenId) => ({ screenId })) } },
     include: { targets: true }
   });
@@ -36,6 +40,9 @@ emergencyRoutes.post('/trigger', async (req: Request, res: Response): Promise<an
 emergencyRoutes.post('/clear', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.body.tenantId);
   const screenIds = normalizeIds(req.body.screenIds);
+  if (screenIds.length && await prisma.screen.count({ where: { id: { in: screenIds }, tenantId, archivedAt: null } }) !== screenIds.length) {
+    return res.status(403).json({ error: 'Uma ou mais telas não pertencem a este cliente.' });
+  }
 
   if (screenIds.length === 0) {
     // Clear all emergency alerts for tenant

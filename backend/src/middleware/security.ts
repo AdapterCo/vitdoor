@@ -1,6 +1,9 @@
 import type { NextFunction, Request, Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 
+export const passwordRateLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false,
+  keyGenerator: (req) => req.auth!.userId, message: { error: 'Muitas tentativas de troca de senha. Aguarde 15 minutos.' } });
+
 function limitedMessage(message: string) {
   return (_req: Request, res: Response) => {
     res.status(429).json({ error: message });

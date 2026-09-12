@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { passwordError } from '../lib/validation.js';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 
@@ -7,7 +8,7 @@ async function main() {
   const password = process.env.INITIAL_ADMIN_PASSWORD;
   const name = process.env.INITIAL_ADMIN_NAME?.trim() || 'Administrador VitDoor';
 
-  if (!email || !password || password.length < 12) {
+  if (!email || !password || passwordError(password)) {
     throw new Error('Defina INITIAL_ADMIN_EMAIL e INITIAL_ADMIN_PASSWORD com pelo menos 12 caracteres.');
   }
 
@@ -27,7 +28,7 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email },
-    update: { name, passwordHash, active: true, role: 'SUPER_ADMIN', tenantId: tenant.id },
+    update: { name, passwordHash, sessionVersion: { increment: 1 }, active: true, role: 'SUPER_ADMIN', tenantId: tenant.id },
     create: { name, email, passwordHash, active: true, role: 'SUPER_ADMIN', tenantId: tenant.id }
   });
 

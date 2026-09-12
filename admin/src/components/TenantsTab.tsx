@@ -3,7 +3,7 @@ import { Building2, Plus, Shield, CheckCircle2, Globe, HardDrive, Tv } from 'luc
 
 interface TenantsTabProps {
   tenants: any[];
-  onCreateTenant: (tenantData: any) => void;
+  onCreateTenant: (tenantData: any) => Promise<boolean | undefined>;
   onUpdateTenant: (tenantId: string, data: { maxScreens: number; status: string }) => Promise<void>;
 }
 
@@ -20,10 +20,10 @@ export const TenantsTab: React.FC<TenantsTabProps> = ({ tenants, onCreateTenant,
   const [editMaxScreens, setEditMaxScreens] = useState(1);
   const [editStatus, setEditStatus] = useState('ACTIVE');
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !slug || !adminName || !adminEmail || adminPassword.length < 8) return;
-    onCreateTenant({
+    if (!name || !slug || !adminName || !adminEmail || adminPassword.length < 12 || new TextEncoder().encode(adminPassword).length > 72) return;
+    if (!await onCreateTenant({
       name,
       slug,
       maxScreens,
@@ -31,7 +31,8 @@ export const TenantsTab: React.FC<TenantsTabProps> = ({ tenants, onCreateTenant,
       adminName,
       adminEmail,
       adminPassword
-    });
+    })) return;
+    setAdminPassword('');
     setName('');
     setSlug('');
     setIsModalOpen(false);
@@ -164,7 +165,7 @@ export const TenantsTab: React.FC<TenantsTabProps> = ({ tenants, onCreateTenant,
               </div>
               <input className="input-field" placeholder="Nome do administrador" value={adminName} onChange={(e) => setAdminName(e.target.value)} required />
               <input className="input-field" type="email" placeholder="E-mail de acesso" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} required />
-              <input className="input-field" type="password" minLength={8} placeholder="Senha inicial (mínimo 8 caracteres)" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} required />
+              <input className="input-field" type="password" minLength={12} placeholder="Senha inicial (mínimo 12 caracteres)" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} required />
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>

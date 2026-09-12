@@ -11,3 +11,7 @@ backend/prisma/*.db
 backend/prisma/*.db-journal
 .runlogs/
 secrets/
+
+backend/private/
+**/test-results/
+**/playwright-report/

@@ -1,16 +1,19 @@
-import { Router, Request, Response } from 'express';
+import { localStoragePath } from '../lib/storage.js';
+import { Router } from '../lib/router.js';
+import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { sendCommandToScreen, sendManifestToScreen, cleanCode, formatCommandForDevice } from '../lib/websocket.js';
+import { sendCommandToScreen, sendManifestToScreen, cleanCode, formatCommandForDevice, disconnectScreen } from '../lib/websocket.js';
 import { requireMutationRoles, requireSuperAdmin, tenantScope } from '../middleware/auth.js';
 import { layoutDto, playlistDto, screenDto } from '../lib/dto.js';
-import { randomUUID } from 'crypto';
+import { HttpError, integer, text } from '../lib/validation.js';
+import { randomUUID, randomInt } from 'crypto';
 
 export const screenRoutes = Router();
 screenRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'OPERATOR'));
 
 function generatePairingCode(): string {
-  const num1 = Math.floor(100 + Math.random() * 900);
-  const num2 = Math.floor(100 + Math.random() * 900);
+  const num1 = randomInt(100, 1000);
+  const num2 = randomInt(100, 1000);
   return `${num1}-${num2}`;
 }
 
@@ -18,7 +21,7 @@ function generatePairingCode(): string {
 screenRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const screens = await prisma.screen.findMany({
-    where: { tenantId },
+    where: { tenantId, archivedAt: null },
     include: {
       activePlaylist: true,
       activeLayout: true
@@ -46,68 +49,20 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
   if (pin.error) return res.status(400).json({ error: pin.error });
 
   const normalizedPairingCode = cleanCode(pairingCode);
-  const pairingSessions = await prisma.pairingSession.findMany({ where: { claimedAt: null, expiresAt: { gt: new Date() } } });
-  const pairingSession = pairingSessions.find((session) => cleanCode(session.code) === normalizedPairingCode);
-  if (!pairingSession) return res.status(410).json({ error: 'Código de pareamento inválido, expirado ou já utilizado.' });
-
-  // Check for default playlist to attach
-  const defaultPlaylist = await prisma.playlist.findFirst({
-    where: { tenantId: scopedTenantId }
-  });
-
-  const [tenant, screenCount] = await Promise.all([
-    prisma.tenant.findUnique({ where: { id: scopedTenantId } }),
-    prisma.screen.count({ where: { tenantId: scopedTenantId } })
-  ]);
-  if (!tenant || tenant.status !== 'ACTIVE') return res.status(403).json({ error: 'Cliente inativo ou suspenso.' });
-
-  let screen = await prisma.screen.findUnique({ where: { pairingCode: normalizedPairingCode } });
-  if (!tenant.unlimitedScreens && !screen && screenCount >= tenant.maxScreens) {
-    return res.status(403).json({
-      error: `Limite contratado atingido (${tenant.maxScreens} dispositivo${tenant.maxScreens === 1 ? '' : 's'}). Adquira outra licença para conectar uma nova tela.`
-    });
-  }
-
-  if (screen && screen.tenantId !== scopedTenantId) {
-    return res.status(409).json({ error: 'Este código já pertence a outro cliente.' });
-  }
-
-  if (screen) {
-    screen = await prisma.screen.update({
-      where: { id: screen.id },
-      data: {
-        tenantId: scopedTenantId,
-        name: name || screen.name,
-        locationName: locationName || screen.locationName,
-        groupName: groupName || screen.groupName,
-        orientation: orientation || screen.orientation,
-        paired: true,
-        status: 'OFFLINE',
-        activePlaylistId: screen.activePlaylistId || defaultPlaylist?.id || null,
-        ...(pin.provided ? { maintenancePin: pin.value } : {})
-      }
-    });
-  } else {
-    screen = await prisma.screen.create({
-      data: {
-        tenantId: scopedTenantId,
-        createdById: req.auth!.userId,
-        name: name || 'Nova Tela Mídia Indoor',
-        pairingCode: normalizedPairingCode,
-        paired: true,
-        locationName: locationName || 'Loja Principal',
-        groupName: groupName || 'Geral',
-        orientation: orientation || 'HORIZONTAL',
-        status: 'OFFLINE',
-        activePlaylistId: defaultPlaylist?.id || null,
-        ...(pin.provided ? { maintenancePin: pin.value } : {})
-      }
-    });
-  }
-
-  await prisma.pairingSession.update({
-    where: { id: pairingSession.id },
-    data: { screenId: screen.id, claimedAt: new Date() }
+  if (!/^\d{6}$/.test(normalizedPairingCode)) throw new HttpError(400, 'Código inválido.');
+  const screen = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${scopedTenantId} FOR UPDATE`;
+    const session = await tx.pairingSession.findUnique({ where: { code: `${normalizedPairingCode.slice(0, 3)}-${normalizedPairingCode.slice(3)}` } });
+    if (!session || session.claimedAt || session.expiresAt <= new Date()) throw new HttpError(410, 'Código inválido, expirado ou já utilizado.');
+    const claimed = await tx.pairingSession.updateMany({ where: { id: session.id, claimedAt: null, expiresAt: { gt: new Date() } }, data: { claimedAt: new Date() } });
+    if (!claimed.count) throw new HttpError(409, 'Código já utilizado.');
+    const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: scopedTenantId } });
+    const count = await tx.screen.count({ where: { tenantId: scopedTenantId, archivedAt: null } });
+    if (!tenant.unlimitedScreens && count >= tenant.maxScreens) throw new HttpError(403, 'Limite de telas contratado atingido.');
+    const defaultPlaylist = await tx.playlist.findFirst({ where: { tenantId: scopedTenantId }, orderBy: { createdAt: 'asc' } });
+    const created = await tx.screen.create({ data: { tenantId: scopedTenantId, createdById: req.auth!.userId, name: text(name || 'Nova Tela', 'Nome'), pairingCode: normalizedPairingCode, paired: true, locationName: text(locationName || 'Loja Principal', 'Local'), groupName: text(groupName || 'Geral', 'Grupo'), orientation: normalizeOrientation(orientation), activePlaylistId: defaultPlaylist?.id ?? null, maintenancePin: pin.value ?? null } });
+    await tx.pairingSession.update({ where: { id: session.id }, data: { screenId: created.id, tokenVersion: created.deviceTokenVersion } });
+    return created;
   });
 
   return res.json(screenDto(screen));
@@ -117,7 +72,7 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
 screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const scopedTenantId = tenantScope(req, req.body.tenantId);
-  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId } });
+  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, archivedAt: null } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
   const { name, locationName, groupName, orientation, volume, activePlaylistId, activeLayoutId, maintenancePin } = req.body;
   const playlistProvided = Object.prototype.hasOwnProperty.call(req.body, 'activePlaylistId');
@@ -140,8 +95,8 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
       name,
       locationName,
       groupName,
-      orientation,
-      volume: volume !== undefined ? parseInt(volume, 10) : undefined,
+      orientation: orientation !== undefined ? normalizeOrientation(orientation) : undefined,
+      volume: volume !== undefined ? integer(volume, 'Volume', 0, 100) : undefined,
       activePlaylistId: playlistProvided ? (activePlaylistId || null) : undefined,
       activeLayoutId: layoutProvided ? (activeLayoutId || null) : undefined,
       maintenancePin: pin.provided ? pin.value : undefined,
@@ -163,7 +118,7 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
 screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const scopedTenantId = tenantScope(req, req.body.tenantId);
-  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId } });
+  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, archivedAt: null } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
   const action = typeof req.body.action === 'string' ? req.body.action.trim().toUpperCase() : '';
   if (action === 'UPDATE_APP' && req.auth?.role !== 'SUPER_ADMIN') {
@@ -210,7 +165,7 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
   } else if (action === 'MAINTENANCE_LOCK') {
     await prisma.screen.update({ where: { id }, data: { maintenanceUntil: null } });
   }
-  if (sent) await prisma.remoteCommand.update({ where: { commandId }, data: { status: 'SENT', sentAt: new Date() } });
+  if (sent) await prisma.remoteCommand.updateMany({ where: { commandId, status: { in: ['PENDING', 'SENT'] } }, data: { status: 'SENT', sentAt: new Date() } });
 
   return res.status(202).json({
     commandId,
@@ -226,7 +181,7 @@ screenRoutes.post('/:id/remote-command', async (req: Request, res: Response): Pr
 
 // Total de telas pareadas em toda a plataforma (todos os clientes) — para a confirmação da atualização em massa.
 screenRoutes.get('/fleet/count', requireSuperAdmin, async (_req: Request, res: Response): Promise<any> => {
-  const paired = await prisma.screen.count({ where: { paired: true } });
+  const paired = await prisma.screen.count({ where: { archivedAt: null, paired: true } });
   return res.json({ paired });
 });
 
@@ -240,7 +195,7 @@ screenRoutes.post('/fleet/update-app', requireSuperAdmin, async (req: Request, r
     : null;
 
   const screens = await prisma.screen.findMany({
-    where: { paired: true, ...(screenIds ? { id: { in: screenIds } } : {}) },
+    where: { archivedAt: null, paired: true, ...(screenIds ? { id: { in: screenIds } } : {}) },
     select: { id: true, tenantId: true }
   });
   if (!screens.length) return res.status(400).json({ error: 'Nenhuma tela pareada encontrada para atualizar.' });
@@ -268,7 +223,7 @@ screenRoutes.post('/fleet/update-app', requireSuperAdmin, async (req: Request, r
     if (sent) deliveredIds.push(command.commandId);
   }
   if (deliveredIds.length) {
-    await prisma.remoteCommand.updateMany({ where: { commandId: { in: deliveredIds } }, data: { status: 'SENT', sentAt: new Date() } });
+    await prisma.remoteCommand.updateMany({ where: { commandId: { in: deliveredIds }, status: { in: ['PENDING', 'SENT'] } }, data: { status: 'SENT', sentAt: new Date() } });
   }
 
   return res.status(202).json({
@@ -303,9 +258,14 @@ screenRoutes.get('/:id/commands/:commandId', async (req: Request, res: Response)
 screenRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const scopedTenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId } });
+  const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, archivedAt: null } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
-  await prisma.screen.delete({ where: { id } });
+  await prisma.$transaction([
+    ...(existing.screenshotPath ? [prisma.storageDeletion.create({ data: { storagePath: existing.screenshotPath } })] : []),
+    prisma.screen.update({ where: { id }, data: { lastScreenshotUrl: null, screenshotPath: null, archivedAt: new Date(), paired: false, status: 'OFFLINE', deviceTokenVersion: { increment: 1 }, activePlaylistId: null, activeLayoutId: null, currentMediaId: null, currentMediaAt: null, maintenancePin: null } }),
+    prisma.ticketQueue.updateMany({ where: { screenId: id }, data: { screenId: null } })
+  ]);
+  disconnectScreen(id);
   return res.json({ success: true });
 });
 
@@ -377,3 +337,16 @@ function assertAllowedApkUrl(raw: string): string {
   if (!url.pathname.toLowerCase().endsWith('.apk')) throw new Error('A URL deve apontar para um arquivo .apk.');
   return url.toString();
 }
+
+function normalizeOrientation(value: unknown): string {
+  const normalized = value || 'HORIZONTAL';
+  if (!['HORIZONTAL', 'VERTICAL', '90', '180', '270', 'ROTATE_90', 'ROTATE_180', 'ROTATE_270'].includes(String(normalized))) throw new HttpError(400, 'Orientação inválida.');
+  return String(normalized);
+}
+
+screenRoutes.get('/:id/screenshot', async (req, res) => {
+  const screen = await prisma.screen.findFirst({ where: { id: req.params.id, tenantId: tenantScope(req), archivedAt: null } });
+  if (!screen?.screenshotPath?.startsWith('private:')) throw new HttpError(404, 'Screenshot não disponível. Solicite uma nova captura.');
+  res.setHeader('Cache-Control', 'private, no-store');
+  return res.sendFile(localStoragePath(screen.screenshotPath.slice(8), true));
+});

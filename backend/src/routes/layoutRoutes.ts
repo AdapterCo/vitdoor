@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import { Router } from '../lib/router.js';
+import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { requireMutationRoles, tenantScope } from '../middleware/auth.js';
 import { sendManifestToScreen } from '../lib/websocket.js';
@@ -35,7 +36,7 @@ layoutRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
       canvasConfigJson: safeConfig, isTemplate: !!isTemplate
     }
   });
-  refreshTickerFeeds(safeConfig);
+  await refreshTickerFeeds(safeConfig);
   await publishLayout(tenantId, req.auth!.userId, layout, screenIds);
   return res.status(201).json(layoutDto(layout));
 });
@@ -55,16 +56,16 @@ layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
 
   const safeConfig = await prepareCanvasConfig(tenantId, req.auth!.userId, canvasConfigJson);
   if (!safeConfig) return res.status(400).json({ error: 'O layout contém mídia ausente ou pertencente a outro usuário.' });
-  const layout = await prisma.layout.update({
-    where: { id },
-    data: { name, description, orientation, canvasConfigJson: safeConfig }
+  await refreshTickerFeeds(safeConfig);
+  const layout = await prisma.$transaction(async tx => {
+    const updated = await tx.layout.update({ where: { id }, data: { name, description, orientation, canvasConfigJson: safeConfig } });
+    await tx.screen.updateMany({ where: { tenantId, activeLayoutId: id, id: { notIn: screenIds } }, data: { activeLayoutId: null } });
+    await tx.screen.updateMany({ where: { tenantId, archivedAt: null, id: { in: screenIds } }, data: { activeLayoutId: id } });
+    await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
+    return updated;
   });
-  refreshTickerFeeds(safeConfig);
-  const removed = existing.screens.map((screen) => screen.id).filter((screenId) => !screenIds.includes(screenId));
-  await prisma.screen.updateMany({ where: { tenantId, activeLayoutId: id, id: { notIn: screenIds } }, data: { activeLayoutId: null } });
-  await publishLayout(tenantId, req.auth!.userId, layout, screenIds, false);
-  const affectedIds = await bumpOwnerManifestVersions(tenantId);
-  for (const screenId of affectedIds) await sendManifestToScreen(screenId, removed.includes(screenId));
+  const affected = await prisma.screen.findMany({ where: { tenantId, archivedAt: null }, select: { id: true } });
+  for (const screen of affected) await sendManifestToScreen(screen.id, true).catch(() => console.error('Layout publication pending'));
   return res.json(layoutDto(layout));
 });
 
@@ -73,7 +74,10 @@ layoutRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> =>
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const existing = await prisma.layout.findFirst({ where: { id, tenantId }, include: { screens: { select: { id: true } } } });
   if (!existing) return res.status(404).json({ error: 'Layout não encontrado.' });
-  await prisma.layout.delete({ where: { id } });
+  await prisma.$transaction(async tx => {
+    await tx.layout.delete({ where: { id } });
+    await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
+  });
   const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
   for (const screenId of affectedIds) await sendManifestToScreen(screenId, true);
   return res.json({ success: true });
@@ -90,7 +94,7 @@ async function prepareCanvasConfig(tenantId: string, userId: string, value: any)
       : [{ id: 'main', name: 'Área principal', widthPercent: 70 }, { id: 'side', name: 'Área lateral', widthPercent: 30 }];
   if (config.zones.length !== expectedZones.length || config.zones.some((zone: any, index: number) => zone?.id !== expectedZones[index].id)) return null;
   const ids = [...new Set(config.zones.flatMap((zone: any) => Array.isArray(zone.items) ? zone.items.map((item: any) => item?.mediaId) : []).filter((id: any) => typeof id === 'string'))] as string[];
-  const medias = await prisma.media.findMany({ where: { tenantId, id: { in: ids } } });
+  const medias = await prisma.media.findMany({ where: { tenantId, archivedAt: null, id: { in: ids } } });
   if (medias.length !== ids.length) return null;
   const byId = new Map(medias.map((media) => [media.id, media]));
   let audioZoneCount = 0;
@@ -157,11 +161,11 @@ function buildTicker(raw: any): TickerConfig | null {
 }
 
 /** Dispara a primeira carga dos feeds recém-configurados sem bloquear a resposta. */
-function refreshTickerFeeds(configJson: string): void {
+async function refreshTickerFeeds(configJson: string): Promise<void> {
   try {
     const config = JSON.parse(configJson);
     for (const theme of config?.ticker?.themes ?? []) {
-      if (typeof theme?.url === 'string') void refreshFeed(theme.url);
+      if (typeof theme?.url === 'string') await refreshFeed(theme.url);
     }
   } catch {
     // configJson vem de prepareCanvasConfig e sempre é JSON válido
@@ -170,7 +174,7 @@ function refreshTickerFeeds(configJson: string): void {
 
 async function validateScreens(tenantId: string, _userId: string, screenIds: string[]): Promise<boolean> {
   if (screenIds.length === 0) return true;
-  return await prisma.screen.count({ where: { tenantId, id: { in: screenIds } } }) === screenIds.length;
+  return await prisma.screen.count({ where: { tenantId, archivedAt: null, id: { in: screenIds } } }) === screenIds.length;
 }
 
 function normalizeIds(value: unknown): string[] {

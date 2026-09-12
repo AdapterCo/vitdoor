@@ -3,13 +3,16 @@ import { refreshFeed } from './rssService.js';
 import { bumpScreenManifestVersions } from './manifest.js';
 import { sendManifestToScreen } from './websocket.js';
 
+let running = false;
 const REFRESH_INTERVAL_MS = 15 * 60_000;
 
 /** Atualiza todos os feeds RSS em uso pelos rodapés de layout e, quando o
  *  conteúdo muda, incrementa a versão do manifesto e notifica as telas afetadas. */
 export async function runRssRefreshTick(): Promise<void> {
+  if (running) return;
+  running = true;
   try {
-    const layouts = await prisma.layout.findMany({ select: { id: true, canvasConfigJson: true } });
+    const layouts = await prisma.layout.findMany({ select: { id: true, tenantId: true, canvasConfigJson: true } });
     const feedToLayoutIds = new Map<string, Set<string>>();
     for (const layout of layouts) {
       let config: any;
@@ -35,7 +38,7 @@ export async function runRssRefreshTick(): Promise<void> {
     if (changedLayoutIds.size === 0) return;
 
     const screens = await prisma.screen.findMany({
-      where: { activeLayoutId: { in: [...changedLayoutIds] } },
+      where: { archivedAt: null, tenantId: { in: [...new Set(layouts.filter(l => changedLayoutIds.has(l.id)).map(l => l.tenantId))] } },
       select: { id: true }
     });
     const ids = screens.map((screen) => screen.id);
@@ -44,10 +47,11 @@ export async function runRssRefreshTick(): Promise<void> {
     for (const id of ids) await sendManifestToScreen(id);
   } catch (error) {
     console.error('RSS refresh tick falhou:', error);
-  }
+  } finally { running = false; }
 }
 
-export function startRssRefreshJob(): void {
+export function startRssRefreshJob(): () => void {
   void runRssRefreshTick();
-  setInterval(() => void runRssRefreshTick(), REFRESH_INTERVAL_MS);
+  const timer = setInterval(() => void runRssRefreshTick(), REFRESH_INTERVAL_MS);
+  return () => clearInterval(timer);
 }

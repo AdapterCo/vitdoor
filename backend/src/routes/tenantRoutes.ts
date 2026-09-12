@@ -1,4 +1,6 @@
-import { Router, Request, Response } from 'express';
+import { passwordError, HttpError } from '../lib/validation.js';
+import { Router } from '../lib/router.js';
+import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
 import { requireSuperAdmin } from '../middleware/auth.js';
@@ -10,7 +12,7 @@ tenantRoutes.use(requireSuperAdmin);
 
 tenantRoutes.get('/', async (_req: Request, res: Response): Promise<any> => {
   const tenants = await prisma.tenant.findMany({
-    include: { _count: { select: { screens: true, users: true, medias: true } } },
+    include: { _count: { select: { screens: { where: { archivedAt: null } }, users: true, medias: { where: { archivedAt: null } } } } },
     orderBy: { createdAt: 'desc' }
   });
   return res.json(tenants.map(tenantDto));
@@ -25,9 +27,8 @@ tenantRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
   if (!name || !slug || !adminName || !adminEmail || !adminPassword) {
     return res.status(400).json({ error: 'Empresa e dados do administrador são obrigatórios.' });
   }
-  if (String(adminPassword).length < 12) {
-    return res.status(400).json({ error: 'A senha deve ter ao menos 12 caracteres.' });
-  }
+  const invalidPassword = passwordError(adminPassword);
+  if (invalidPassword) throw new HttpError(400, invalidPassword);
 
   try {
     const passwordHash = await bcrypt.hash(adminPassword, 12);

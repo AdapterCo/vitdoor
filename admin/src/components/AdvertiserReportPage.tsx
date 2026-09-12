@@ -1,3 +1,4 @@
+import { csvCell, csvRow } from '../csv';
 import React, { useEffect, useState } from 'react';
 import { Download, Globe, QrCode, ShieldCheck, Smartphone, TrendingUp, Tv, Wifi, Clock, ArrowLeft, ExternalLink } from 'lucide-react';
 import { API_BASE } from '../config';
@@ -15,7 +16,7 @@ export const AdvertiserReportPage: React.FC<Props> = ({ mediaId }) => {
     const fetchReport = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_BASE}/public/report/media/${mediaId}?days=30`);
+        const res = await fetch(`${API_BASE}/public/report/media/${mediaId}?days=30&token=${encodeURIComponent(new URLSearchParams(window.location.hash.slice(1)).get('token') || '')}`, { referrerPolicy: 'no-referrer', cache: 'no-store' });
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: 'Relatório não encontrado.' }));
           throw new Error(err.error || 'Não foi possível carregar o relatório.');
@@ -65,10 +66,11 @@ export const AdvertiserReportPage: React.FC<Props> = ({ mediaId }) => {
   };
 
   const handleExportCsv = () => {
-    let csv = '\uFEFF'; // BOM UTF-8
+    let csv = '\uFEFF';
+    csv += 'Exportacao dos registros recentes retornados pela API (ate 50 por historico).\n'; // BOM UTF-8
     csv += 'Relatório Auditado de Veiculação - VitDoor\n';
-    csv += `Mídia:;${media.name}\n`;
-    csv += `Rede:;${media.networkName}\n`;
+    csv += `Mídia:;${csvCell(media.name)}\n`;
+    csv += `Rede:;${csvCell(media.networkName)}\n`;
     csv += `Data de Emissão:;${new Date().toLocaleString('pt-BR')}\n\n`;
 
     csv += 'RESUMO DE AUDITORIA\n';
@@ -84,7 +86,7 @@ export const AdvertiserReportPage: React.FC<Props> = ({ mediaId }) => {
     csv += 'HISTÓRICO DE EXIBIÇÃO EM TEMPO REAL\n';
     csv += 'Data / Hora;Tela;Duração (s);Status\n';
     (recentPlays || []).forEach((row: any) => {
-      csv += `"${new Date(row.playedAt).toLocaleString('pt-BR')}";"${row.screenName}";${row.durationSeconds};"Completa (100%)"\n`;
+      csv += csvRow([new Date(row.playedAt).toLocaleString('pt-BR'), row.screenName, row.durationSeconds, row.completed ? 'Completa' : 'Incompleta']);
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -252,7 +254,7 @@ export const AdvertiserReportPage: React.FC<Props> = ({ mediaId }) => {
                     <td style={{ padding: '11px 10px', color: '#60a5fa' }}>{media.name}</td>
                     <td style={{ padding: '11px 10px', color: '#cbd5e1' }}>{log.durationSeconds}s</td>
                     <td style={{ padding: '11px 10px' }}>
-                      <span className="badge badge-success">Completa (100%)</span>
+                      <span className="badge badge-success">{log.completed ? 'Completa' : 'Incompleta'}</span>
                     </td>
                   </tr>
                 ))

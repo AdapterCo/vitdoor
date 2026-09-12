@@ -23,6 +23,7 @@ export function QueueTicketOverlay({ ticket }: { ticket: TicketData | null }) {
     playChimeSound();
 
     // 2. Synthesize Speech (TTS) using Web Speech API
+    const hideTimer = setTimeout(() => setVisible(false), 12000);
     if ('speechSynthesis' in window && ticket.audioText) {
       // Cancel previous speech if speaking
       window.speechSynthesis.cancel();
@@ -37,7 +38,7 @@ export function QueueTicketOverlay({ ticket }: { ticket: TicketData | null }) {
         window.speechSynthesis.speak(utterance);
       }, 700);
 
-      return () => clearTimeout(timer);
+      return () => { clearTimeout(timer); clearTimeout(hideTimer); };
     }
 
     // Auto hide after 12 seconds
@@ -45,7 +46,7 @@ export function QueueTicketOverlay({ ticket }: { ticket: TicketData | null }) {
       setVisible(false);
     }, 12000);
 
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); clearTimeout(hideTimer); };
   }, [ticket]);
 
   if (!visible || !ticket) return null;

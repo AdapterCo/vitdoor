@@ -4,8 +4,8 @@ import { Plus, CheckCircle2, Trash2, Pencil, Clock, Calendar, Pause, Play } from
 interface CampaignsTabProps {
   campaigns: any[];
   playlists: any[];
-  onCreateCampaign: (data: any) => void;
-  onUpdateCampaign?: (id: string, data: any) => void;
+  onCreateCampaign: (data: any) => Promise<boolean>;
+  onUpdateCampaign?: (id: string, data: any) => Promise<boolean>;
   onDeleteCampaign?: (id: string) => void;
 }
 
@@ -89,7 +89,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !startDate || !endDate) return;
 
@@ -104,13 +104,13 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
       endTime: endTime || '23:59',
       daysOfWeek: selectedDays.join(','),
       priority: parseInt(priority, 10) || 1,
-      maxImpressions: maxImpressions ? parseInt(maxImpressions, 10) : undefined
+      maxImpressions: maxImpressions ? parseInt(maxImpressions, 10) : null
     };
 
     if (editingCampaign && onUpdateCampaign) {
-      onUpdateCampaign(editingCampaign.id, payload);
+      if (!await onUpdateCampaign(editingCampaign.id, payload)) return;
     } else {
-      onCreateCampaign(payload);
+      if (!await onCreateCampaign(payload)) return;
     }
 
     setIsModalOpen(false);

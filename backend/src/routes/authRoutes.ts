@@ -1,8 +1,14 @@
-import { Router, Request, Response } from 'express';
+import { Router } from '../lib/router.js';
+import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
 import { getAdminJwtSecret, getSessionToken, SESSION_COOKIE_NAME, sessionCookieOptions } from '../lib/session.js';
+import { authenticate } from '../middleware/auth.js';
+import { createAdminSession, verifyAdminSession } from '../lib/adminSessions.js';
+import { passwordError, HttpError } from '../lib/validation.js';
+import { passwordRateLimiter } from '../middleware/security.js';
+import { disconnectAdminSessions } from '../lib/websocket.js';
 import { tenantDto } from '../lib/dto.js';
 
 export const authRoutes = Router();
@@ -14,7 +20,7 @@ authRoutes.use((_req, res, next) => {
 
 authRoutes.post('/login', async (req: Request, res: Response): Promise<any> => {
   const { email, password } = req.body;
-  if (!email || !password) {
+  if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password || Buffer.byteLength(password, 'utf8') > 72) {
     return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
   }
 
@@ -36,11 +42,7 @@ authRoutes.post('/login', async (req: Request, res: Response): Promise<any> => {
     return res.status(401).json({ error: 'Credenciais inválidas.' });
   }
 
-  const token = jwt.sign(
-    { userId: user.id, tenantId: user.tenantId, role: user.role },
-    getAdminJwtSecret(),
-    { expiresIn: '12h', algorithm: 'HS256' }
-  );
+  const token = await createAdminSession(user);
 
   res.cookie(SESSION_COOKIE_NAME, token, sessionCookieOptions());
   return res.json({
@@ -57,109 +59,34 @@ authRoutes.post('/login', async (req: Request, res: Response): Promise<any> => {
   });
 });
 
-authRoutes.get('/me', async (req: Request, res: Response): Promise<any> => {
-  const token = getSessionToken(req);
-  try {
-    const payload = jwt.verify(token, getAdminJwtSecret(), { algorithms: ['HS256'] }) as any;
-    const user = await prisma.user.findUnique({ where: { id: payload.userId }, include: { tenant: true } });
-    if (!user || !user.active || user.tenant.status !== 'ACTIVE') {
-      return res.status(401).json({ error: 'Sessão inválida.' });
-    }
-    return res.json({
-      id: user.id, name: user.name, email: user.email, role: user.role,
-      tenantId: user.tenantId, tenantName: user.tenant.name, tenant: tenantDto(user.tenant)
-    });
-  } catch {
-    return res.status(401).json({ error: 'Sessão inválida.' });
-  }
+authRoutes.get('/me', authenticate, async (req: Request, res: Response) => {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId }, include: { tenant: true } });
+  return res.json({ id: user.id, name: user.name, email: user.email, role: user.role, tenantId: user.tenantId, tenantName: user.tenant.name, tenant: tenantDto(user.tenant) });
 });
 
-authRoutes.post('/logout', (_req: Request, res: Response) => {
+authRoutes.post('/change-password', authenticate, passwordRateLimiter, async (req: Request, res: Response) => {
+  const { currentPassword, newPassword } = req.body;
+  const error = passwordError(newPassword);
+  if (error) throw new HttpError(400, error);
+  if (typeof currentPassword !== 'string' || !currentPassword || Buffer.byteLength(currentPassword, 'utf8') > 72) throw new HttpError(400, 'Informe a senha atual.');
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId } });
+  if (!await bcrypt.compare(currentPassword, user.passwordHash)) throw new HttpError(400, 'Senha atual incorreta.');
+  if (await bcrypt.compare(newPassword, user.passwordHash)) throw new HttpError(400, 'Escolha uma senha diferente da atual.');
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  const token = await prisma.$transaction(async (tx) => {
+    const result = await tx.user.updateMany({ where: { id: user.id, passwordHash: user.passwordHash, sessionVersion: user.sessionVersion }, data: { passwordHash, sessionVersion: { increment: 1 } } });
+    if (result.count !== 1) throw new HttpError(409, 'A conta foi alterada. Entre novamente e tente outra vez.');
+    await tx.adminSession.deleteMany({ where: { userId: user.id } });
+    return createAdminSession(await tx.user.findUniqueOrThrow({ where: { id: user.id } }), tx);
+  });
+  res.cookie(SESSION_COOKIE_NAME, token, sessionCookieOptions());
+  disconnectAdminSessions(user.id);
+  return res.json({ message: 'Senha alterada. As outras sessões foram encerradas.' });
+});
+
+authRoutes.post('/logout', authenticate, async (req: Request, res: Response) => {
+  await prisma.adminSession.deleteMany({ where: { id: req.auth!.sessionId } });
+  disconnectAdminSessions(req.auth!.userId, req.auth!.sessionId);
   res.clearCookie(SESSION_COOKIE_NAME, { ...sessionCookieOptions(), maxAge: undefined });
   return res.status(204).send();
-});
-
-authRoutes.post('/seed', async (_req: Request, res: Response): Promise<any> => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(404).json({ error: 'Rota indisponível.' });
-  }
-  // Ensure default master tenant & admin user exists
-  let tenant = await prisma.tenant.findFirst({ where: { slug: 'vitdoor-demo' } });
-
-  if (!tenant) {
-    tenant = await prisma.tenant.create({
-      data: {
-        name: 'VitDoor Mídia Demo',
-        slug: 'vitdoor-demo',
-        maxScreens: 50,
-        maxStorageMb: 20000,
-        brandColor: '#2563eb'
-      }
-    });
-  }
-
-  let adminUser = await prisma.user.findUnique({ where: { email: 'admin@vitdoor.com' } });
-  if (!adminUser) {
-    const passwordHash = await bcrypt.hash('admin123', 10);
-    adminUser = await prisma.user.create({
-      data: {
-        tenantId: tenant.id,
-        name: 'Administrador Master',
-        email: 'admin@vitdoor.com',
-        passwordHash,
-        role: 'SUPER_ADMIN'
-      }
-    });
-  }
-
-  // Create sample media items
-  let media1 = await prisma.media.findFirst({ where: { tenantId: tenant.id, name: 'Oferta Especial Semanal' } });
-  if (!media1) {
-    media1 = await prisma.media.create({
-      data: {
-        tenantId: tenant.id,
-        name: 'Oferta Especial Semanal',
-        type: 'IMAGE',
-        url: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1200&q=80',
-        durationSeconds: 10,
-        tags: 'Promocional'
-      }
-    });
-  }
-
-  let media2 = await prisma.media.findFirst({ where: { tenantId: tenant.id, name: 'Vídeo Institucional VitDoor' } });
-  if (!media2) {
-    media2 = await prisma.media.create({
-      data: {
-        tenantId: tenant.id,
-        name: 'Vídeo Institucional VitDoor',
-        type: 'IMAGE',
-        url: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=1200&q=80',
-        durationSeconds: 15,
-        tags: 'Institucional'
-      }
-    });
-  }
-
-  // Create default playlist
-  let defaultPlaylist = await prisma.playlist.findFirst({ where: { tenantId: tenant.id } });
-  if (!defaultPlaylist) {
-    defaultPlaylist = await prisma.playlist.create({
-      data: {
-        tenantId: tenant.id,
-        name: 'Playlist Demo Inicial',
-        description: 'Programação de demonstração padrão',
-        category: 'Geral',
-        isLoop: true,
-        items: {
-          create: [
-            { mediaId: media1.id, orderIndex: 0, durationSeconds: 10 },
-            { mediaId: media2.id, orderIndex: 1, durationSeconds: 15 }
-          ]
-        }
-      }
-    });
-  }
-
-  return res.json({ message: 'Ambiente inicializado com sucesso!', tenant, user: adminUser.email });
 });
