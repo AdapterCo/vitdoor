@@ -12,7 +12,7 @@ import multer from 'multer';
 import { fileTypeFromBuffer } from 'file-type';
 import { broadcastToAdmins, completeCommand } from '../lib/websocket.js';
 import { screenshotRateLimiter } from '../middleware/security.js';
-import { saveScreenshot } from '../lib/storage.js';
+import { persistScreenshot } from '../lib/storage.js';
 
 export const deviceRoutes = Router();
 const screenshotUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
@@ -58,18 +58,8 @@ deviceRoutes.post('/screenshots/:commandId', screenshotRateLimiter, authenticate
     return res.status(409).json({ error: 'Este comando já foi finalizado.', status: command.status });
   }
 
-  const capturedAt = new Date();
-  const stored = await saveScreenshot(req.file.buffer, detected.mime as 'image/jpeg' | 'image/png', req.deviceAuth!.tenantId, req.deviceAuth!.screenId);
-  const saved = await prisma.$transaction(async tx => {
-    const result = await tx.remoteCommand.updateMany({ where: { commandId: command.commandId, status: { in: ['PENDING', 'SENT'] }, expiresAt: { gt: new Date() } }, data: { status: 'SUCCEEDED', success: true, message: 'Screenshot recebido.', completedAt: capturedAt } });
-    if (!result.count) return false;
-    const previous = await tx.screen.findUniqueOrThrow({ where: { id: req.deviceAuth!.screenId } });
-    await tx.screen.update({ where: { id: previous.id }, data: { lastScreenshotUrl: stored.url, screenshotPath: stored.storagePath } });
-    await tx.storageDeletion.delete({ where: { id: stored.cleanupId } });
-    if (previous.screenshotPath) await tx.storageDeletion.create({ data: { storagePath: previous.screenshotPath } });
-    return true;
-  });
-  if (!saved) return res.status(409).json({ error: 'Comando já finalizado.' });
+  const stored = await persistScreenshot(req.file.buffer, detected.mime as 'image/jpeg' | 'image/png', req.deviceAuth!.tenantId, req.deviceAuth!.screenId, command.commandId);
+  const capturedAt = stored.capturedAt;
   broadcastToAdmins({
     type: 'SCREENSHOT_UPDATED',
     screenId: req.deviceAuth!.screenId,

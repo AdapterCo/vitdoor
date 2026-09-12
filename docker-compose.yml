@@ -28,7 +28,6 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
       ADMIN_ORIGINS: ${ADMIN_ORIGINS:-https://app.vitdoor.com.br}
-      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
@@ -53,7 +52,6 @@ services:
     environment: *backend_environment
     volumes:
       - uploads_data:/app/uploads
-      - private_data:/app/private
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -100,7 +98,6 @@ services:
 volumes:
   postgres_data:
   uploads_data:
-  private_data:
 
 networks:
   internal:

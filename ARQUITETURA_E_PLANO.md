@@ -12,19 +12,6 @@
 
 ---
 
-## Entrega de correções — 12/09/2026
-
-Matriz complementar à situação histórica deste documento:
-
-| Área | Situação desta entrega |
-| --- | --- |
-| Conta do usuário | Troca de senha com verificação da senha atual, sessão revogável e invalidação das demais sessões; testes HTTP e Chrome. |
-| Segurança e isolamento | Correções em alertas, QR, filas, RSS, pareamento, relatórios e screenshots; testes de regressão. |
-| Player web | Manifestos reconciliados, reprodução por mídia/zona, provas posteriores à execução, lotes offline e ACK de comandos. |
-| Persistência | Migration aditiva testada em PostgreSQL em memória; exclusão lógica e compensação de objetos; banco real não migrado. |
-| CI | Pipeline de builds, testes, audit e PostgreSQL descartável adicionado; execução remota pendente. |
-| Produção e Android | Não homologados; limitações, contratos e procedimento em [CORRECOES_IMPLEMENTADAS.md](CORRECOES_IMPLEMENTADAS.md). |
-
 ## 1. Objetivo do produto
 
 O VitDoor será uma plataforma SaaS para venda e gerenciamento de totens de mídia indoor.
@@ -765,3 +752,10 @@ Ao concluir uma entrega:
 8. Não criar lógica comercial de player no React; preparar contratos no backend e registrar a implementação correspondente para Flutter/Media3.
 
 Este arquivo deve permanecer no repositório e acompanhar todas as versões do sistema.
+
+
+## Revisao de compatibilidade das correcoes (12/09/2026)
+
+| Entrega | Situacao | Registro |
+| --- | --- | --- |
+| Restauracao dos fluxos anteriores, correcao da contagem de pastas e senha minima de 6 caracteres | Implementada e validada localmente; sem deploy | [Escopo, reversoes e compatibilidade](CORRECOES_IMPLEMENTADAS.md) |

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { apiFetch } from '../api';
 import { UploadCloud, Image, Film, Globe, Trash2, Save, Plus, Folder, FolderPlus, Pencil, QrCode, X, ExternalLink, Share2 } from 'lucide-react';
 
 interface MediaTabProps {
@@ -38,15 +37,6 @@ export const MediaTab: React.FC<MediaTabProps> = ({
   const [newFolderName, setNewFolderName] = useState('');
   const visibleMedias = medias.filter((media) => selectedFolder === 'ALL' ? true : selectedFolder === 'ROOT' ? !media.folderId : media.folderId === selectedFolder);
 
-  const shareReport = async (id: string) => {
-    try {
-      const response = await apiFetch(`/media/${id}/report-link`, { method: 'POST', body: '{}' });
-      const data = await response.json(); if (!response.ok) throw new Error(data.error);
-      const url = `${location.origin}/report/media/${id}#token=${encodeURIComponent(data.token)}`;
-      try { await navigator.clipboard.writeText(url); } catch { /* manual copy below */ }
-      window.prompt('Link valido por 30 dias. O link anterior foi revogado. Copie para compartilhar:', url);
-    } catch (error) { alert(error instanceof Error ? error.message : 'Falha de conexao.'); }
-  };
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -265,7 +255,7 @@ export const MediaTab: React.FC<MediaTabProps> = ({
                   color: '#60a5fa',
                   borderColor: 'rgba(96,165,250,0.3)'
                 }}
-                onClick={() => void shareReport(media.id)}
+                onClick={() => window.open(`/report/media/${media.id}`, '_blank')}
                 title="Abrir Relatório de Auditoria da Mídia"
               >
                 <ExternalLink size={14} /> Relatório
@@ -274,11 +264,12 @@ export const MediaTab: React.FC<MediaTabProps> = ({
               <button
                 className="btn-secondary"
                 style={{ padding: '8px', color: '#94a3b8' }}
-                onClick={async () => {
-                  const response = await apiFetch(`/media/${media.id}/report-link`, { method: 'DELETE' });
-                  if (response.ok) alert('Compartilhamento revogado.');
+                onClick={() => {
+                  const url = `${window.location.origin}/report/media/${media.id}`;
+                  navigator.clipboard.writeText(url);
+                  alert(`Link de auditoria copiado para a área de transferência!\n\nEnvie ao seu cliente:\n${url}`);
                 }}
-                title="Revogar link de auditoria"
+                title="Copiar Link de Auditoria para Enviar ao Cliente"
               >
                 <Share2 size={14} />
               </button>

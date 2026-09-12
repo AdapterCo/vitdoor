@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { campaignIsActive } from '../lib/schedule.js';
 import { Router } from '../lib/router.js';
 import { Request, Response } from 'express';
@@ -10,14 +11,17 @@ import { sendManifestToScreen } from '../lib/websocket.js';
 export const proofOfPlayRoutes = Router();
 
 export function normalizeProofEvent(value: any) {
-  if (!isUuid(value?.eventId) || !isUuid(value?.screenId) || !isUuid(value?.mediaId)) return null;
-  const durationSeconds = Number(value.durationSeconds);
-  const playedAt = new Date(value.playedAt);
-  if (!Number.isInteger(durationSeconds) || durationSeconds < 0 || durationSeconds > 86400 || !Number.isFinite(playedAt.getTime()) || playedAt.getTime() > Date.now() + 300_000 || playedAt.getTime() < Date.now() - 90 * 86400_000) return null;
-  if (typeof value.completed !== 'boolean' || typeof value.mediaName !== 'string' || !value.mediaName.trim()) return null;
+  if (!isUuid(value?.screenId)) return null;
+  if (value.eventId != null && !isUuid(value.eventId)) return null;
+  if (value.mediaId != null && !isUuid(value.mediaId)) return null;
   if (value.campaignId != null && !isUuid(value.campaignId)) return null;
-  if (!Number.isInteger(value.manifestVersion) || value.manifestVersion < 1) return null;
-  return { eventId: value.eventId.toLowerCase(), screenId: value.screenId, mediaId: value.mediaId, mediaName: value.mediaName.trim().slice(0, 255), mediaVersion: Number.isInteger(value.mediaVersion) ? value.mediaVersion : null, campaignId: value.campaignId ?? null, zoneId: typeof value.zoneId === 'string' ? value.zoneId.slice(0, 50) : null, manifestVersion: value.manifestVersion, reason: typeof value.reason === 'string' ? value.reason.slice(0, 80) : null, playedAt, durationSeconds, completed: value.completed };
+  if (value.manifestVersion != null && (!Number.isInteger(value.manifestVersion) || value.manifestVersion < 1)) return null;
+  if (value.mediaVersion != null && (!Number.isInteger(value.mediaVersion) || value.mediaVersion < 1)) return null;
+  const durationSeconds = Number(value.durationSeconds ?? 10);
+  const playedAt = value.playedAt == null ? new Date() : new Date(value.playedAt);
+  if (!Number.isFinite(durationSeconds) || durationSeconds < 0 || durationSeconds > 86400 || !Number.isFinite(playedAt.getTime()) || playedAt.getTime() > Date.now() + 300_000) return null;
+  if ((value.completed != null && typeof value.completed !== 'boolean') || typeof value.mediaName !== 'string' || !value.mediaName.trim()) return null;
+  return { eventId: value.eventId?.toLowerCase() ?? randomUUID(), screenId: value.screenId, mediaId: value.mediaId ?? null as string | null, mediaName: value.mediaName.trim().slice(0, 255), mediaVersion: value.mediaVersion ?? null, campaignId: value.campaignId ?? null, zoneId: typeof value.zoneId === 'string' ? value.zoneId.slice(0, 50) : null, manifestVersion: value.manifestVersion ?? null, reason: typeof value.reason === 'string' ? value.reason.slice(0, 80) : null, playedAt, durationSeconds: Math.round(durationSeconds), completed: value.completed !== false };
 }
 function isUuid(value: unknown): value is string { return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
 
@@ -32,7 +36,7 @@ async function ingest(items: any[], screenId: string, tenantId: string) {
   for (const raw of items) {
     const item = normalizeProofEvent(raw);
     let valid = !!item && item.screenId === screenId;
-    if (item && valid) {
+    if (item && valid && item.mediaId && item.manifestVersion) {
       if (!versions.has(item.manifestVersion)) {
         const published = await prisma.screenManifest.findUnique({ where: { screenId_version: { screenId, version: item.manifestVersion } } });
         versions.set(item.manifestVersion, published ? JSON.parse(published.payload) : null);
@@ -46,6 +50,14 @@ async function ingest(items: any[], screenId: string, tenantId: string) {
         valid = valid && !!campaign && mediaInPlaylist(campaign.playlist, item.mediaId) && campaignIsActive(campaign, item.playedAt);
       }
     }
+    // The original player contract supplies mediaName only. Optional new fields
+    // must not become a prerequisite for existing Android/offline installations.
+    if (item && valid && !(item.mediaId && item.manifestVersion)) {
+      const matches = await prisma.media.findMany({ where: { tenantId, ...(item.mediaId ? { id: item.mediaId } : { name: item.mediaName }) }, take: 2 });
+      if (item.mediaId && matches.length !== 1) valid = false;
+      if (matches.length === 1) { item.mediaId = matches[0].id; item.mediaName = matches[0].name; }
+      item.campaignId = null;
+    }
     if (valid && item) accepted.push(item);
     else if (typeof raw?.eventId === 'string') rejectedEventIds.push(raw.eventId);
   }
@@ -53,10 +65,15 @@ async function ingest(items: any[], screenId: string, tenantId: string) {
   const result = await prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT id FROM "Tenant" WHERE id = ${tenantId} FOR UPDATE`;
     const created = await tx.proofOfPlay.createMany({ data: uniqueItems.map(item => ({ ...item, tenantId })), skipDuplicates: true });
-    const campaigns = await tx.campaign.findMany({ where: { tenantId } });
+    const campaigns = await tx.campaign.findMany({ where: { tenantId }, include: { playlist: { include: { items: { include: { media: true } } } } } });
     let changed = false;
     for (const campaign of campaigns) {
-      const count = await tx.proofOfPlay.count({ where: { tenantId, campaignId: campaign.id, completed: true } });
+      const mediaIds = (campaign.playlist?.items || []).flatMap(i => i.mediaId ? [i.mediaId] : []);
+      const mediaNames = (campaign.playlist?.items || []).flatMap(i => i.media ? [i.media.name] : []);
+      const count = await tx.proofOfPlay.count({ where: { tenantId, completed: true, OR: [
+        { campaignId: campaign.id },
+        { campaignId: null, playedAt: { gte: campaign.createdAt }, OR: [{ mediaId: { in: mediaIds } }, { mediaId: null, mediaName: { in: mediaNames } }] }
+      ] } });
       const expired = campaign.status === 'ACTIVE' && campaign.maxImpressions != null && count >= campaign.maxImpressions;
       await tx.campaign.update({ where: { id: campaign.id }, data: { currentImpressions: count, ...(expired ? { status: 'EXPIRED' } : {}) } });
       changed ||= expired;

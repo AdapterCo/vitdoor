@@ -14,7 +14,7 @@ export function AccountTab({ user }: { user: { name: string; email: string } }) 
     if (pending) return;
     setError(''); setSuccess('');
     if (newPassword !== confirmation) { setError('A confirmação não corresponde à nova senha.'); return; }
-    if (newPassword.length < 12 || new TextEncoder().encode(newPassword).length > 72) { setError('Use ao menos 12 caracteres, com no máximo 72 bytes em UTF-8.'); return; }
+    if (newPassword.length < 6 || new TextEncoder().encode(newPassword).length > 72) { setError('Use ao menos 6 caracteres, com no máximo 72 bytes em UTF-8.'); return; }
     setPending(true);
     try {
       const response = await apiFetch('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) });
@@ -30,15 +30,15 @@ export function AccountTab({ user }: { user: { name: string; email: string } }) 
     <p style={{ color: '#94a3b8', margin: '12px 0 24px' }}>{user.name} · {user.email}</p>
     <form onSubmit={submit} className="glass-panel" style={{ padding: 28, display: 'grid', gap: 18 }} aria-busy={pending}>
       <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><KeyRound size={20} /> Trocar senha</h3>
-      <p style={{ color: '#94a3b8' }}>Use pelo menos 12 caracteres. Ao salvar, as outras sessões da sua conta serão encerradas.</p>
+      <p style={{ color: '#94a3b8' }}>Use pelo menos 6 caracteres. Ao salvar, as outras sessões da sua conta serão encerradas.</p>
       <label htmlFor="current-password">Senha atual
         <input id="current-password" className="input-field" type="password" autoComplete="current-password" required value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} disabled={pending} />
       </label>
       <label htmlFor="new-password">Nova senha
-        <input id="new-password" className="input-field" type="password" autoComplete="new-password" minLength={12} required value={newPassword} onChange={e => setNewPassword(e.target.value)} disabled={pending} aria-describedby="password-error" />
+        <input id="new-password" className="input-field" type="password" autoComplete="new-password" minLength={6} required value={newPassword} onChange={e => setNewPassword(e.target.value)} disabled={pending} aria-describedby="password-error" />
       </label>
       <label htmlFor="confirm-password">Confirmar nova senha
-        <input id="confirm-password" className="input-field" type="password" autoComplete="new-password" minLength={12} required value={confirmation} onChange={e => setConfirmation(e.target.value)} disabled={pending} />
+        <input id="confirm-password" className="input-field" type="password" autoComplete="new-password" minLength={6} required value={confirmation} onChange={e => setConfirmation(e.target.value)} disabled={pending} />
       </label>
       {error && <p id="password-error" role="alert" style={{ color: '#fca5a5' }}>{error}</p>}
       {success && <p role="status" style={{ color: '#86efac' }}>{success}</p>}

@@ -7,6 +7,8 @@ import { alertDto, playerLayoutDto, playlistDto } from './dto.js';
 import { verifyAdminSession } from './adminSessions.js';
 import { getActiveAlert } from './alerts.js';
 import { buildScreenManifest } from './manifest.js';
+import { persistScreenshot } from './storage.js';
+import { fileTypeFromBuffer } from 'file-type';
 
 interface ConnectedClient {
   ws: WebSocket;
@@ -34,7 +36,7 @@ export function cleanCode(code?: string): string {
 }
 
 export function initWebSocketServer(server: Server) {
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 6 * 1024 * 1024 });
 
   wss.on('connection', (ws: WebSocket, request) => {
     if (activeConnections.size >= 2000 || [...activeConnections].filter(c => !c.screenId && !c.ownerId).length >= 100) { ws.close(1013, 'Capacity exceeded'); return; }
@@ -142,7 +144,7 @@ async function handleMessage(client: ConnectedClient, msg: any) {
   switch (msg.type) {
     case 'REGISTER_PLAYER': {
       client.type = 'PLAYER';
-      client.webSimulator = msg.clientKind === 'WEB_SIMULATOR';
+      client.webSimulator = msg.clientKind === 'WEB_SIMULATOR' || msg.os === 'Android TV (Simulated)';
       client.pairingCode = msg.pairingCode;
       let screen = null;
       if (msg.deviceToken) {
@@ -275,6 +277,23 @@ async function handleMessage(client: ConnectedClient, msg: any) {
       break;
     }
 
+    case 'SCREENSHOT_RESULT': {
+      if (!client.screenId || !client.tenantId || typeof msg.commandId !== 'string' || typeof msg.imageDataUrl !== 'string') break;
+      const match = /^data:image\/(jpeg|png);base64,([A-Za-z0-9+/=]+)$/.exec(msg.imageDataUrl);
+      if (!match || msg.imageDataUrl.length > 3 * 1024 * 1024) break;
+      const buffer = Buffer.from(match[2], 'base64');
+      if (!buffer.length || buffer.length > 2 * 1024 * 1024) break;
+      const detected = await fileTypeFromBuffer(buffer);
+      if (!detected || !['image/jpeg', 'image/png'].includes(detected.mime)) break;
+      try {
+        const stored = await persistScreenshot(buffer, detected.mime as 'image/jpeg' | 'image/png', client.tenantId, client.screenId, msg.commandId);
+        broadcastToAdmins({ type: 'SCREENSHOT_UPDATED', screenId: client.screenId, commandId: msg.commandId, imageUrl: stored.url, capturedAt: stored.capturedAt.toISOString() }, client.tenantId);
+      } catch {
+        const command = await completeCommand(client.screenId, msg.commandId, false, 'Não foi possível salvar a captura.', 'TAKE_SCREENSHOT');
+        if (command) broadcastToAdmins({ type: 'COMMAND_RESULT', screenId: client.screenId, commandId: msg.commandId, action: 'TAKE_SCREENSHOT', success: false, message: 'Não foi possível salvar a captura.' }, client.tenantId);
+      }
+      break;
+    }
     case 'COMMAND_RESULT': {
       if (client.screenId && typeof msg.commandId === 'string') {
         const action = typeof msg.action === 'string' ? msg.action.slice(0, 40).toUpperCase() : 'UNKNOWN';

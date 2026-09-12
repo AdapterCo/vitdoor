@@ -13,7 +13,7 @@ export function validateCampaign(input: any) {
   const daysOfWeek = input.daysOfWeek ?? '0,1,2,3,4,5,6';
   if (typeof daysOfWeek !== 'string' || !/^[0-6](,[0-6])*$/.test(daysOfWeek) || new Set(daysOfWeek.split(',')).size !== daysOfWeek.split(',').length) throw new HttpError(400, 'Dias da semana invalidos.');
   const status = input.status ?? 'ACTIVE';
-  if (!['ACTIVE', 'PAUSED', 'EXPIRED'].includes(status)) throw new HttpError(400, 'Status invalido.');
+  if (!['ACTIVE', 'INACTIVE', 'PAUSED', 'EXPIRED', 'COMPLETED'].includes(status)) throw new HttpError(400, 'Status invalido.');
   const timezone = input.timezone ?? 'America/Sao_Paulo';
   try { if (typeof timezone !== 'string' || timezone.length > 100) throw new Error(); new Intl.DateTimeFormat('en', { timeZone: timezone }); } catch { throw new HttpError(400, 'Fuso horario invalido.'); }
   return { name: text(input.name, 'Nome'), advertiserName: input.advertiserName ? text(input.advertiserName, 'Anunciante') : null, playlistId: input.playlistId ? text(input.playlistId, 'Playlist', 36) : null, startDate, endDate, startTime, endTime, daysOfWeek, status, timezone, priority: integer(input.priority ?? 1, 'Prioridade', 1, 1000), maxImpressions: input.maxImpressions == null || input.maxImpressions === '' ? null : integer(input.maxImpressions, 'Limite', 1, 2147483647) };

@@ -22,9 +22,8 @@ interface QueueTicket {
 const API_BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api';
 
 export function QueueCallerApp() {
-  const tenantId = new URLSearchParams(window.location.search).get('tenantId') || '';
-  const [pinCode, setPinCode] = useState('');
-  const [token, setToken] = useState(() => sessionStorage.getItem(`vitdoor_caller:${tenantId}`) || '');
+  const [tenantId] = useState(() => new URLSearchParams(window.location.search).get('tenantId') || undefined);
+  const [pinCode, setPinCode] = useState<string>(() => localStorage.getItem('vitdoor_caller_pin') || '');
   const [authenticated, setAuthenticated] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
@@ -35,35 +34,40 @@ export function QueueCallerApp() {
   const [isCustomModalOpen, setIsCustomModalOpen] = useState<boolean>(false);
   const [lastCalled, setLastCalled] = useState<string | null>(null);
 
+  // Read PIN from URL query string if provided, then clean URL immediately
   useEffect(() => {
-    localStorage.removeItem('vitdoor_caller_pin');
-    const params = new URLSearchParams(window.location.search);
-    params.delete('pin');
-    window.history.replaceState({}, document.title, `${window.location.pathname}?${params}`);
-    if (token) setAuthenticated(true);
+    const searchParams = new URLSearchParams(window.location.search);
+    const pinFromUrl = searchParams.get('pin');
+    if (pinFromUrl) {
+      const cleanPin = pinFromUrl.trim();
+      setPinCode(cleanPin);
+      // Clean query string from browser address bar immediately for security and aesthetics
+      window.history.replaceState({}, document.title, `${window.location.pathname}${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`);
+      handleAuth(cleanPin);
+    } else if (pinCode) {
+      handleAuth(pinCode);
+    }
   }, []);
 
   // Poll status every 10 seconds when authenticated to keep TV Online/Offline status updated
   useEffect(() => {
-    if (!authenticated || !token) return;
-    const refresh = () => {
-      fetch(`${API_BASE}/queues/operator/status`, {
+    if (!authenticated || !pinCode) return;
+    const interval = setInterval(() => {
+      fetch(`${API_BASE}/queues/operator/auth`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({})
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinCode: pinCode.trim(), tenantId })
       })
-        .then((res) => { if (res.status === 401) { handleLogout(); throw new Error('Sessão expirada.'); } return res.json(); })
+        .then((res) => res.json())
         .then((data) => {
           if (data?.queue) setQueue(data.queue);
         })
         .catch(() => undefined);
-    };
-    refresh(); const interval = setInterval(refresh, 10000);
+    }, 10000);
     return () => clearInterval(interval);
-  }, [authenticated, token]);
+  }, [authenticated, pinCode]);
 
   const handleAuth = async (pinToUse: string) => {
-    if (!tenantId) { setError('Abra o link do chamador fornecido pelo estabelecimento.'); return; }
     setLoading(true);
     setError('');
     try {
@@ -79,8 +83,7 @@ export function QueueCallerApp() {
       setQueue(data.queue);
       setRecentTickets(data.recentTickets || []);
       setAuthenticated(true);
-      setToken(data.token); setPinCode('');
-      sessionStorage.setItem(`vitdoor_caller:${tenantId}`, data.token);
+      localStorage.setItem('vitdoor_caller_pin', pinToUse.trim());
     } catch (err: any) {
       setError(err.message || 'Não foi possível conectar');
       setAuthenticated(false);
@@ -90,21 +93,20 @@ export function QueueCallerApp() {
   };
 
   const handleCallNext = async () => {
-    if (!token || loading) return;
+    if (!pinCode || loading) return;
     setLoading(true);
     setError('');
     try {
       const res = await fetch(`${API_BASE}/queues/operator/call-next`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ eventId: crypto.randomUUID() })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinCode, tenantId, eventId: crypto.randomUUID() })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao chamar próxima senha');
 
       setQueue((prev) => prev ? { ...prev, currentNum: data.currentNum } : null);
       setLastCalled(data.ticketNumber);
-      if (!data.delivered && !data.duplicate) setError('Senha registrada, mas a TV está desconectada. Reconecte e use Rechamar.');
       setRecentTickets((prev) => [{ id: String(Date.now()), ticketNumber: data.ticketNumber, deskName: data.deskName, calledAt: data.calledAt }, ...prev.slice(0, 4)]);
 
       // Vibrate mobile device on call
@@ -117,20 +119,19 @@ export function QueueCallerApp() {
   };
 
   const handleRecall = async () => {
-    if (!token || loading || !queue?.currentNum) return;
+    if (!pinCode || loading || !queue?.currentNum) return;
     setLoading(true);
     setError('');
     try {
       const res = await fetch(`${API_BASE}/queues/operator/recall`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ eventId: crypto.randomUUID() })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinCode, tenantId, eventId: crypto.randomUUID() })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao rechamar');
 
       setLastCalled(data.ticketNumber);
-      if (!data.delivered && !data.duplicate) setError('Senha registrada, mas a TV está desconectada. Reconecte e use Rechamar.');
       if (navigator.vibrate) navigator.vibrate(150);
     } catch (err: any) {
       setError(err.message);
@@ -140,20 +141,19 @@ export function QueueCallerApp() {
   };
 
   const handleCallCustom = async () => {
-    if (!token || loading || !customNumInput.trim()) return;
+    if (!pinCode || loading || !customNumInput.trim()) return;
     setLoading(true);
     setError('');
     try {
       const res = await fetch(`${API_BASE}/queues/operator/call-specific`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ eventId: crypto.randomUUID(), customNumber: customNumInput.trim() })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinCode, tenantId, eventId: crypto.randomUUID(), customNumber: customNumInput.trim() })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao chamar senha');
 
       setLastCalled(data.ticketNumber);
-      if (!data.delivered && !data.duplicate) setError('Senha registrada, mas a TV está desconectada. Reconecte e use Rechamar.');
       setRecentTickets((prev) => [{ id: String(Date.now()), ticketNumber: data.ticketNumber, deskName: data.deskName, calledAt: data.calledAt }, ...prev.slice(0, 4)]);
       setIsCustomModalOpen(false);
       setCustomNumInput('');
@@ -166,24 +166,22 @@ export function QueueCallerApp() {
   };
 
   const handleReset = async () => {
-    if (!token || loading || !window.confirm('Deseja zerar a contagem de senhas desta fila?')) return;
-    setLoading(true);
+    if (!pinCode || loading || !window.confirm('Deseja zerar a contagem de senhas desta fila?')) return;
+    setLoading(true); setError('');
     try {
       const res = await fetch(`${API_BASE}/queues/operator/reset`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ eventId: crypto.randomUUID() })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinCode, tenantId, eventId: crypto.randomUUID() })
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Falha ao zerar contador.');
-      setQueue((prev) => prev ? { ...prev, currentNum: 0 } : null);
-      setLastCalled(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha de conexão.');
-    } finally { setLoading(false); }
+      setQueue(prev => prev ? { ...prev, currentNum: 0 } : null);
+      setLastCalled(null); setRecentTickets([]);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Falha de conexao.'); }
+    finally { setLoading(false); }
   };
 
   const handleLogout = () => {
-    sessionStorage.removeItem(`vitdoor_caller:${tenantId}`); setToken('');
+    localStorage.removeItem('vitdoor_caller_pin');
     setPinCode('');
     setAuthenticated(false);
     setQueue(null);

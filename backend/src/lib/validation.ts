@@ -11,7 +11,7 @@ export function integer(value: unknown, label: string, min: number, max: number)
   return parsed;
 }
 export function passwordError(value: unknown): string | null {
-  if (typeof value !== 'string' || value.length < 12) return 'A senha deve ter ao menos 12 caracteres.';
+  if (typeof value !== 'string' || value.length < 6) return 'A senha deve ter ao menos 6 caracteres.';
   if (Buffer.byteLength(value, 'utf8') > 72) return 'A senha deve ter no máximo 72 bytes em UTF-8.';
   return null;
 }

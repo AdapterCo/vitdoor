@@ -14,6 +14,7 @@ const { errorHandler } = require('../dist/middleware/errors.js');
 const { HttpError, passwordError } = require('../dist/lib/validation.js');
 const { createAdminSession, verifyAdminSession } = require('../dist/lib/adminSessions.js');
 const { authenticate } = require('../dist/middleware/auth.js');
+const { mediaRoutes } = require('../dist/routes/mediaRoutes.js');
 const { authRoutes } = require('../dist/routes/authRoutes.js');
 const { emergencyRoutes } = require('../dist/routes/emergencyRoutes.js');
 const { queueRoutes } = require('../dist/routes/queueRoutes.js');
@@ -48,7 +49,7 @@ prisma.emergencyAlert.findMany = async () => [];
 prisma.emergencyAlert.updateMany = async () => { mutations++; return { count: 1 }; };
 before(async () => {
   const app = express(); app.use(express.json(), cookieParser());
-  app.use('/auth', authRoutes); app.use('/emergency', authenticate, emergencyRoutes); app.use('/queues', queueRoutes); app.use('/proof', proofOfPlayRoutes);
+  app.use('/auth', authRoutes); app.use('/media', authenticate, mediaRoutes); app.use('/emergency', authenticate, emergencyRoutes); app.use('/queues', queueRoutes); app.use('/proof', proofOfPlayRoutes);
   app.use('/r', qrRoutes); app.use('/report', publicReportRoutes);
   const router = Router(); router.get('/expected', async () => { await Promise.resolve(); throw new HttpError(409, 'conflict'); });
   router.get('/unexpected', async () => { throw new Error('secret internal error'); }); app.use('/errors', router); app.use(errorHandler);
@@ -66,31 +67,37 @@ test('async router forwards rejected promises and hides internal errors', async 
   const unexpected = await request('/errors/unexpected'); assert.equal(unexpected.status, 500); assert.doesNotMatch(await unexpected.text(), /secret internal/);
 });
 test('password policy rejects short and bcrypt-truncated UTF-8 passwords', () => {
-  assert.ok(passwordError('short')); assert.ok(passwordError('é'.repeat(37))); assert.equal(passwordError('é'.repeat(36)), null);
+  assert.ok(passwordError('12345')); assert.equal(passwordError('123456'), null); assert.ok(passwordError('é'.repeat(37))); assert.equal(passwordError('é'.repeat(36)), null);
 });
 test('password change requires current password, rotates hash and revokes ALL previous sessions', async () => {
   const { user, token } = await fixture(); const other = await createAdminSession(user); const oldHash = user.passwordHash;
-  const wrong = await request('/auth/change-password', token, { currentPassword: 'wrong', newPassword: 'new-password-456' }); assert.equal(wrong.status, 400); assert.equal(user.passwordHash, oldHash);
+  const wrong = await request('/auth/change-password', token, { currentPassword: 'wrong', newPassword: '123456' }); assert.equal(wrong.status, 400); assert.equal(user.passwordHash, oldHash);
   const same = await request('/auth/change-password', token, { currentPassword: 'current-password-123', newPassword: 'current-password-123' }); assert.equal(same.status, 400);
-  const changed = await request('/auth/change-password', token, { currentPassword: 'current-password-123', newPassword: 'new-password-456', userId: 'someone-else' }); assert.equal(changed.status, 200);
-  assert.ok(await bcrypt.compare('new-password-456', user.passwordHash)); assert.equal(await bcrypt.compare('current-password-123', user.passwordHash), false);
+  const changed = await request('/auth/change-password', token, { currentPassword: 'current-password-123', newPassword: '123456', userId: 'someone-else' }); assert.equal(changed.status, 200);
+  assert.ok(await bcrypt.compare('123456', user.passwordHash)); assert.equal(await bcrypt.compare('current-password-123', user.passwordHash), false);
   await assert.rejects(verifyAdminSession(token)); await assert.rejects(verifyAdminSession(other));
   const cookie = changed.headers.get('set-cookie'); assert.match(cookie, /HttpOnly/i); assert.match(cookie, /SameSite=Strict/i);
   const fresh = decodeURIComponent(cookie.split(';')[0].split('=')[1]); assert.equal((await verifyAdminSession(fresh)).user.id, user.id);
-  assert.equal([...sessions.values()].filter(s => s.userId === user.id).length, 1);
+  assert.equal([...sessions.values()].filter(s => s.userId === user.id).length, 0);
 });
 test('password endpoint is authenticated and rate-limited per account', async () => {
   assert.equal((await request('/auth/change-password', '', {})).status, 401);
   const { token } = await fixture(); for (let i = 0; i < 5; i++) assert.equal((await request('/auth/change-password', token, { newPassword: 'short' })).status, 400);
   assert.equal((await request('/auth/change-password', token, { newPassword: 'short' })).status, 429);
 });
-test('logout revokes current session and authorization reads current database role', async () => {
+test('logout clears original session cookie and authorization reads current database role', async () => {
   const { user, token } = await fixture(); user.role = 'VIEWER'; assert.equal((await verifyAdminSession(token)).user.role, 'VIEWER');
-  assert.equal((await request('/auth/logout', token, {})).status, 204); await assert.rejects(verifyAdminSession(token));
+  const response = await request('/auth/logout', token, {});
+  assert.equal(response.status, 204); assert.match(response.headers.get('set-cookie'), /vitdoor_session=;/);
+  assert.equal((await request('/auth/logout', '', {})).status, 204);
 });
-test('expired and pre-migration admin JWTs cannot authorize', async () => {
-  const { user, token } = await fixture(); const claims = jwt.decode(token); sessions.get(claims.sessionId).expiresAt = new Date(0); await assert.rejects(verifyAdminSession(token));
-  const legacy = jwt.sign({ userId: user.id, tenantId: user.tenantId, type: 'ADMIN' }, process.env.ADMIN_JWT_SECRET); await assert.rejects(verifyAdminSession(legacy));
+test('original admin JWT remains compatible until password revocation; expired and device tokens fail', async () => {
+  const { user } = await fixture();
+  const legacy = jwt.sign({ userId: user.id, tenantId: user.tenantId, role: user.role }, process.env.ADMIN_JWT_SECRET, { expiresIn: '12h' });
+  assert.equal((await verifyAdminSession(legacy)).user.id, user.id);
+  user.sessionVersion++; await assert.rejects(verifyAdminSession(legacy));
+  const expired = jwt.sign({ userId: user.id, tenantId: user.tenantId }, process.env.ADMIN_JWT_SECRET, { expiresIn: -1 }); await assert.rejects(verifyAdminSession(expired));
+  const device = jwt.sign({ type: 'DEVICE', userId: user.id, tenantId: user.tenantId }, process.env.ADMIN_JWT_SECRET); await assert.rejects(verifyAdminSession(device));
 });
 test('clearing another tenant screen is rejected before any side effect; own screen succeeds', async () => {
   const { token } = await fixture(); mutations = 0;
@@ -116,10 +123,10 @@ test('overnight campaign uses start day in declared timezone across midnight', (
   const c = { startDate: '2026-09-11', endDate: '2026-09-11', daysOfWeek: '5', startTime: '22:00', endTime: '02:00', timezone: 'America/Sao_Paulo' };
   assert.equal(campaignIsActive(c, new Date('2026-09-12T04:00:00Z')), true); assert.equal(campaignIsActive(c, new Date('2026-09-12T06:00:00Z')), false);
 });
-test('proof validation preserves identity and incomplete status, rejects invented IDs and stale events', () => {
+test('proof validation preserves identity and incomplete status, rejects malformed explicit fields', () => {
   const good = { eventId: randomUUID(), screenId: randomUUID(), mediaId: randomUUID(), mediaName: 'Media', manifestVersion: 1, durationSeconds: 3, completed: false, playedAt: new Date().toISOString() };
   assert.equal(normalizeProofEvent(good).eventId, good.eventId); assert.equal(normalizeProofEvent(good).completed, false);
-  for (const bad of [{ eventId: 'invalid' }, { mediaId: null }, { manifestVersion: 0 }, { durationSeconds: -1 }, { completed: 'true' }, { playedAt: '2000-01-01' }]) assert.equal(normalizeProofEvent({ ...good, ...bad }), null);
+  for (const bad of [{ eventId: 'invalid' }, { mediaId: 'invalid' }, { manifestVersion: 0 }, { durationSeconds: -1 }, { completed: 'true' }, { playedAt: 'invalid' }]) assert.equal(normalizeProofEvent({ ...good, ...bad }), null);
 });
 test('database outage returns 500, not credential revocation that would erase player pairing', async () => {
   deviceFailure = true;
@@ -135,11 +142,10 @@ test('QR validates screen tenancy and never invents a screen for a generic link'
   const own = await fetch(`${base}/r/${mediaId}?s=${ownScreen}`, { redirect: 'manual' }); assert.equal(own.status, 302); assert.equal(scans[0].screenId, ownScreen);
   const generic = await fetch(`${base}/r/${mediaId}`, { redirect: 'manual' }); assert.equal(generic.status, 302); assert.equal(scans[1].screenId, null);
 });
-test('media UUID alone does not expose a report; token lookup requires hash, expiry and active tenant', async t => {
-  let queries = 0;
-  mockMethod(t, prisma.media, 'findFirst', async ({ where }) => { queries++; assert.equal(where.reportTokenHash.length, 64); assert.ok(where.reportExpiresAt.gt instanceof Date); assert.equal(where.tenant.status, 'ACTIVE'); return null; });
-  const id = randomUUID(); assert.equal((await request(`/report/media/${id}`)).status, 404); assert.equal(queries, 0);
-  assert.equal((await request(`/report/media/${id}?token=${'a'.repeat(43)}`)).status, 404); assert.equal(queries, 1);
+test('original public report URL works without a new token lifecycle and scopes to active media', async t => {
+  const id = randomUUID(); let queries = 0;
+  mockMethod(t, prisma.media, 'findFirst', async ({ where }) => { queries++; assert.equal(where.id, id); assert.equal(where.archivedAt, null); assert.equal(where.tenant.status, 'ACTIVE'); assert.equal(where.reportTokenHash, undefined); return null; });
+  assert.equal((await request(`/report/media/${id}`)).status, 404); assert.equal(queries, 1);
 });
 test('command acknowledgement is conditional and cannot fake successful screenshot upload', async t => {
   let writes = 0; let action = 'REBOOT';
@@ -151,4 +157,64 @@ test('command acknowledgement is conditional and cannot fake successful screensh
 test('storage rejects traversal outside public and private roots', () => {
   for (const key of ['../escape', '..\\escape']) { assert.throws(() => localStoragePath(key)); assert.throws(() => localStoragePath(key, true)); }
   assert.match(localStoragePath('tenants/test/media/file.jpg'), /file\.jpg$/);
+});
+
+test('folder count excludes previously archived media and updates after a real deletion', async t => {
+  const { token } = await fixture();
+  const rows = new Map([['active', { id: 'active', tenantId: 'tenant', folderId: 'folder', archivedAt: null }], ['archived', { id: 'archived', tenantId: 'tenant', folderId: 'folder', archivedAt: new Date() }]]);
+  mockMethod(t, prisma.mediaFolder, 'findMany', async ({ where, include }) => {
+    assert.equal(where.tenantId, 'tenant'); assert.deepEqual(include._count.select.medias.where, { archivedAt: null });
+    return [{ id: 'folder', name: 'Folder', _count: { medias: [...rows.values()].filter(m => !m.archivedAt).length } }];
+  });
+  mockMethod(t, prisma.media, 'findFirst', async ({ where }) => { const m = rows.get(where.id); return m?.tenantId === where.tenantId && !m.archivedAt ? m : null; });
+  mockMethod(t, prisma.media, 'delete', async ({ where }) => { const m = rows.get(where.id); rows.delete(where.id); return m; });
+  mockMethod(t, prisma.media, 'update', async () => { throw new Error('Deletion must not archive'); });
+  mockMethod(t, prisma.storageDeletion, 'create', async () => { throw new Error('Deletion must not require new background job'); });
+  mockMethod(t, prisma.layout, 'findMany', async () => []);
+  mockMethod(t, prisma.screen, 'updateMany', async () => ({ count: 0 }));
+  mockMethod(t, prisma.screen, 'findMany', async () => []);
+  const count = async () => (await (await request('/media/folders', token)).json())[0]._count.medias;
+  assert.equal(await count(), 1);
+  const response = await fetch(base + '/media/active', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(response.status, 200); assert.equal(rows.has('active'), false); assert.equal(await count(), 0);
+  assert.equal(rows.has('archived'), true, 'Do not purge previously deployed archived data automatically');
+});
+test('failed storage deletion preserves the media record and reports the failure', async t => {
+  const { token } = await fixture(); let deletes = 0;
+  mockMethod(t, prisma.media, 'findFirst', async () => ({ id: 'media', tenantId: 'tenant', storagePath: '../escape' }));
+  mockMethod(t, prisma.layout, 'findMany', async () => []);
+  mockMethod(t, prisma.media, 'delete', async () => { deletes++; });
+  const response = await fetch(base + '/media/media', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(response.status, 500); assert.equal(deletes, 0);
+});
+test('legacy Android proof event persists and retries acknowledge the same event without new required fields', async t => {
+  const screenId = randomUUID(), eventId = randomUUID(), persisted = new Map();
+  const token = jwt.sign({ type: 'DEVICE', screenId, tenantId: 'tenant', version: 1 }, process.env.JWT_SECRET);
+  mockMethod(t, prisma, '$queryRaw', async () => []);
+  mockMethod(t, prisma.media, 'findMany', async () => []);
+  mockMethod(t, prisma.campaign, 'findMany', async () => []);
+  mockMethod(t, prisma.proofOfPlay, 'createMany', async ({ data }) => { let count = 0; for (const item of data) if (!persisted.has(item.eventId)) { persisted.set(item.eventId, item); count++; } return { count }; });
+  const item = { screenId, eventId, mediaName: 'Original Android event', durationSeconds: 10, playedAt: new Date().toISOString() };
+  const first = await request('/proof/log-batch', token, { items: [item] }); assert.equal(first.status, 200);
+  assert.deepEqual((await first.json()).eventIds, [eventId]); assert.equal(persisted.get(eventId).completed, true);
+  const retry = await request('/proof/log-batch', token, { items: [item] }); const body = await retry.json(); assert.equal(body.accepted, 0); assert.equal(body.duplicates, 1); assert.deepEqual(body.eventIds, [eventId]);
+});
+test('the original INACTIVE campaign value remains supported', () => {
+  const input = { name: 'Campaign', startDate: '2026-09-01', endDate: '2026-09-30', status: 'INACTIVE' };
+  assert.equal(validateCampaign(input).status, 'INACTIVE');
+});
+test('operator authenticates through original PIN request, including already migrated PIN hashes', async t => {
+  const pin = '123456', queue = { id: 'queue', tenantId: 'tenant', name: 'Queue', pinCode: null, pinHash: await bcrypt.hash(pin, 4), tokenVersion: 1 };
+  mockMethod(t, prisma.tenant, 'findMany', async () => [{ id: 'tenant' }]);
+  mockMethod(t, prisma.ticketQueue, 'findMany', async ({ where }) => { assert.equal(where.tenant.status, 'ACTIVE'); assert.ok(where.OR.some(q => q.pinLookup)); return [queue]; });
+  mockMethod(t, prisma.queueTicket, 'findMany', async () => []);
+  const result = await request('/queues/operator/auth', '', { pinCode: pin }); assert.equal(result.status, 200); assert.equal((await result.json()).queue.id, queue.id);
+  const bad = await request('/queues/operator/auth', '', { pinCode: '654321' }); assert.equal(bad.status, 401);
+});
+
+test('maintenance PIN is available to the authorized edit form but absent from default screen DTO', () => {
+  const { screenDto } = require('../dist/lib/dto.js');
+  const screen = { id: 'screen', maintenancePin: '123456' };
+  assert.equal(screenDto(screen).maintenancePin, undefined);
+  assert.equal(screenDto(screen, true).maintenancePin, '123456');
 });

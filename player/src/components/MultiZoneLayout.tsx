@@ -41,7 +41,7 @@ export function MultiZoneLayout({ layout, activePlaylist, activeAlert, volume = 
                 borderRight: isVertical ? undefined : '1px solid rgba(255,255,255,.08)'
               }}
             >
-              <MediaSequence items={zoneItems.filter((item: any) => !item.layout)} fit={zone.fit === 'COVER' ? 'cover' : zone.fit === 'FILL' ? 'fill' : 'contain'} volume={volume} audioEnabled={typeof zone.audioEnabled === 'boolean' ? zone.audioEnabled : zoneIndex === 0} onProof={onProof} onCurrent={onCurrent} screenId={screenId} zoneId={zoneIndex === 0 ? 'main' : String(zone.id || zoneIndex)} />
+              <MediaSequence loop={zone.loop !== false} items={zoneItems.filter((item: any) => !item.layout)} fit={zone.fit === 'COVER' ? 'cover' : zone.fit === 'FILL' ? 'fill' : 'contain'} volume={volume} audioEnabled={typeof zone.audioEnabled === 'boolean' ? zone.audioEnabled : zoneIndex === 0} onProof={onProof} onCurrent={onCurrent} screenId={screenId} zoneId={zoneIndex === 0 ? 'main' : String(zone.id || zoneIndex)} />
             </div>
           );
         })}

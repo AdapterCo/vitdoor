@@ -121,15 +121,20 @@ qrRoutes.get('/nfc/:screenId', scanRateLimit, async (req: Request, res: Response
   // Find screen with active tenant and current media
   const screen = await prisma.screen.findFirst({
     where: { id: screenId, archivedAt: null, tenant: { status: 'ACTIVE' } },
-    select: { id: true, tenantId: true, currentMediaAt: true, currentMediaId: true, currentMediaName: true, activePlaylistId: true, createdById: true }
+    select: { id: true, tenantId: true, currentMediaAt: true, lastPing: true, currentMediaId: true, currentMediaName: true, activePlaylistId: true, createdById: true }
   });
 
   if (!screen) {
     return res.status(404).send('Tela ou estabelecimento inativo.');
   }
 
-  const targetMediaId = screen.currentMediaId;
-  if (!targetMediaId || !screen.currentMediaAt || Date.now() - screen.currentMediaAt.getTime() > 30_000) {
+  let targetMediaId = screen.currentMediaId;
+  const reportedAt = screen.currentMediaAt || screen.lastPing;
+  if (!targetMediaId && screen.currentMediaName) {
+    const matches = await prisma.media.findMany({ where: { tenantId: screen.tenantId, archivedAt: null, name: screen.currentMediaName }, take: 2, select: { id: true } });
+    if (matches.length === 1) targetMediaId = matches[0].id;
+  }
+  if (!targetMediaId || !reportedAt || Date.now() - reportedAt.getTime() > 60_000) {
     return res.status(404).send('A tela não está informando uma mídia atual. Tente novamente em instantes.');
   }
 

@@ -300,8 +300,12 @@ export function App() {
   };
 
   const handleDeleteMedia = async (id: string) => {
-    await apiFetch(`/media/${id}?tenantId=${activeTenant.id}`, { method: 'DELETE' });
-    loadTenantData(activeTenant.id);
+    if (!activeTenant) return;
+    const response = await apiFetch(`/media/${id}?tenantId=${activeTenant.id}`, { method: 'DELETE' });
+    if (!response.ok) {
+      const error = await response.json(); alert(error.error); return;
+    }
+    await loadTenantData(activeTenant.id);
   };
 
   const handleCreateMediaFolder = async (name: string) => {

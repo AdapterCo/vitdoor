@@ -11,14 +11,14 @@ export interface PlaybackProps {
   screenId?: string;
   zoneId?: string;
 }
-export function MediaSequence({ items, onCycle, volume = 80, audioEnabled = true, fit = 'contain', ...events }: PlaybackProps & { items: any[]; onCycle?: () => void; volume?: number; audioEnabled?: boolean; fit?: React.CSSProperties['objectFit'] }) {
+export function MediaSequence({ items, onCycle, loop = true, volume = 80, audioEnabled = true, fit = 'contain', ...events }: PlaybackProps & { items: any[]; onCycle?: () => void; loop?: boolean; volume?: number; audioEnabled?: boolean; fit?: React.CSSProperties['objectFit'] }) {
   const [cycle, setCycle] = useState(0);
   const signature = JSON.stringify(items.map(i => [i.mediaId || i.media?.id || i.id, i.media?.version || i.version, i.durationSeconds]));
   useEffect(() => setCycle(0), [signature]);
   const item = items[cycle % Math.max(items.length, 1)];
   if (!item) return <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: '#94a3b8' }}>Área sem conteúdo</div>;
   const media = item.media || { ...item, id: item.mediaId || item.id };
-  return <MediaItem key={`${signature}:${cycle}`} media={media} duration={item.durationSeconds || media.durationSeconds || 10} volume={volume} audioEnabled={audioEnabled} fit={fit} onNext={() => { if (onCycle) onCycle(); else setCycle(v => v + 1); }} {...events} />;
+  return <MediaItem key={`${signature}:${cycle}`} media={media} duration={item.durationSeconds || media.durationSeconds || 10} volume={volume} audioEnabled={audioEnabled} fit={fit} onNext={() => { if (onCycle) onCycle(); else setCycle(v => loop || v < items.length - 1 ? v + 1 : v); }} {...events} />;
 }
 
 function MediaItem({ media, duration, volume, audioEnabled, fit, onNext, onProof, onCurrent, screenId, zoneId = 'main' }: PlaybackProps & { media: any; duration: number; volume: number; audioEnabled: boolean; fit: React.CSSProperties['objectFit']; onNext: () => void }) {
@@ -69,7 +69,7 @@ function MediaItem({ media, duration, volume, audioEnabled, fit, onNext, onProof
   }, [volume, audioEnabled]);
   const mediaProps = { src: media.url, autoPlay: true, playsInline: true, crossOrigin: 'anonymous' as const, onPlaying: start, onPause: accrue, onWaiting: accrue, onTimeUpdate: () => { progressAt.current = performance.now(); }, onEnded: () => finish(true, 'COMPLETED'), onError: fail };
   return <div style={{ height: '100%', width: '100%', position: 'relative', background: '#000' }}>
-    {failed ? <div role="status" style={{ color: '#94a3b8', padding: 20 }}>Mídia indisponível. Avançando…</div> : media.type === 'VIDEO' ? <video ref={el => { av.current = el; }} {...mediaProps} style={{ width: '100%', height: '100%', objectFit: fit }} /> : media.type === 'AUDIO' ? <><audio ref={el => { av.current = el; }} {...mediaProps} /><div style={{ color: '#fff', padding: 20 }}>{media.name}</div></> : ['WEB_PAGE', 'PDF'].includes(media.type) ? <iframe src={media.url} title={media.name} onLoad={start} onError={fail} sandbox="allow-scripts allow-forms allow-popups" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', border: 0 }} /> : <img src={media.url} alt={media.name} crossOrigin="anonymous" onLoad={start} onError={fail} style={{ width: '100%', height: '100%', objectFit: fit }} />}
+    {failed ? <div role="status" style={{ color: '#94a3b8', padding: 20 }}>Mídia indisponível. Avançando…</div> : media.type === 'VIDEO' ? <video ref={el => { av.current = el; }} {...mediaProps} style={{ width: '100%', height: '100%', objectFit: fit }} /> : media.type === 'AUDIO' ? <><audio ref={el => { av.current = el; }} {...mediaProps} /><div style={{ color: '#fff', padding: 20 }}>{media.name}</div></> : ['WEB_PAGE', 'PDF'].includes(media.type) ? <iframe src={media.url} title={media.name} onLoad={start} onError={fail} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', border: 0 }} /> : <img src={media.url} alt={media.name} crossOrigin="anonymous" onLoad={start} onError={fail} style={{ width: '100%', height: '100%', objectFit: fit }} />}
     {audioBlocked && !failed && <button onClick={() => { if (av.current) { av.current.muted = false; void av.current.play().then(() => setAudioBlocked(false)).catch(fail); } }} style={{ position: 'absolute', bottom: 20, left: 20 }}>Ativar áudio</button>}
     <MediaQrCta cta={media.cta} mediaId={media.id} screenId={screenId} />
   </div>;

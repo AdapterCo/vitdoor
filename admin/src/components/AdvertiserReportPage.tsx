@@ -16,7 +16,7 @@ export const AdvertiserReportPage: React.FC<Props> = ({ mediaId }) => {
     const fetchReport = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_BASE}/public/report/media/${mediaId}?days=30&token=${encodeURIComponent(new URLSearchParams(window.location.hash.slice(1)).get('token') || '')}`, { referrerPolicy: 'no-referrer', cache: 'no-store' });
+        const res = await fetch(`${API_BASE}/public/report/media/${mediaId}?days=30`, { cache: 'no-store' });
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: 'Relatório não encontrado.' }));
           throw new Error(err.error || 'Não foi possível carregar o relatório.');

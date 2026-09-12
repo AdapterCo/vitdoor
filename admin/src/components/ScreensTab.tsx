@@ -246,7 +246,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                         setEditLocationName(screen.locationName || '');
                         setEditGroupName(screen.groupName || 'Geral');
                         setEditOrientation(screen.orientation || 'HORIZONTAL');
-                        setEditMaintenancePin('');
+                        setEditMaintenancePin(screen.maintenancePin || '');
                       }}
                     >
                       <Pencil size={14} color="#a855f7" />
@@ -516,7 +516,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                 locationName: editLocationName,
                 groupName: editGroupName,
                 orientation: editOrientation,
-                ...(pin ? { maintenancePin: pin } : {})
+                maintenancePin: pin
               });
               if (saved) setEditingScreen(null);
             }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -557,7 +557,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                   type="text"
                   inputMode="numeric"
                   className="input-field"
-                  placeholder="Deixe vazio para manter o PIN atual" value={editMaintenancePin}
+                  placeholder="Em branco = remover o PIN" value={editMaintenancePin}
                   onChange={(e) => setEditMaintenancePin(e.target.value.replace(/\D/g, '').slice(0, 6))}
 
                 />

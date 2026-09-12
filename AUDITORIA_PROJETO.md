@@ -1,3 +1,5 @@
+> Registro historico do diagnostico inicial. As propostas de mudanca estrutural deste documento nao representam o escopo atual aprovado. Consulte [a revisao de compatibilidade](CORRECOES_IMPLEMENTADAS.md).
+
 # Auditoria técnica do VitDoor
 
 Data: 11/09/2026. Escopo: código disponível neste workspace, backend Express/Prisma, painel React, simulador React, configuração Docker/Nginx e documentação de arquitetura/deploy.

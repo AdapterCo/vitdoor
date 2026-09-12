@@ -18,7 +18,7 @@ COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
-RUN mkdir -p uploads private && chown -R node:node /app
+RUN mkdir -p uploads && chown -R node:node /app
 USER node
 EXPOSE 4000
 CMD ["node", "dist/server.js"]

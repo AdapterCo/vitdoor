@@ -1,8 +1,6 @@
 # Deploy de homologação do VitDoor na VPS
 
-Este procedimento disponibiliza o painel web, a API, PostgreSQL, R2/CDN e o player web de simulação. Manifestos versionados e upload multipart HTTP estão implementados. O cliente Android, distribuição entre múltiplas instâncias e backups externos com restauração ensaiada ainda precisam de homologação.
-
-**Atualização de 12/09/2026:** ler [CORRECOES_IMPLEMENTADAS.md](CORRECOES_IMPLEMENTADAS.md) antes de atualizar uma instalação existente. Esta versão exige a nova migration de sessões/senhas, novo login dos administradores, volume `private_data` para screenshots e clientes compatíveis com provas identificadas por mídia/manifesto. Imagens Docker usam Node 22. Em produção R2, definir também `CLOUDFLARE_ZONE_ID` e `CLOUDFLARE_PURGE_TOKEN`; screenshots antigos do bucket devem ser removidos e purgados no ambiente implantado.
+Este procedimento disponibiliza o painel web, a API, PostgreSQL, R2/CDN e o player web de simulação. Ele ainda não representa uma implantação comercial: o player oficial Android, Redis, upload multipart, manifestos versionados e backups externos continuam pendentes.
 
 ## 1. Pré-requisitos
 

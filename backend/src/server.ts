@@ -1,8 +1,6 @@
 import { errorHandler } from './middleware/errors.js';
-import { asyncHandler } from './lib/router.js';
 import { randomUUID } from 'crypto';
 import { startMaintenance } from './lib/maintenance.js';
-import { migrateQueuePins } from './routes/queueRoutes.js';
 import 'dotenv/config';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
@@ -76,14 +74,6 @@ app.use(cookieParser());
 app.use(express.json({ limit: '2mb', strict: true }));
 app.use(express.urlencoded({ extended: true, limit: '2mb', parameterLimit: 200 }));
 
-// Only registered active media are public. Legacy screenshots and orphan files are not.
-app.use('/uploads', asyncHandler(async (req, res, next) => {
-  let key: string;
-  try { key = decodeURIComponent(req.path).replace(/^\/+/, ''); } catch { res.sendStatus(400); return; }
-  const media = await prisma.media.findFirst({ where: { archivedAt: null, tenant: { status: 'ACTIVE' }, OR: [{ storagePath: key }, { storagePath: `local:${key}` }] }, select: { id: true } });
-  if (!media) { res.sendStatus(404); return; }
-  next();
-}));
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.use('/api', apiRateLimiter);
@@ -129,7 +119,6 @@ let stopRss = () => {};
 let stopMaintenance = () => {};
 
 async function start() {
-  await migrateQueuePins();
   await prisma.screen.updateMany({ where: { status: 'ONLINE' }, data: { status: 'OFFLINE' } });
   server.listen(PORT, () => {
     console.log(`VitDoor Backend Server rodando na porta ${PORT}`);

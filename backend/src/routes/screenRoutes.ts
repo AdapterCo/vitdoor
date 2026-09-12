@@ -1,4 +1,4 @@
-import { readStoredScreenshot } from '../lib/storage.js';
+import { readStoredScreenshot, deleteStoredFile, legacyScreenshotLocation } from '../lib/storage.js';
 import { Router } from '../lib/router.js';
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
@@ -28,7 +28,7 @@ screenRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
     },
     orderBy: { createdAt: 'desc' }
   });
-  return res.json(screens.map(screenDto));
+  return res.json(screens.map(screen => screenDto(screen, ['SUPER_ADMIN', 'ADMIN_CLIENT', 'OPERATOR'].includes(req.auth!.role))));
 });
 
 // Generate new pending screen with pairing code
@@ -65,7 +65,7 @@ screenRoutes.post('/pair', async (req: Request, res: Response): Promise<any> => 
     return created;
   });
 
-  return res.json(screenDto(screen));
+  return res.json(screenDto(screen, true));
 });
 
 // Update screen details
@@ -111,7 +111,7 @@ screenRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   // Push immediate websocket update to the physical screen
   await sendManifestToScreen(id);
 
-  return res.json(screenDto(screen));
+  return res.json(screenDto(screen, true));
 });
 
 // Remote commands route (Screenshot, reboot, change volume, force sync)
@@ -260,11 +260,9 @@ screenRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> =>
   const scopedTenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const existing = await prisma.screen.findFirst({ where: { id, tenantId: scopedTenantId, archivedAt: null } });
   if (!existing) return res.status(404).json({ error: 'Tela não encontrada.' });
-  await prisma.$transaction([
-    ...(existing.screenshotPath ? [prisma.storageDeletion.create({ data: { storagePath: existing.screenshotPath } })] : []),
-    prisma.screen.update({ where: { id }, data: { lastScreenshotUrl: null, screenshotPath: null, archivedAt: new Date(), paired: false, status: 'OFFLINE', deviceTokenVersion: { increment: 1 }, activePlaylistId: null, activeLayoutId: null, currentMediaId: null, currentMediaAt: null, maintenancePin: null } }),
-    prisma.ticketQueue.updateMany({ where: { screenId: id }, data: { screenId: null } })
-  ]);
+  const screenshot = existing.screenshotPath || legacyScreenshotLocation(existing)?.key;
+  await deleteStoredFile(screenshot);
+  await prisma.screen.delete({ where: { id } });
   disconnectScreen(id);
   return res.json({ success: true });
 });

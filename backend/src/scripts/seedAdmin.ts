@@ -9,7 +9,7 @@ async function main() {
   const name = process.env.INITIAL_ADMIN_NAME?.trim() || 'Administrador VitDoor';
 
   if (!email || !password || passwordError(password)) {
-    throw new Error('Defina INITIAL_ADMIN_EMAIL e INITIAL_ADMIN_PASSWORD com pelo menos 12 caracteres.');
+    throw new Error('Defina INITIAL_ADMIN_EMAIL e INITIAL_ADMIN_PASSWORD com pelo menos 6 caracteres.');
   }
 
   const passwordHash = await bcrypt.hash(password, 12);

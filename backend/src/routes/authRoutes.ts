@@ -1,11 +1,10 @@
 import { Router } from '../lib/router.js';
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
-import { getAdminJwtSecret, getSessionToken, SESSION_COOKIE_NAME, sessionCookieOptions } from '../lib/session.js';
+import { SESSION_COOKIE_NAME, sessionCookieOptions } from '../lib/session.js';
 import { authenticate } from '../middleware/auth.js';
-import { createAdminSession, verifyAdminSession } from '../lib/adminSessions.js';
+import { createAdminSession } from '../lib/adminSessions.js';
 import { passwordError, HttpError } from '../lib/validation.js';
 import { passwordRateLimiter } from '../middleware/security.js';
 import { disconnectAdminSessions } from '../lib/websocket.js';
@@ -76,17 +75,14 @@ authRoutes.post('/change-password', authenticate, passwordRateLimiter, async (re
   const token = await prisma.$transaction(async (tx) => {
     const result = await tx.user.updateMany({ where: { id: user.id, passwordHash: user.passwordHash, sessionVersion: user.sessionVersion }, data: { passwordHash, sessionVersion: { increment: 1 } } });
     if (result.count !== 1) throw new HttpError(409, 'A conta foi alterada. Entre novamente e tente outra vez.');
-    await tx.adminSession.deleteMany({ where: { userId: user.id } });
-    return createAdminSession(await tx.user.findUniqueOrThrow({ where: { id: user.id } }), tx);
+    return createAdminSession(await tx.user.findUniqueOrThrow({ where: { id: user.id } }));
   });
   res.cookie(SESSION_COOKIE_NAME, token, sessionCookieOptions());
   disconnectAdminSessions(user.id);
   return res.json({ message: 'Senha alterada. As outras sessões foram encerradas.' });
 });
 
-authRoutes.post('/logout', authenticate, async (req: Request, res: Response) => {
-  await prisma.adminSession.deleteMany({ where: { id: req.auth!.sessionId } });
-  disconnectAdminSessions(req.auth!.userId, req.auth!.sessionId);
+authRoutes.post('/logout', async (req: Request, res: Response) => {
   res.clearCookie(SESSION_COOKIE_NAME, { ...sessionCookieOptions(), maxAge: undefined });
   return res.status(204).send();
 });

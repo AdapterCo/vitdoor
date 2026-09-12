@@ -151,7 +151,7 @@ export function App() {
     };
     const connect = () => {
       if (disposed) return; ws = new WebSocket(getWebSocketUrl()); wsRef.current = ws;
-      ws.onopen = () => { setConnected(true); ws.send(JSON.stringify({ type: 'REGISTER_PLAYER', clientKind: 'WEB_SIMULATOR', deviceToken: token(), os: 'Web Simulator', appVersion: '2.0.0' })); beat = setInterval(heartbeat, 10000); };
+      ws.onopen = () => { setConnected(true); ws.send(JSON.stringify({ type: 'REGISTER_PLAYER', clientKind: 'WEB_SIMULATOR', deviceToken: token(), os: 'Web Simulator', appVersion: '1.0.0' })); beat = setInterval(heartbeat, 10000); };
       let messages = Promise.resolve(); ws.onmessage = event => { messages = messages.then(() => handle(JSON.parse(event.data))).catch(() => {}); };
       ws.onclose = () => { setConnected(false); clearInterval(beat); if (!disposed) retry = setTimeout(connect, 3000); };
     };

@@ -69,7 +69,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
     setName(c.name || '');
     setAdvertiserName(c.advertiserName || '');
     setPlaylistId(c.playlistId || c.playlist?.id || '');
-    setStatus(c.status || 'ACTIVE');
+    setStatus(c.status === 'PAUSED' ? 'INACTIVE' : c.status || 'ACTIVE');
     setStartDate(c.startDate ? c.startDate.slice(0, 10) : todayStr);
     setEndDate(c.endDate ? c.endDate.slice(0, 10) : nextMonthStr);
     setStartTime(c.startTime || '00:00');

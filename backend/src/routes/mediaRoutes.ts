@@ -9,7 +9,7 @@ import { HttpError, integer, text } from '../lib/validation.js';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-import { createHash, randomUUID, randomBytes } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { fileTypeFromFile } from 'file-type';
 import { mediaDto, mediaFolderDto } from '../lib/dto.js';
 import { parseWhatsAppTarget, normalizeInstagramTarget, normalizeGenericUrl, isValidPhone, buildWhatsAppWebUrl } from '../lib/ctaHelpers.js';
@@ -57,7 +57,7 @@ mediaRoutes.get('/folders', async (req: Request, res: Response): Promise<any> =>
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const folders = await prisma.mediaFolder.findMany({
     where: { tenantId },
-    include: { _count: { select: { medias: true } } },
+    include: { _count: { select: { medias: { where: { archivedAt: null } } } } },
     orderBy: { name: 'asc' }
   });
   return res.json(folders.map(mediaFolderDto));
@@ -130,7 +130,6 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
   for await (const chunk of stream) hash.update(chunk);
   const checksum = hash.digest('hex');
 
-  const { url, storagePath, cleanupId } = await saveFile(req.file, tenantId, mediaId);
   
   let detectedDuration = null;
   if (type === 'VIDEO' || type === 'AUDIO') {
@@ -139,6 +138,8 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
   
   const requestedDuration = parseInt(req.body.durationSeconds, 10);
   const duration = integer(detectedDuration || (Number.isFinite(requestedDuration) ? requestedDuration : 10), 'Duração', 1, 86400);
+
+  const { url, storagePath } = await saveFile(req.file, tenantId, mediaId);
 
   const fileSize = req.file.size;
   const media = await prisma.$transaction(async tx => {
@@ -165,8 +166,10 @@ mediaRoutes.post('/upload', upload.single('file'), async (req: Request, res: Res
       tags: req.body.tags || 'Geral'
     }
   });
-    await tx.storageDeletion.delete({ where: { id: cleanupId } });
     return created;
+  }).catch(async error => {
+    await deleteStoredFile(storagePath).catch(() => console.error("Failed to remove unregistered upload"));
+    throw error;
   });
 
   return res.json(mediaDto(media));
@@ -426,10 +429,10 @@ mediaRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => 
   if (layoutUsingMedia) {
     return res.status(409).json({ error: `Remova esta mídia do layout "${layoutUsingMedia.name}" antes de excluí-la.` });
   }
+  await deleteStoredFile(media.storagePath);
+  await purgePublicUrl(media.url);
   await prisma.$transaction(async tx => {
-    await tx.media.update({ where: { id }, data: { archivedAt: new Date(), reportTokenHash: null, reportExpiresAt: null } });
-    await tx.playlistItem.deleteMany({ where: { mediaId: id } });
-    if (media.storagePath) await tx.storageDeletion.create({ data: { storagePath: media.storagePath, publicUrl: media.url } });
+    await tx.media.delete({ where: { id } });
     await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
   });
   const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
@@ -447,19 +450,3 @@ function layoutContainsMedia(canvasConfigJson: string, mediaId: string): boolean
     return false;
   }
 }
-
-mediaRoutes.post('/:id/report-link', async (req, res) => {
-  const tenantId = tenantScope(req, req.body.tenantId);
-  const media = await prisma.media.findFirst({ where: { id: req.params.id, tenantId, archivedAt: null } });
-  if (!media) throw new HttpError(404, 'Mídia não encontrada.');
-  const token = randomBytes(32).toString('base64url');
-  const expiresAt = new Date(Date.now() + 30 * 86400_000);
-  await prisma.media.update({ where: { id: media.id }, data: { reportTokenHash: createHash('sha256').update(token).digest('hex'), reportExpiresAt: expiresAt } });
-  return res.json({ token, expiresAt });
-});
-mediaRoutes.delete('/:id/report-link', async (req, res) => {
-  const tenantId = tenantScope(req);
-  const result = await prisma.media.updateMany({ where: { id: req.params.id, tenantId }, data: { reportTokenHash: null, reportExpiresAt: null } });
-  if (!result.count) throw new HttpError(404, 'Mídia não encontrada.');
-  return res.status(204).end();
-});
