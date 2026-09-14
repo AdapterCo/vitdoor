@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Tv, Volume2, Camera, RefreshCw, Power, Trash2, Plus, Sliders, CheckCircle2, Radio, Copy, Check, X, Pencil, DownloadCloud, Lock, Unlock } from 'lucide-react';
+import { ScreenScreenshot } from './ScreenScreenshot';
 
 interface ScreensTabProps {
   screens: any[];
@@ -37,6 +38,7 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
   const [orientation, setOrientation] = useState('HORIZONTAL');
   const [volumeDrafts, setVolumeDrafts] = useState<Record<string, string>>({});
   const [nfcModalScreen, setNfcModalScreen] = useState<any | null>(null);
+  const [screenshotModalScreen, setScreenshotModalScreen] = useState<any | null>(null);
 
   // Edit screen modal state
   const [editingScreen, setEditingScreen] = useState<any | null>(null);
@@ -153,7 +155,23 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <Tv size={20} color="#60a5fa" />
                     <div>
-                      <div>{screen.name}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>{screen.name}</span>
+                        <span
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            letterSpacing: '0.03em',
+                            background: screen.status === 'ONLINE' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            color: screen.status === 'ONLINE' ? '#4ade80' : '#f87171',
+                            border: screen.status === 'ONLINE' ? '1px solid rgba(74, 222, 128, 0.3)' : '1px solid rgba(248, 113, 113, 0.3)'
+                          }}
+                        >
+                          {screen.status === 'ONLINE' ? '🟢 ONLINE' : '🔴 OFFLINE'}
+                        </span>
+                      </div>
                       <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
                         IP: {screen.ipAddress || 'não informado'} · App v{screen.appVersion || '—'}
                         {screen.maintenanceUntil && new Date(screen.maintenanceUntil).getTime() > Date.now() && (
@@ -262,10 +280,13 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
                     <button
                       className="btn-secondary"
                       style={{ padding: '6px 10px' }}
-                      title="Capturar Foto Atual"
-                      onClick={() => onRemoteCommand(screen.id, 'TAKE_SCREENSHOT')}
+                      title="Ver e Capturar Foto da Tela"
+                      onClick={() => {
+                        setScreenshotModalScreen(screen);
+                        onRemoteCommand(screen.id, 'TAKE_SCREENSHOT');
+                      }}
                     >
-                      <Camera size={14} />
+                      <Camera size={14} color="#38bdf8" />
                     </button>
                     <button
                       className="btn-secondary"
@@ -640,6 +661,54 @@ export const ScreensTab: React.FC<ScreensTabProps> = ({
               <button type="button" className="btn-secondary" onClick={() => setOtaOpen(false)} disabled={otaSending}>Cancelar</button>
               <button type="button" className="btn-primary" onClick={submitOta} disabled={otaSending}>
                 <DownloadCloud size={16} /> {otaSending ? 'Enviando...' : 'Enviar atualização'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Screenshot Preview Modal */}
+      {screenshotModalScreen && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '20px'
+        }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '640px', padding: '24px', position: 'relative' }}>
+            <button
+              onClick={() => setScreenshotModalScreen(null)}
+              style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+            >
+              <X size={20} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <Camera size={22} color="#38bdf8" />
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                  Foto da Tela em Tempo Real — {screenshotModalScreen.name}
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                  Capturada e enviada diretamente do dispositivo
+                </span>
+              </div>
+            </div>
+
+            <div style={{ height: '340px', background: '#020617', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.1)', marginBottom: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ScreenScreenshot
+                screenId={screenshotModalScreen.id}
+                revision={screens.find(s => s.id === screenshotModalScreen.id)?.lastScreenshotUrl || screenshotModalScreen.lastScreenshotUrl || '1'}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.85rem', color: screens.find(s => s.id === screenshotModalScreen.id)?.status === 'ONLINE' ? '#4ade80' : '#f87171' }}>
+                Status: {screens.find(s => s.id === screenshotModalScreen.id)?.status === 'ONLINE' ? '🟢 ONLINE' : '🔴 OFFLINE'}
+              </span>
+              <button
+                className="btn-primary"
+                onClick={() => onRemoteCommand(screenshotModalScreen.id, 'TAKE_SCREENSHOT')}
+              >
+                <Camera size={14} /> Capturar Nova Foto Agora
               </button>
             </div>
           </div>

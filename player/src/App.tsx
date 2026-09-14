@@ -137,7 +137,9 @@ export function App() {
           const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Captura indisponível.')), 'image/jpeg', .6));
           const form = new FormData(); form.append('file', blob, 'screen.jpg');
           await request(`/device/screenshots/${msg.commandId}`, { method: 'POST', body: form });
-          await setCache(commandKey, true); return;
+          await setCache(commandKey, true);
+          await acknowledge(msg, true, 'Screenshot enviado.');
+          return;
         } else if (msg.type === 'REBOOT') {
           await setCache(commandKey, true); await acknowledge(msg, true, 'Recarregamento solicitado.'); location.reload(); return;
         } else if (msg.type === 'EMERGENCY_ALERT_TRIGGERED') setAlert(msg.alert);
