@@ -235,6 +235,44 @@ Resposta pareada:
 
 O token é diferente do token de usuário, é revogável por versão e atualmente expira em 365 dias. Nunca armazenar em preferências comuns, logs, analytics ou backups Android.
 
+### 7.3 Consumir o segredo de pareamento (`/pairing/ack`) — obrigatório
+
+**Estado:** implementado no backend; **obrigatório no app**, ainda sem confirmação de uso no Kotlin.
+
+Até esta seção, `pairingSecret` continuava válido para sempre: qualquer requisição repetida a
+`/pairing/{pairingId}/status` com o mesmo segredo devolvia um `deviceToken` novo, mesmo muito
+tempo depois do pareamento real. Isso foi corrigido — o segredo agora **precisa ser consumido**
+pelo próprio dispositivo assim que ele confirma que está operante:
+
+```http
+POST /api/device/pairing/ack
+Authorization: Bearer {deviceToken}
+```
+
+Sem corpo. Resposta `204`. Efeito: marca **todas** as `PairingSession` daquela tela como
+consumidas (`consumedAt`); qualquer chamada futura a `/pairing/{pairingId}/status` com o
+`pairingSecret` antigo passa a responder `410 EXPIRED`, mesmo que o segredo original nunca
+tenha vazado.
+
+**Quando chamar:** uma única vez, logo após o primeiro `PAIRING_SUCCESS` recebido pelo
+WebSocket (ou logo após a primeira busca bem-sucedida do manifesto). Não repetir a cada boot —
+chamadas depois da primeira são no-op inofensivo, mas desnecessárias.
+
+### 7.4 Renovar o token do dispositivo (`/renew`)
+
+**Estado:** implementado no backend; recomendado no app.
+
+```http
+POST /api/device/renew
+Authorization: Bearer {deviceToken}
+```
+
+Resposta `200`: `{ "deviceToken": "jwt-novo" }` — mesmas claims (`screenId`, `tenantId`,
+`version`), validade de 365 dias a partir de agora. Chamar periodicamente (sugestão: uma vez
+por mês, ou ao detectar que o token guardado tem mais de ~300 dias) para o dispositivo nunca
+chegar perto da expiração de 365 dias enquanto estiver saudável e conectado. Substituir o
+token armazenado pelo novo a cada chamada bem-sucedida.
+
 ## 8. WebSocket atual
 
 Ao conectar em `wss://api.vitdoor.com.br/ws`, enviar:
@@ -265,11 +303,12 @@ Aviso atual de programação:
 
 ### 8.1 Mensagens recebidas existentes
 
-- `PAIRING_SUCCESS` / `PAIRING_CONFIRMED`: identidade, volume, orientação, conteúdo de compatibilidade do simulador e `manifestVersion`/`manifestChecksum` disponíveis;
-- `PAIRING_PENDING`: ativação ainda não confirmada;
+- `PAIRING_SUCCESS` / `PAIRING_CONFIRMED`: identidade, volume, orientação, conteúdo de compatibilidade do simulador, `campaigns` (mesmo array do manifesto — ver seção 9.3) e `manifestVersion`/`manifestChecksum` disponíveis;
 - `DEVICE_AUTH_FAILED`: apagar credencial inválida e voltar à ativação;
 - `MANIFEST_UPDATED`: existe nova versão; contém `manifestVersion`, `manifestChecksum`, `forceReload` e (quando originado de um comando `SYNC`) `commandId`/`createdAt`/`expiresAt`. Exige rebusca autenticada de `GET /api/device/manifest`; ao aplicar, **reaplicar também `screen.orientation` e `screen.volume`** (ver seção 9.5), não só a programação;
-- `CONTENT_UPDATED`: mensagem legada exclusiva do simulador web; não usar como fonte de programação no aplicativo Flutter;
+- `CONTENT_UPDATED`: canal legado **exclusivo do simulador web** — o backend só emite essa mensagem (com o conteúdo já embutido, sem precisar rebuscar o manifesto) para conexões que se identificaram como `clientKind: "WEB_SIMULATOR"` no `REGISTER_PLAYER`. O app Android real **nunca** deve se identificar assim e deve tratar somente `MANIFEST_UPDATED` como sinal de nova programação;
+
+> `PAIRING_PENDING` foi removido: o servidor não aceita mais `REGISTER_PLAYER` sem `deviceToken` válido — sem ele, a conexão é fechada (`close 1008`) na hora. Conclua o pareamento por HTTPS (seções 7.1–7.4) **antes** de abrir o WebSocket. O servidor também fecha a conexão se `REGISTER_PLAYER`/`REGISTER_ADMIN` for enviado mais de uma vez na mesma conexão, ou se qualquer outra mensagem for enviada antes do registro.
 - `SET_VOLUME`: aplicar volume indicado;
 - `REBOOT`: reiniciar o aplicativo de forma controlada;
 - `TAKE_SCREENSHOT`: capturar e responder, quando suportado;
@@ -498,6 +537,7 @@ O manifesto entrega a lista de campanhas publicitárias vigentes do cliente no c
   "endTime": "22:00",
   "daysOfWeek": "1,2,3,4,5",
   "priority": 2,
+  "timezone": "America/Sao_Paulo",
   "maxImpressions": 1000,
   "playlist": {
     "id": "uuid-da-playlist",
@@ -508,20 +548,25 @@ O manifesto entrega a lista de campanhas publicitárias vigentes do cliente no c
 }
 ```
 
+`timezone` (IANA, ex.: `America/Sao_Paulo`) é **novo** e passou a ser obrigatório na avaliação —
+o backend já usa isso para calcular `currentImpressions` e expirar campanhas (`lib/schedule.ts`,
+função `campaignIsActive`). O app deve replicar a mesma lógica, não usar mais o fuso do aparelho.
+
 #### Regras de Processamento no Player Android / Flutter:
 
 1. **Download Garantido de Assets**: O gerenciador de download (`VitDoorDownloadService`) deve baixar previamente todos os arquivos do array `assets` do manifesto, incluindo as mídias vinculadas às playlists das campanhas.
 2. **Motor de Seleção Temporal em Tempo Real**:
-   Antes de selecionar a próxima mídia a ser exibida na tela, o Player valida quais campanhas do array `campaigns` estão ativas no exato segundo atual:
-   - **Validade de Data**: Data do dispositivo (`now`) dentro da janela `startDate` e `endDate`.
-   - **Janela de Horário Diário**: Hora atual (HH:mm) entre `startTime` (ex: "08:00") e `endTime` (ex: "22:00").
-   - **Dia da Semana**: Dia atual do dispositivo (`1` = Segunda, `2` = Terça, `3` = Quarta, `4` = Quinta, `5` = Sexta, `6` = Sábado, `0` = Domingo) contido na string `daysOfWeek` (ex: `"1,2,3,4,5"`).
+   Antes de selecionar a próxima mídia a ser exibida na tela, o Player valida quais campanhas do array `campaigns` estão ativas no exato segundo atual — **tudo calculado no fuso `campaign.timezone`, nunca no fuso local do aparelho**:
+   - **Validade de Data**: data corrente **no fuso da campanha** dentro da janela `startDate`–`endDate` (comparação por data de calendário, não por instante UTC);
+   - **Janela de Horário Diário**: hora corrente (`HH:mm`, no fuso da campanha) entre `startTime` e `endTime`. Quando `startTime > endTime` (ex.: `22:00`–`02:00`), a janela **atravessa a meia-noite**: considerar ativo tanto quando `hora >= startTime` quanto quando `hora <= endTime`, e usar a data do dia em que a janela começou para checar `daysOfWeek`;
+   - **Dia da Semana**: dia da semana **da data de início da janela corrente, no fuso da campanha** (`1`=Segunda ... `0`=Domingo) contido em `daysOfWeek` (ex.: `"1,2,3,4,5"`).
+   - Referência de implementação (backend, TypeScript) em `backend/src/lib/schedule.ts::campaignIsActive` — portar a mesma regra, inclusive o tratamento de virada de meia-noite.
 3. **Regra de Intercalação e Prioridade (`priority`)**:
    - `priority = 3` (**Urgente / Exclusiva**): Substitui temporariamente a playlist normal da tela, tocando a playlist da campanha de forma exclusiva durante a janela de horário configurada.
    - `priority = 2` (**Alta**): Intercala 1 mídia da playlist da campanha a cada 2 mídias da playlist comum.
    - `priority = 1` (**Normal**): Insere a mídia da campanha no final do loop principal.
 4. **Auditoria Proof-of-Play**:
-   Toda exibição de mídia vinda de campanha gera log de auditoria no SQLite local contendo `mediaId`, `mediaName`, `durationPlayedSeconds` e um `eventId` (UUID v4), sendo sincronizada via `POST /api/proof-of-play/log-batch`.
+   Toda exibição de mídia vinda de campanha gera log de auditoria no SQLite local contendo, no mínimo, `mediaId`, `mediaName`, `durationPlayedSeconds` e um `eventId` (UUID v4). **Incluir também `campaignId`, `mediaVersion` e `manifestVersion`** no evento enviado (ver seção 13) — sem esses campos o backend ainda aceita o evento, mas não consegue atribuí-lo à campanha com precisão nem descartar mídia desatualizada. Sincronizar via `POST /api/proof-of-play/log-batch`.
 
 
 
@@ -851,18 +896,38 @@ Em qualquer falha, registrar diagnóstico, informar falha ao servidor e continua
 
 ### 13.1 Schema do Evento de Reprodução
 
-Registrar no dispositivo Android ao finalizar ou interromper cada mídia exibida:
+Registrar no dispositivo Android ao finalizar ou interromper cada mídia exibida. Os campos
+originais (`eventId`, `screenId`, `mediaName`, `playedAt`, `durationSeconds`, `completed`)
+continuam **100% suportados sozinhos** — nenhuma instalação existente quebra. Os campos novos
+abaixo são **opcionais, mas recomendados** a partir de agora:
 
 ```json
 {
   "eventId": "uuid-v4-gerado-uma-vez-no-dispositivo",
   "screenId": "uuid-da-tela-pareada",
   "mediaName": "Oferta de Sábado - Hambúrguer.mp4",
+  "mediaId": "uuid-da-midia-no-manifesto",
+  "mediaVersion": 1,
+  "manifestVersion": 18,
+  "campaignId": "uuid-da-campanha-ou-omitir",
+  "zoneId": "main",
+  "reason": "completed",
   "playedAt": "2026-08-13T12:00:00.000Z",
   "durationSeconds": 15,
   "completed": true
 }
 ```
+
+| Campo novo | Obrigatório? | Descrição |
+|---|---|---|
+| `mediaId` | opcional | `id` do asset no manifesto (`assets[].id` ou `media.id` dentro de `activePlaylist`/`activeLayout`). Quando enviado **junto com** `manifestVersion`, o backend valida o evento contra o manifesto realmente publicado naquela versão — mais preciso que casar por nome. |
+| `mediaVersion` | opcional | `version` do asset naquele manifesto. Se enviado e não bater com o que foi publicado, o evento é rejeitado (mídia desatualizada/trocada). |
+| `manifestVersion` | opcional, mas necessário para a validação acima funcionar | versão do manifesto (`screen.manifestVersion`/`ScreenManifest.version`) vigente quando a mídia tocou. |
+| `campaignId` | opcional | `id` da campanha (ver seção 9.3) se a exibição veio de uma campanha, não da playlist normal. Habilita contagem exata de `currentImpressions` por campanha — sem isso o backend ainda tenta casar por mídia/nome, mas com menos precisão. |
+| `zoneId` | opcional | `id` da zona do layout (ver seção 9.2), quando a exibição foi numa zona específica de um layout multizona. |
+| `reason` | opcional | motivo do fim da exibição, texto livre curto (ex.: `"completed"`, `"skipped"`, `"error"`). Só para diagnóstico, sem regra de negócio no backend hoje. |
+
+**Recomendação prática:** sempre que o item exibido veio de `activePlaylist.items[]`, `activeLayout` ou `campaigns[].playlist.items[]` do manifesto, você já tem `mediaId` (`item.media.id`), `mediaVersion` (`item.media.version`), `manifestVersion` (`manifest.version`) e, se aplicável, `campaignId`/`zoneId` disponíveis ali mesmo — inclua-os. Continue gerando `eventId` uma única vez no dispositivo, como antes.
 
 ---
 
@@ -889,16 +954,22 @@ Content-Type: application/json
 }
 ```
 
-Resposta `200 OK`:
+Resposta `200 OK` (sempre 200, mesmo com itens rejeitados — o lote nunca falha por inteiro):
 ```json
 {
   "received": 1,
   "accepted": 1,
   "duplicates": 0,
   "rejected": 0,
-  "eventIds": ["123e4567-e89b-12d3-a456-426614174000"]
+  "eventIds": ["123e4567-e89b-12d3-a456-426614174000"],
+  "rejectedEventIds": []
 }
 ```
+
+`rejectedEventIds` (novo) lista os `eventId` que vieram malformados **ou** que traziam
+`mediaId`/`manifestVersion`/`campaignId` inconsistentes com o manifesto publicado (ver seção
+13.1). Item rejeitado não é persistido — se for reenviado depois com o problema corrigido,
+processa normalmente (não conta como duplicata).
 
 #### Opção B: Envio Individual (Evento a evento)
 
@@ -917,29 +988,44 @@ Content-Type: application/json
 }
 ```
 
-Resposta `201 Created`:
+Resposta `201 Created` quando é um evento novo, `200 OK` quando já existia (duplicata) — o
+formato mudou: o `id` interno do banco não é mais devolvido, e o corpo agora reaproveita as
+mesmas chaves do `/log-batch`:
 ```json
 {
-  "accepted": true,
-  "duplicate": false,
+  "received": 1,
+  "accepted": 1,
+  "duplicates": 0,
+  "rejected": 0,
+  "eventIds": ["123e4567-e89b-12d3-a456-426614174000"],
+  "rejectedEventIds": [],
   "eventId": "123e4567-e89b-12d3-a456-426614174000",
-  "id": "cldx..."
+  "duplicate": false
 }
 ```
+
+`400 Bad Request` quando o evento é inválido ou referencia mídia/campanha fora do manifesto
+publicado: `{ "error": "Evento inválido ou mídia fora do manifesto.", "rejected": 1, "rejectedEventIds": [...], ... }`.
 
 ---
 
 ### 13.3 Regras de Implementação no Flutter
 
 - **Fila Persistente Offline**: Sempre salvar o evento num banco local (ex.: SQLite / Hive / Isar) antes de tentar o envio via rede. Se a TV Box estiver sem internet, os eventos são acumulados localmente e sincronizados em lote (`log-batch`) quando a conexão restabelecer.
-- **UUID Idempotente Único (`eventId`)**: Cada exibição ganha um `eventId` UUID v4 único gerado **UMA ÚNICA VEZ** no dispositivo. Nunca troque o `eventId` ao fazer retries ou reinicializar o app! O backend usa este ID para descartar duplicatas sem gerar erros.
+- **UUID Idempotente Único (`eventId`)**: Cada exibição ganha um `eventId` UUID v4 único gerado **UMA ÚNICA VEZ** no dispositivo. Nunca troque o `eventId` ao fazer retries ou reinicializar o app! O backend usa este ID para descartar duplicatas sem gerar erros. (O backend tolera a ausência de `eventId` — gera um sozinho nesse caso — mas isso quebra a idempotência dos seus próprios retries; sempre envie o seu.)
 - **`mediaName`**: Deve ser o nome exatamente igual ao nome do arquivo de mídia retornado no manifesto JSON (ex: `"logo.png"` ou `"VideoPromocional.mp4"`).
-- **`durationSeconds`**: Inteiro de 1 a 86400 segundos.
-- **`playedAt`**: String formatada em ISO-8601 UTC (ex: `DateTime.now().toUtc().toIso8601String()`).
+- **`mediaId`/`mediaVersion`/`manifestVersion`/`campaignId`/`zoneId`**: opcionais (seção 13.1), mas envie sempre que disponível — habilitam validação exata e contagem correta de impressão por campanha, e um evento com esses campos inconsistentes é **rejeitado** (não fica "meio aceito").
+- **`durationSeconds`**: Inteiro de 0 a 86400 segundos.
+- **`playedAt`**: String formatada em ISO-8601 UTC (ex: `DateTime.now().toUtc().toIso8601String()`). Não pode estar mais de 5 minutos no futuro em relação ao relógio do servidor — sincronizar o relógio do equipamento (NTP) evita rejeição por esse motivo.
 
 ---
 
-### 13.4 Código de Exemplo em Dart/Flutter (`ProofOfPlayService`)
+### 13.4 Código de Exemplo em Dart/Flutter (`ProofOfPlayService`) — referência histórica
+
+> O player oficial é **Kotlin nativo**, não Flutter (o projeto migrou — ver seção 2). O exemplo
+> Dart abaixo ficou como referência da lógica (fila local, `eventId` único, envio em lote) para
+> portar ao equivalente Kotlin (`Room`/SQLite + `WorkManager`, por exemplo) — não é código para
+> colar direto no app atual, e não inclui os campos novos da seção 13.1.
 
 O código a seguir pode ser utilizado diretamente no aplicativo Flutter para gerenciar a fila e enviar os logs de reprodução:
 
@@ -1272,7 +1358,9 @@ Payloads recebidos pelo dispositivo:
 }
 ```
 
-Confirmação do dispositivo:
+Confirmação do dispositivo — dois canais, mesma semântica; o app deve saber usar os dois:
+
+**Canal 1 — WebSocket** (o de sempre, use para a maioria dos comandos):
 
 ```json
 {
@@ -1283,6 +1371,31 @@ Confirmação do dispositivo:
   "message": "Volume aplicado em 70%."
 }
 ```
+
+**Canal 2 — HTTPS** (`POST /api/device/commands/{commandId}/ack`, novo): use quando a
+confirmação **precisa sobreviver à queda da conexão WebSocket** — o caso claro é `REBOOT`: o
+processo morre antes de garantir que o frame WS foi enviado/recebido pelo servidor.
+
+```http
+POST /api/device/commands/{commandId}/ack
+Authorization: Bearer {deviceToken}
+Content-Type: application/json
+
+{ "action": "REBOOT", "success": true, "message": "Reiniciando." }
+```
+
+Resposta `200`: `{ "status": "SUCCEEDED" }` (ou `"FAILED"`). Resposta `409` se o comando já
+tinha sido finalizado por outro caminho (não é erro — idempotente: **antes** de reintentar,
+checar se veio `{ "duplicate": true, "status": "..." }` no corpo). Recomendação prática: em
+`REBOOT`, chamar este endpoint **antes** de reiniciar de fato (garante a confirmação persistida
+mesmo que o WS não tenha confirmado a tempo); nos demais comandos, o `COMMAND_RESULT` por
+WebSocket já basta.
+
+> Exceção: `TAKE_SCREENSHOT` **não** aceita confirmação de sucesso por nenhum dos dois canais
+> genéricos — só conta como concluído quando a imagem chega de fato (seção 15.1, upload HTTPS,
+> ou o payload binário via WebSocket). Um `COMMAND_RESULT`/`ack` de sucesso para
+> `TAKE_SCREENSHOT` sem a imagem é ignorado pelo backend — evita um dispositivo "fingir" que
+> tirou o print sem enviar nada.
 
 Regras idempotentes:
 
@@ -1794,10 +1907,18 @@ Permitir que o administrador da plataforma ou do cliente transmita mensagens de 
     "alertType": "EVACUATION",
     "active": true,
     "durationSeconds": 120,
+    "expiresAt": "2026-08-11T21:17:00.000Z",
     "createdAt": "2026-08-11T21:15:00.000Z"
   }
 }
 ```
+
+`expiresAt` é **novo** (`createdAt + durationSeconds`). O backend agora considera um alerta
+"ativo" apenas até esse instante — em qualquer resposta (manifesto, `PAIRING_SUCCESS`, e o
+endpoint de estado abaixo) um alerta vencido simplesmente não aparece mais. **O app deve
+esconder o overlay sozinho ao bater `expiresAt`, sem esperar por `EMERGENCY_ALERT_CLEARED`** —
+essa mensagem pode nunca chegar se o operador não clicar em "encerrar" manualmente, ou se a
+conexão cair no momento em que ela foi enviada.
 
 #### B. Remoção de Alerta (`EMERGENCY_ALERT_CLEARED`)
 
@@ -1806,6 +1927,19 @@ Permitir que o administrador da plataforma ou do cliente transmita mensagens de 
   "type": "EMERGENCY_ALERT_CLEARED"
 }
 ```
+
+#### C. Reconsulta por HTTPS (`GET /api/device/state`) — fallback de reconciliação
+
+```http
+GET /api/device/state
+Authorization: Bearer {deviceToken}
+```
+
+Resposta `200`: `{ "activeAlert": { ...mesmo formato do item A... } | null }`. Use isso para
+resincronizar o estado do alerta ao reconectar o WebSocket (cobre a janela em que uma
+`EMERGENCY_ALERT_TRIGGERED`/`CLEARED` foi perdida enquanto a conexão estava caindo) e,
+opcionalmente, num polling de baixa frequência (ex.: a cada 60 s) como segunda rede de
+segurança.
 
 ---
 
@@ -1838,6 +1972,7 @@ O player Flutter deve selecionar a cor de fundo do modal de sobreposição em te
 
 1. O **Alerta Emergencial** cancela a reprodução de áudio da mídia ativa e suprime o som do chamador de senhas.
 2. Quando a mensagem `EMERGENCY_ALERT_CLEARED` for recebida, o modal deve ser removido instantaneamente e o player deve retomar a programação normal.
+3. Independente de receber `EMERGENCY_ALERT_CLEARED` ou não, o modal deve se remover sozinho ao bater `alert.expiresAt` (seção 28.2) — agendar esse temporizador junto com o alerta.
 
 ---
 
