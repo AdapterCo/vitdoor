@@ -1,4 +1,5 @@
 import { getFeedItems } from './rssService.js';
+import { isScreenOnline } from './websocket.js';
 
 export function tenantDto(tenant: any) {
   return pick(tenant, ['id', 'name', 'slug', 'logoUrl', 'brandColor', 'maxScreens', 'unlimitedScreens', 'maxStorageMb', 'status', 'createdAt', 'updatedAt', '_count']);
@@ -76,11 +77,16 @@ export function playlistDto(playlist: any, forPlayer = false) {
 }
 
 export function screenDto(screen: any, includeMaintenancePin = false) {
-  screen = { ...screen, lastScreenshotUrl: screen.screenshotPath || screen.lastScreenshotUrl
-    ? `/api/screens/${encodeURIComponent(screen.id)}/screenshot?v=${encodeURIComponent(String(screen.updatedAt || 'latest'))}` : null };
+  const online = isScreenOnline(screen.id);
+  const screenshotUrl = (screen.screenshotPath || screen.lastScreenshotUrl)
+    ? `/api/screens/${encodeURIComponent(screen.id)}/screenshot?v=${encodeURIComponent(String(screen.updatedAt ? new Date(screen.updatedAt).getTime() : 'latest'))}`
+    : null;
+
   return {
     ...(includeMaintenancePin ? { maintenancePin: screen.maintenancePin ?? null } : {}),
-    ...pick(screen, ['id', 'name', 'paired', 'orientation', 'resolution', 'ipAddress', 'locationName', 'groupName', 'status', 'lastPing', 'volume', 'storageFreeMb', 'ramUsagePercent', 'cpuUsagePercent', 'appVersion', 'currentMediaName', 'lastScreenshotUrl', 'activePlaylistId', 'activeLayoutId', 'manifestVersion', 'maintenanceUntil', 'createdAt', 'updatedAt']),
+    ...pick(screen, ['id', 'name', 'paired', 'orientation', 'resolution', 'ipAddress', 'locationName', 'groupName', 'lastPing', 'volume', 'storageFreeMb', 'ramUsagePercent', 'cpuUsagePercent', 'appVersion', 'currentMediaName', 'activePlaylistId', 'activeLayoutId', 'manifestVersion', 'maintenanceUntil', 'createdAt', 'updatedAt']),
+    status: online ? 'ONLINE' : (screen.status || 'OFFLINE'),
+    lastScreenshotUrl: screenshotUrl,
     ...(screen.activePlaylist ? { activePlaylist: pick(screen.activePlaylist, ['id', 'name']) } : {}),
     ...(screen.activeLayout ? { activeLayout: pick(screen.activeLayout, ['id', 'name']) } : {})
   };

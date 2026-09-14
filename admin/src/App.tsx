@@ -122,9 +122,11 @@ export function App() {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        const token = localStorage.getItem('token') || localStorage.getItem('vitdoor_token') || '';
         ws.send(JSON.stringify({
           type: 'REGISTER_ADMIN',
-          tenantId: activeTenant?.id
+          tenantId: activeTenant?.id,
+          token
         }));
       };
 

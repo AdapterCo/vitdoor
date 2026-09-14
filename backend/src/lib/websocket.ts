@@ -262,7 +262,8 @@ async function handleMessage(client: ConnectedClient, msg: any) {
 
     case 'REGISTER_ADMIN': {
       try {
-        const token = client.sessionToken || msg.token || '';
+        const token = msg.token || client.sessionToken || '';
+        if (!token) throw new Error('Token de autenticação ausente.');
         const session = await verifyAdminSession(token);
         client.type = 'ADMIN';
         client.tenantId = session.user.tenantId;
@@ -271,7 +272,9 @@ async function handleMessage(client: ConnectedClient, msg: any) {
         client.sessionId = session.sessionId;
         client.expiresAt = session.expiresAt;
         if (client.authTimer) clearTimeout(client.authTimer);
-      } catch {
+        client.ws.send(JSON.stringify({ type: 'ADMIN_REGISTERED', tenantId: session.user.tenantId }));
+      } catch (err: any) {
+        console.warn(`🔒 Conexão WebSocket Admin rejeitada: ${err?.message || 'Não autorizado'}`);
         client.ws.close(1008, 'Unauthorized');
       }
       break;
