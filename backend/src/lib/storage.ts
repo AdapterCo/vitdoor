@@ -138,22 +138,16 @@ export async function persistScreenshot(buffer: Buffer, mimeType: 'image/jpeg' |
 export function legacyScreenshotLocation(screen: { id: string; tenantId: string; lastScreenshotUrl?: string | null }): { kind: 'r2' | 'local'; key: string } | null {
   if (!screen.lastScreenshotUrl) return null;
   let url: URL;
-  try { url = new URL(screen.lastScreenshotUrl, 'http://localhost'); } catch { return null; }
+  try {
+    url = new URL(screen.lastScreenshotUrl, process.env.PUBLIC_BASE_URL ? process.env.PUBLIC_BASE_URL.replace(/\/$/, '') + '/' : 'http://localhost/');
+  } catch { return null; }
   if (url.username || url.password || url.search || url.hash) return null;
-
-  const filename = path.basename(url.pathname);
-  if (filename && /\.(jpg|jpeg|png)$/i.test(filename)) {
-    if (url.pathname.includes('/tenants/') && s3Client && process.env.R2_BUCKET_NAME) {
-      const key = url.pathname.replace(/^\/+/, '');
-      return { kind: 'r2', key };
-    }
-    return { kind: 'local', key: filename };
-  }
 
   const roots = [
     { kind: 'r2' as const, base: process.env.R2_PUBLIC_URL, prefix: `tenants/${screen.tenantId}/screenshots/${screen.id}/` },
     { kind: 'local' as const, base: process.env.PUBLIC_BASE_URL ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/uploads` : undefined, prefix: '' }
   ];
+
   for (const root of roots) {
     if (!root.base) continue;
     try {
@@ -161,8 +155,10 @@ export function legacyScreenshotLocation(screen: { id: string; tenantId: string;
       if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) continue;
       const key = decodeURIComponent(url.pathname.slice(base.pathname.length));
       if (!key.startsWith(root.prefix)) continue;
-      const fname = key.slice(root.prefix.length);
-      if (/\.(jpg|jpeg|png)$/i.test(fname)) return { kind: root.kind, key };
+      const filename = key.slice(root.prefix.length);
+      if (/\.(jpg|jpeg|png)$/i.test(filename) && !filename.includes('..') && !filename.includes('/') && !filename.includes('\\')) {
+        return { kind: root.kind, key: root.kind === 'r2' ? `${root.prefix}${filename}` : filename };
+      }
     } catch { continue; }
   }
   return null;

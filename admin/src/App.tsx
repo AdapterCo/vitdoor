@@ -146,6 +146,11 @@ export function App() {
               prev.map((s) => (s.id === data.screenId ? { ...s, ...data.telemetry, status: 'ONLINE' } : s))
             );
           } else if (data.type === 'COMMAND_RESULT') {
+            if (data.action === 'TAKE_SCREENSHOT' && data.success) {
+              setScreens((prev) =>
+                prev.map((s) => (s.id === data.screenId ? { ...s, lastScreenshotUrl: `/api/screens/${data.screenId}/screenshot?v=${Date.now()}` } : s))
+              );
+            }
             if (data.action === 'UPDATE_APP') {
               setUpdateResults((prev) => [
                 { id: `${data.commandId}-${Date.now()}`, screenId: data.screenId, success: !!data.success, message: data.message || '', at: Date.now() },
