@@ -13,7 +13,7 @@ campaignRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'DESIGNER
 
 campaignRoutes.get('/', async (req, res) => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  return res.json((await prisma.campaign.findMany({ where: { tenantId }, include: { playlist: true }, orderBy: { createdAt: 'desc' } })).map(campaignDto));
+  return res.json((await prisma.campaign.findMany({ where: { tenantId, createdById: req.auth!.userId }, include: { playlist: true }, orderBy: { createdAt: 'desc' } })).map(campaignDto));
 });
 async function notify(tenantId: string) {
   const screens = await prisma.screen.findMany({ where: { tenantId, archivedAt: null }, select: { id: true } });
@@ -23,7 +23,7 @@ campaignRoutes.post('/', async (req, res) => {
   const tenantId = tenantScope(req, req.body.tenantId);
   const data = validateCampaign(req.body);
   const campaign = await prisma.$transaction(async tx => {
-    if (data.playlistId && !await tx.playlist.findFirst({ where: { id: data.playlistId, tenantId } })) throw new HttpError(400, 'Playlist invalida.');
+    if (data.playlistId && !await tx.playlist.findFirst({ where: { id: data.playlistId, tenantId, createdById: req.auth!.userId } })) throw new HttpError(400, 'Playlist invalida.');
     const result = await tx.campaign.create({ data: { ...data, tenantId, createdById: req.auth!.userId } });
     await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
     return result;
@@ -33,10 +33,10 @@ campaignRoutes.post('/', async (req, res) => {
 campaignRoutes.put('/:id', async (req, res) => {
   const tenantId = tenantScope(req, req.body.tenantId);
   const campaign = await prisma.$transaction(async tx => {
-    const existing = await tx.campaign.findFirst({ where: { id: req.params.id, tenantId } });
+    const existing = await tx.campaign.findFirst({ where: { id: req.params.id, tenantId, createdById: req.auth!.userId } });
     if (!existing) throw new HttpError(404, 'Campanha nao encontrada.');
     const data = validateCampaign({ ...existing, ...req.body });
-    if (data.playlistId && !await tx.playlist.findFirst({ where: { id: data.playlistId, tenantId } })) throw new HttpError(400, 'Playlist invalida.');
+    if (data.playlistId && !await tx.playlist.findFirst({ where: { id: data.playlistId, tenantId, createdById: req.auth!.userId } })) throw new HttpError(400, 'Playlist invalida.');
     if (data.maxImpressions && existing.currentImpressions >= data.maxImpressions) data.status = 'EXPIRED';
     const result = await tx.campaign.update({ where: { id: existing.id }, data, include: { playlist: true } });
     await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
@@ -47,7 +47,7 @@ campaignRoutes.put('/:id', async (req, res) => {
 campaignRoutes.delete('/:id', async (req, res) => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   await prisma.$transaction(async tx => {
-    const result = await tx.campaign.deleteMany({ where: { id: req.params.id, tenantId } });
+    const result = await tx.campaign.deleteMany({ where: { id: req.params.id, tenantId, createdById: req.auth!.userId } });
     if (!result.count) throw new HttpError(404, 'Campanha nao encontrada.');
     await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
   });

@@ -37,11 +37,42 @@ export async function runRssRefreshTick(): Promise<void> {
     }
     if (changedLayoutIds.size === 0) return;
 
-    const screens = await prisma.screen.findMany({
-      where: { archivedAt: null, tenantId: { in: [...new Set(layouts.filter(l => changedLayoutIds.has(l.id)).map(l => l.tenantId))] } },
+    const changedIds = [...changedLayoutIds];
+    const affectedTenantIds = [...new Set(layouts.filter(l => changedLayoutIds.has(l.id)).map(l => l.tenantId))];
+
+    // Telas que usam o layout diretamente como layout ativo.
+    const directScreens = await prisma.screen.findMany({
+      where: { archivedAt: null, tenantId: { in: affectedTenantIds }, activeLayoutId: { in: changedIds } },
       select: { id: true }
     });
-    const ids = screens.map((screen) => screen.id);
+
+    // Telas cuja playlist ativa contém o layout alterado.
+    const playlistsWithLayout = await prisma.playlist.findMany({
+      where: { tenantId: { in: affectedTenantIds }, items: { some: { layoutId: { in: changedIds } } } },
+      select: { id: true }
+    });
+    const playlistIds = playlistsWithLayout.map((playlist) => playlist.id);
+    const playlistScreens = playlistIds.length
+      ? await prisma.screen.findMany({
+          where: { archivedAt: null, tenantId: { in: affectedTenantIds }, activePlaylistId: { in: playlistIds } },
+          select: { id: true }
+        })
+      : [];
+
+    // Campanhas ativas usam o layout: exibidas em todas as telas do tenant (mesmo modelo do manifest).
+    const campaignsWithLayout = await prisma.campaign.findMany({
+      where: { tenantId: { in: affectedTenantIds }, status: 'ACTIVE', playlist: { items: { some: { layoutId: { in: changedIds } } } } },
+      select: { tenantId: true }
+    });
+    const broadcastTenantIds = [...new Set(campaignsWithLayout.map((campaign) => campaign.tenantId))];
+    const broadcastScreens = broadcastTenantIds.length
+      ? await prisma.screen.findMany({
+          where: { archivedAt: null, tenantId: { in: broadcastTenantIds } },
+          select: { id: true }
+        })
+      : [];
+
+    const ids = [...new Set([...directScreens, ...playlistScreens, ...broadcastScreens].map((screen) => screen.id))];
     if (!ids.length) return;
     await bumpScreenManifestVersions(ids);
     for (const id of ids) await sendManifestToScreen(id);

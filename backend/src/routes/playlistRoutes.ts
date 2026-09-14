@@ -12,7 +12,7 @@ playlistRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'DESIGNER
 playlistRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const playlists = await prisma.playlist.findMany({
-    where: { tenantId },
+    where: { tenantId, createdById: req.auth!.userId },
     include: {
       screens: { select: { id: true, name: true } },
       items: {
@@ -68,7 +68,7 @@ playlistRoutes.post('/', async (req: Request, res: Response): Promise<any> => {
 
   if (targetScreenIds.length > 0) {
     await prisma.screen.updateMany({
-      where: { id: { in: targetScreenIds }, tenantId },
+      where: { id: { in: targetScreenIds }, tenantId, createdById: req.auth!.userId },
       data: { activePlaylistId: playlist.id, manifestVersion: { increment: 1 } }
     });
     for (const screen of selectedScreens) {
@@ -86,7 +86,7 @@ playlistRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => 
   const normalizedItems = normalizeItems(items);
   const targetScreenIds = Array.isArray(screenIds) ? normalizeIds(screenIds) : null;
   const existing = await prisma.playlist.findFirst({
-    where: { id, tenantId },
+    where: { id, tenantId, createdById: req.auth!.userId },
     include: { screens: { select: { id: true } } }
   });
   if (!existing) return res.status(404).json({ error: 'Playlist não encontrada.' });
@@ -125,14 +125,13 @@ playlistRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => 
       }
     });
     if (targetScreenIds) {
-      await tx.screen.updateMany({ where: { tenantId, activePlaylistId: id, id: { notIn: targetScreenIds } }, data: { activePlaylistId: null } });
-      await tx.screen.updateMany({ where: { tenantId, archivedAt: null, id: { in: targetScreenIds } }, data: { activePlaylistId: id } });
+      await tx.screen.updateMany({ where: { tenantId, createdById: req.auth!.userId, activePlaylistId: id, id: { notIn: targetScreenIds } }, data: { activePlaylistId: null } });
+      await tx.screen.updateMany({ where: { tenantId, createdById: req.auth!.userId, archivedAt: null, id: { in: targetScreenIds } }, data: { activePlaylistId: id } });
     }
-    await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
     return updated;
   });
-  const affected = await prisma.screen.findMany({ where: { tenantId, archivedAt: null }, select: { id: true } });
-  for (const screen of affected) await sendManifestToScreen(screen.id, true).catch(() => console.error('Playlist publication pending'));
+  const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
+  for (const screenId of affectedIds) await sendManifestToScreen(screenId, true).catch(() => console.error('Playlist publication pending'));
 
   return res.json(playlistDto(playlist));
 });
@@ -141,15 +140,12 @@ playlistRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> 
   const { id } = req.params;
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const existing = await prisma.playlist.findFirst({
-    where: { id, tenantId },
+    where: { id, tenantId, createdById: req.auth!.userId },
     include: { screens: { select: { id: true } } }
   });
   if (!existing) return res.status(404).json({ error: 'Playlist não encontrada.' });
-  await prisma.$transaction(async tx => {
-    await tx.playlist.delete({ where: { id } });
-    await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
-  });
-  const affectedIds = await bumpOwnerManifestVersions(tenantId);
+  await prisma.playlist.delete({ where: { id } });
+  const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
   for (const screenId of affectedIds) await sendManifestToScreen(screenId, true);
   return res.json({ success: true });
 });
@@ -160,8 +156,8 @@ async function validateItems(tenantId: string, userId: string, items: any[]): Pr
   if (items.length === 0 || items.some((item) => Boolean(item.mediaId) === Boolean(item.layoutId))) return false;
 
   const [mediaCount, layoutCount] = await Promise.all([
-    prisma.media.count({ where: { tenantId, archivedAt: null, id: { in: mediaIds } } }),
-    prisma.layout.count({ where: { tenantId, id: { in: layoutIds } } })
+    prisma.media.count({ where: { tenantId, createdById: userId, archivedAt: null, id: { in: mediaIds } } }),
+    prisma.layout.count({ where: { tenantId, createdById: userId, id: { in: layoutIds } } })
   ]);
   return mediaCount === mediaIds.length && layoutCount === layoutIds.length;
 }
@@ -197,7 +193,7 @@ function normalizeIds(value: unknown): string[] {
 async function findOwnedScreens(tenantId: string, userId: string, screenIds: string[]) {
   if (screenIds.length === 0) return [];
   return prisma.screen.findMany({
-    where: { tenantId, archivedAt: null, id: { in: screenIds } },
+    where: { tenantId, createdById: userId, archivedAt: null, id: { in: screenIds } },
     select: { id: true }
   });
 }

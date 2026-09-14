@@ -20,6 +20,7 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const days = Math.max(1, Math.min(90, Number(req.query.days) || 7));
   const since = new Date(Date.now() - days * 24 * 60 * 60_000);
+  const ownerScope = { screen: { createdById: req.auth!.userId } };
 
   const [
     totalScans,
@@ -33,16 +34,16 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
     topMedias,
     topScreens
   ] = await Promise.all([
-    prisma.qrScan.count({ where: { tenantId, scannedAt: { gte: since } } }),
-    prisma.qrScan.count({ where: { tenantId, ctaType: 'WHATSAPP', scannedAt: { gte: since } } }),
-    prisma.qrScan.count({ where: { tenantId, ctaType: 'INSTAGRAM', scannedAt: { gte: since } } }),
-    prisma.qrScan.count({ where: { tenantId, ctaType: { in: ['URL', 'CUSTOM_URL', 'WEBSITE'] }, scannedAt: { gte: since } } }),
-    prisma.qrScan.count({ where: { tenantId, ctaType: 'PROFILE', scannedAt: { gte: since } } }),
-    prisma.qrScan.count({ where: { tenantId, scanSource: 'QR_CODE', scannedAt: { gte: since } } }),
-    prisma.qrScan.count({ where: { tenantId, scanSource: 'NFC_TAP', scannedAt: { gte: since } } }),
+    prisma.qrScan.count({ where: { tenantId, scannedAt: { gte: since }, ...ownerScope } }),
+    prisma.qrScan.count({ where: { tenantId, ctaType: 'WHATSAPP', scannedAt: { gte: since }, ...ownerScope } }),
+    prisma.qrScan.count({ where: { tenantId, ctaType: 'INSTAGRAM', scannedAt: { gte: since }, ...ownerScope } }),
+    prisma.qrScan.count({ where: { tenantId, ctaType: { in: ['URL', 'CUSTOM_URL', 'WEBSITE'] }, scannedAt: { gte: since }, ...ownerScope } }),
+    prisma.qrScan.count({ where: { tenantId, ctaType: 'PROFILE', scannedAt: { gte: since }, ...ownerScope } }),
+    prisma.qrScan.count({ where: { tenantId, scanSource: 'QR_CODE', scannedAt: { gte: since }, ...ownerScope } }),
+    prisma.qrScan.count({ where: { tenantId, scanSource: 'NFC_TAP', scannedAt: { gte: since }, ...ownerScope } }),
     // Recent 50 events
     prisma.qrScan.findMany({
-      where: { tenantId, scannedAt: { gte: since } },
+      where: { tenantId, scannedAt: { gte: since }, ...ownerScope },
       include: {
         media: { select: { id: true, name: true, type: true } },
         screen: { select: { id: true, name: true, locationName: true } }
@@ -53,7 +54,7 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
     // Top 10 mídias
     prisma.qrScan.groupBy({
       by: ['mediaId'],
-      where: { tenantId, scannedAt: { gte: since } },
+      where: { tenantId, scannedAt: { gte: since }, ...ownerScope },
       _count: { id: true },
       orderBy: { _count: { id: 'desc' } },
       take: 10
@@ -61,7 +62,7 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
     // Top 10 telas
     prisma.qrScan.groupBy({
       by: ['screenId'],
-      where: { tenantId, screenId: { not: null }, scannedAt: { gte: since } },
+      where: { tenantId, screenId: { not: null }, scannedAt: { gte: since }, ...ownerScope },
       _count: { id: true },
       orderBy: { _count: { id: 'desc' } },
       take: 10
@@ -71,7 +72,7 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
   // Resolve media names for top mídias
   const mediaIds = topMedias.map((row) => row.mediaId);
   const mediaNames = await prisma.media.findMany({
-    where: { id: { in: mediaIds }, tenantId },
+    where: { id: { in: mediaIds }, tenantId, createdById: req.auth!.userId },
     select: { id: true, name: true }
   });
   const mediaNameMap = new Map(mediaNames.map((m) => [m.id, m.name]));
@@ -79,7 +80,7 @@ qrStatsRoutes.get('/stats', async (req: Request, res: Response): Promise<any> =>
   // Resolve screen names for top telas
   const screenIds = topScreens.map((row) => row.screenId).filter((id): id is string => !!id);
   const screenNames = await prisma.screen.findMany({
-    where: { id: { in: screenIds }, tenantId },
+    where: { id: { in: screenIds }, tenantId, createdById: req.auth!.userId },
     select: { id: true, name: true, locationName: true }
   });
   const screenNameMap = new Map(screenNames.map((s) => [s.id, { name: s.name, locationName: s.locationName }]));

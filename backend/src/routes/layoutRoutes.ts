@@ -13,7 +13,7 @@ layoutRoutes.use(requireMutationRoles('SUPER_ADMIN', 'ADMIN_CLIENT', 'DESIGNER')
 layoutRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const layouts = await prisma.layout.findMany({
-    where: { tenantId },
+    where: { tenantId, createdById: req.auth!.userId },
     include: { screens: { select: { id: true, name: true } } },
     orderBy: { updatedAt: 'desc' }
   });
@@ -45,7 +45,7 @@ layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.body.tenantId);
   const existing = await prisma.layout.findFirst({
-    where: { id, tenantId },
+    where: { id, tenantId, createdById: req.auth!.userId },
     include: { screens: { select: { id: true } } }
   });
   if (!existing) return res.status(404).json({ error: 'Layout não encontrado.' });
@@ -59,25 +59,21 @@ layoutRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   await refreshTickerFeeds(safeConfig);
   const layout = await prisma.$transaction(async tx => {
     const updated = await tx.layout.update({ where: { id }, data: { name, description, orientation, canvasConfigJson: safeConfig } });
-    await tx.screen.updateMany({ where: { tenantId, activeLayoutId: id, id: { notIn: screenIds } }, data: { activeLayoutId: null } });
-    await tx.screen.updateMany({ where: { tenantId, archivedAt: null, id: { in: screenIds } }, data: { activeLayoutId: id } });
-    await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
+    await tx.screen.updateMany({ where: { tenantId, createdById: req.auth!.userId, activeLayoutId: id, id: { notIn: screenIds } }, data: { activeLayoutId: null } });
+    await tx.screen.updateMany({ where: { tenantId, createdById: req.auth!.userId, archivedAt: null, id: { in: screenIds } }, data: { activeLayoutId: id } });
     return updated;
   });
-  const affected = await prisma.screen.findMany({ where: { tenantId, archivedAt: null }, select: { id: true } });
-  for (const screen of affected) await sendManifestToScreen(screen.id, true).catch(() => console.error('Layout publication pending'));
+  const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
+  for (const screenId of affectedIds) await sendManifestToScreen(screenId, true).catch(() => console.error('Layout publication pending'));
   return res.json(layoutDto(layout));
 });
 
 layoutRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const existing = await prisma.layout.findFirst({ where: { id, tenantId }, include: { screens: { select: { id: true } } } });
+  const existing = await prisma.layout.findFirst({ where: { id, tenantId, createdById: req.auth!.userId }, include: { screens: { select: { id: true } } } });
   if (!existing) return res.status(404).json({ error: 'Layout não encontrado.' });
-  await prisma.$transaction(async tx => {
-    await tx.layout.delete({ where: { id } });
-    await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
-  });
+  await prisma.layout.delete({ where: { id } });
   const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
   for (const screenId of affectedIds) await sendManifestToScreen(screenId, true);
   return res.json({ success: true });
@@ -94,7 +90,7 @@ async function prepareCanvasConfig(tenantId: string, userId: string, value: any)
       : [{ id: 'main', name: 'Área principal', widthPercent: 70 }, { id: 'side', name: 'Área lateral', widthPercent: 30 }];
   if (config.zones.length !== expectedZones.length || config.zones.some((zone: any, index: number) => zone?.id !== expectedZones[index].id)) return null;
   const ids = [...new Set(config.zones.flatMap((zone: any) => Array.isArray(zone.items) ? zone.items.map((item: any) => item?.mediaId) : []).filter((id: any) => typeof id === 'string'))] as string[];
-  const medias = await prisma.media.findMany({ where: { tenantId, archivedAt: null, id: { in: ids } } });
+  const medias = await prisma.media.findMany({ where: { tenantId, createdById: userId, archivedAt: null, id: { in: ids } } });
   if (medias.length !== ids.length) return null;
   const byId = new Map(medias.map((media) => [media.id, media]));
   let audioZoneCount = 0;
@@ -172,9 +168,9 @@ async function refreshTickerFeeds(configJson: string): Promise<void> {
   }
 }
 
-async function validateScreens(tenantId: string, _userId: string, screenIds: string[]): Promise<boolean> {
+async function validateScreens(tenantId: string, userId: string, screenIds: string[]): Promise<boolean> {
   if (screenIds.length === 0) return true;
-  return await prisma.screen.count({ where: { tenantId, archivedAt: null, id: { in: screenIds } } }) === screenIds.length;
+  return await prisma.screen.count({ where: { tenantId, createdById: userId, archivedAt: null, id: { in: screenIds } } }) === screenIds.length;
 }
 
 function normalizeIds(value: unknown): string[] {
@@ -183,10 +179,10 @@ function normalizeIds(value: unknown): string[] {
   return value.filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
 
-async function publishLayout(tenantId: string, _userId: string, layout: any, screenIds: string[], notify = true) {
+async function publishLayout(tenantId: string, userId: string, layout: any, screenIds: string[], notify = true) {
   if (!screenIds.length) return;
   await prisma.screen.updateMany({
-    where: { tenantId, id: { in: screenIds } },
+    where: { tenantId, createdById: userId, id: { in: screenIds } },
     data: { activeLayoutId: layout.id }
   });
   if (notify) {

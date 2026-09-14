@@ -102,35 +102,35 @@ proofOfPlayRoutes.get('/stats', authenticate, async (req: Request, res: Response
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
 
   const totalPlays = await prisma.proofOfPlay.count({
-    where: { tenantId }
+    where: { tenantId, screen: { createdById: req.auth!.userId } }
   });
 
   const totalScreens = await prisma.screen.count({
-    where: { tenantId, archivedAt: null }
+    where: { tenantId, createdById: req.auth!.userId, archivedAt: null }
   });
 
   const onlineScreens = await prisma.screen.count({
     where: {
-      tenantId,
+      tenantId, createdById: req.auth!.userId,
       archivedAt: null, lastPing: { gt: new Date(Date.now() - 60000) }, status: 'ONLINE'
     }
   });
 
   const offlineScreens = await prisma.screen.count({
     where: {
-      tenantId,
+      tenantId, createdById: req.auth!.userId,
       archivedAt: null, OR: [{ status: 'OFFLINE' }, { lastPing: null }, { lastPing: { lte: new Date(Date.now() - 60000) } }]
     }
   });
 
   const recentLogs = await prisma.proofOfPlay.findMany({
-    where: { tenantId },
+    where: { tenantId, screen: { createdById: req.auth!.userId } },
     include: { screen: { select: { id: true, name: true } } },
     orderBy: { playedAt: 'desc' },
     take: 50
   });
   const [storage, tenant] = await Promise.all([
-    prisma.media.aggregate({ where: { tenantId, archivedAt: null }, _sum: { sizeBytes: true } }),
+    prisma.media.aggregate({ where: { tenantId, createdById: req.auth!.userId, archivedAt: null }, _sum: { sizeBytes: true } }),
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { maxScreens: true, maxStorageMb: true, unlimitedScreens: true } })
   ]);
 

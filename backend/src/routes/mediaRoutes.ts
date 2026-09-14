@@ -44,7 +44,7 @@ mediaRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
 
   const medias = await prisma.media.findMany({
     where: {
-      tenantId, archivedAt: null,
+      tenantId, createdById: req.auth!.userId, archivedAt: null,
       ...(type ? { type } : {})
     },
     orderBy: { createdAt: 'desc' }
@@ -56,7 +56,7 @@ mediaRoutes.get('/', async (req: Request, res: Response): Promise<any> => {
 mediaRoutes.get('/folders', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
   const folders = await prisma.mediaFolder.findMany({
-    where: { tenantId },
+    where: { tenantId, createdById: req.auth!.userId },
     include: { _count: { select: { medias: { where: { archivedAt: null } } } } },
     orderBy: { name: 'asc' }
   });
@@ -76,7 +76,7 @@ mediaRoutes.post('/folders', async (req: Request, res: Response): Promise<any> =
 
 mediaRoutes.put('/folders/:id', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.body.tenantId);
-  const folder = await prisma.mediaFolder.findFirst({ where: { id: req.params.id, tenantId } });
+  const folder = await prisma.mediaFolder.findFirst({ where: { id: req.params.id, tenantId, createdById: req.auth!.userId } });
   if (!folder) return res.status(404).json({ error: 'Pasta não encontrada.' });
   const name = String(req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Informe o nome da pasta.' });
@@ -85,7 +85,7 @@ mediaRoutes.put('/folders/:id', async (req: Request, res: Response): Promise<any
 
 mediaRoutes.delete('/folders/:id', async (req: Request, res: Response): Promise<any> => {
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const folder = await prisma.mediaFolder.findFirst({ where: { id: req.params.id, tenantId } });
+  const folder = await prisma.mediaFolder.findFirst({ where: { id: req.params.id, tenantId, createdById: req.auth!.userId } });
   if (!folder) return res.status(404).json({ error: 'Pasta não encontrada.' });
   await prisma.mediaFolder.delete({ where: { id: folder.id } });
   return res.json({ success: true });
@@ -217,7 +217,7 @@ mediaRoutes.post('/widget', async (req: Request, res: Response): Promise<any> =>
 mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.body.tenantId);
-  const existing = await prisma.media.findFirst({ where: { id, tenantId, archivedAt: null } });
+  const existing = await prisma.media.findFirst({ where: { id, tenantId, createdById: req.auth!.userId, archivedAt: null } });
   if (!existing) return res.status(404).json({ error: 'Mídia não encontrada.' });
 
   const durationSeconds = integer(req.body.durationSeconds ?? existing.durationSeconds, 'Duração', 1, 86400);
@@ -238,7 +238,6 @@ mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
       }
     });
     await tx.playlistItem.updateMany({ where: { mediaId: id }, data: { durationSeconds } });
-    await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
     return updated;
   });
   const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
@@ -249,7 +248,7 @@ mediaRoutes.put('/:id', async (req: Request, res: Response): Promise<any> => {
 async function validateFolder(tenantId: string, userId: string, value: unknown): Promise<string | null> {
   if (!value) return null;
   if (typeof value !== 'string') return null;
-  const folder = await prisma.mediaFolder.findFirst({ where: { id: value, tenantId }, select: { id: true } });
+  const folder = await prisma.mediaFolder.findFirst({ where: { id: value, tenantId, createdById: userId }, select: { id: true } });
   return folder?.id || null;
 }
 
@@ -419,7 +418,7 @@ function normalizeCta(value: unknown): string | null | undefined {
 mediaRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => {
   const { id } = req.params;
   const tenantId = tenantScope(req, req.query.tenantId as string | undefined);
-  const media = await prisma.media.findFirst({ where: { id, tenantId, archivedAt: null } });
+  const media = await prisma.media.findFirst({ where: { id, tenantId, createdById: req.auth!.userId, archivedAt: null } });
   if (!media) return res.status(404).json({ error: 'Mídia não encontrada.' });
   const layouts = await prisma.layout.findMany({
     where: { tenantId },
@@ -433,7 +432,6 @@ mediaRoutes.delete('/:id', async (req: Request, res: Response): Promise<any> => 
   await purgePublicUrl(media.url);
   await prisma.$transaction(async tx => {
     await tx.media.delete({ where: { id } });
-    await tx.screen.updateMany({ where: { tenantId, archivedAt: null }, data: { manifestVersion: { increment: 1 } } });
   });
   const affectedIds = await bumpOwnerManifestVersions(tenantId, req.auth!.userId);
   for (const screenId of affectedIds) await sendManifestToScreen(screenId, true);
